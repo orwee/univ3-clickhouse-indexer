@@ -1,0 +1,19 @@
+# secrets and local pointers (real secrets live outside the repo, see .env.example)
+.env
+*.env
+
+# local data, never committed
+data/
+cache/
+labels/
+logs/
+
+# python
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# dbt
+target/
+dbt_packages/
