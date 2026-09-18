@@ -20,7 +20,10 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
 
+    # memswap_limit is RAM + swap. Equal to mem_limit means no swap at all;
+    # left unset, Docker allows another 3g of swap on top. See DECISIONS.md #6.
     mem_limit: 3g
+    memswap_limit: 3g
 
     # Recommended by the image documentation: ClickHouse keeps many files open
     # (one set per data part) and the default limit is too low.
