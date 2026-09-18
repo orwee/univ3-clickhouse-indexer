@@ -1,0 +1,90 @@
+{
+  "endpoint": "https://eth-mainnet.g.alchemy.com/v2/<REDACTED>",
+  "chain_id": 1,
+  "at_block": 26003980,
+  "expected_factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+  "pools": [
+    {
+      "input": "0xe0554a476a092703abdb3ef35c80e0d76d32939f",
+      "address": "0xE0554a476A092703abdB3Ef35c80e0D76d32939F",
+      "valid": true,
+      "code_bytes": 22142,
+      "raw": {
+        "factory": "0x0000000000000000000000001f98431c8ad98523631ae4a59f267346ea31f984",
+        "token0": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "token1": "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+        "fee": "0x0000000000000000000000000000000000000000000000000000000000000064"
+      },
+      "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      "factory_matches": true,
+      "token0": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "token1": {
+        "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "symbol": "WETH",
+        "decimals": 18
+      },
+      "fee": 100,
+      "factory_get_pool": "0xE0554a476A092703abdB3Ef35c80e0D76d32939F",
+      "factory_get_pool_matches": true
+    },
+    {
+      "input": "0x173821f6ad4c5324cd35753a9fd12d92f2eaab29",
+      "address": "0x173821f6aD4c5324cd35753A9FD12D92f2eaAB29",
+      "valid": true,
+      "code_bytes": 22142,
+      "raw": {
+        "factory": "0x0000000000000000000000001f98431c8ad98523631ae4a59f267346ea31f984",
+        "token0": "0x0000000000000000000000007f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+        "token1": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "fee": "0x0000000000000000000000000000000000000000000000000000000000000bb8"
+      },
+      "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      "factory_matches": true,
+      "token0": {
+        "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+        "symbol": "wstETH",
+        "decimals": 18
+      },
+      "token1": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "fee": 3000,
+      "factory_get_pool": "0x173821f6aD4c5324cd35753A9FD12D92f2eaAB29",
+      "factory_get_pool_matches": true
+    },
+    {
+      "input": "0x4622df6fb2d9bee0dcdacf545acdb6a2b2f4f863",
+      "address": "0x4622Df6fB2d9Bee0DCDaCF545aCDB6a2b2f4f863",
+      "valid": true,
+      "code_bytes": 22142,
+      "raw": {
+        "factory": "0x0000000000000000000000001f98431c8ad98523631ae4a59f267346ea31f984",
+        "token0": "0x0000000000000000000000007f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+        "token1": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "fee": "0x00000000000000000000000000000000000000000000000000000000000001f4"
+      },
+      "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      "factory_matches": true,
+      "token0": {
+        "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+        "symbol": "wstETH",
+        "decimals": 18
+      },
+      "token1": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "fee": 500,
+      "factory_get_pool": "0x4622Df6fB2d9Bee0DCDaCF545aCDB6a2b2f4f863",
+      "factory_get_pool_matches": true
+    }
+  ],
+  "rpc_calls": 32
+}
