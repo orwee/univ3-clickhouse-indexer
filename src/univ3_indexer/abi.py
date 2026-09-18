@@ -29,3 +29,13 @@ SELECTORS = {
     "symbol()": SELECTOR_SYMBOL,
     "decimals()": SELECTOR_DECIMALS,
 }
+
+# Event topics: the full 32-byte keccak-256 of the event signature.
+# Uniswap v3 pool (IUniswapV3PoolEvents):
+#   event Swap(address indexed sender, address indexed recipient,
+#              int256 amount0, int256 amount1,
+#              uint160 sqrtPriceX96, uint128 liquidity, int24 tick)
+# tests/test_abi.py recomputes it, and tests/test_swap.py checks it against
+# the topics[0] of every real log in tests/fixtures/swap_logs.json.
+SWAP_SIGNATURE = "Swap(address,address,int256,int256,uint160,uint128,int24)"
+SWAP_TOPIC0 = "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
