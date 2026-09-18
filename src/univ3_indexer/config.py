@@ -110,3 +110,33 @@ def require_api_key(name: str) -> str:
     path = _resolve_path(API_KEYS_POINTER, API_KEYS_DEFAULT)
     values, problem = _read_env_file(path)
     return _require(name, values, path, problem)
+
+
+DATA_DIR_POINTER = "UNIV3_DATA_DIR"
+
+
+def data_dir() -> Path:
+    """Directory for checkpoints and landed data. Always OUTSIDE the working copy.
+
+    The backfill runs as a different user (root) than the one who owns the repo,
+    so anything it wrote inside the working copy would leave files there that
+    the repo owner cannot modify or clean up.
+
+    Resolution order: ``UNIV3_DATA_DIR`` in the environment, the same pointer in
+    the repo ``.env``, then ``$XDG_DATA_HOME/univ3-indexer`` (which defaults to
+    ``~/.local/share/univ3-indexer`` of whoever runs the process).
+    """
+    raw = os.environ.get(DATA_DIR_POINTER)
+    if not raw:
+        repo_env, _ = _read_env_file(REPO_ROOT / ".env")
+        raw = repo_env.get(DATA_DIR_POINTER)
+    if not raw:
+        xdg = os.environ.get("XDG_DATA_HOME") or "~/.local/share"
+        raw = str(Path(xdg) / "univ3-indexer")
+    path = Path(raw).expanduser().resolve()
+    if path == REPO_ROOT or REPO_ROOT in path.parents:
+        raise ConfigError(
+            f"{DATA_DIR_POINTER} resolves to {path}, inside the working copy {REPO_ROOT}: "
+            "choose a directory outside the repo"
+        )
+    return path
