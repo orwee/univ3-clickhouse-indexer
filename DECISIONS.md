@@ -145,6 +145,65 @@ That will need an explicit pin when dbt is added.
 **Revisit when.** 26.3 stops receiving patches, or dbt-clickhouse declares a
 newer Python.
 
+## 6. A hard 3 GiB memory limit with no swap, and what ClickHouse does with it
+
+- Date: 2026-09-18
+- Status: Accepted
+
+**Context.** The container shares an 11 GiB machine with other services. The
+first compose file set only `mem_limit: 3g`. `docker inspect` showed
+`MemorySwap` at 6 GiB: with `memswap_limit` unset, Docker allows as much swap
+again on top of the RAM limit.
+
+**Decision.** `mem_limit: 3g` and `memswap_limit: 3g`. `memswap_limit` is RAM
+plus swap, so making both equal means no swap at all. Verified:
+`HostConfig.MemorySwap` equals `HostConfig.Memory` and `memory.swap.max` is 0
+inside the container.
+
+**Why.** A database that swaps does not fail, it just gets slow in a way that
+is hard to attribute. I would rather have a query die with a clear memory error
+than have timings I cannot trust while I am learning what is expensive.
+
+**What ClickHouse does with the limit.** The server reads the cgroup limit, not
+the host RAM, and applies `max_server_memory_usage_to_ram_ratio` (0.9) to it:
+`max_server_memory_usage` comes out at 2.70 GiB, not 3. That is the number a
+`MEMORY_LIMIT_EXCEEDED` error will refer to. The remaining 10% is headroom for
+allocations the server does not track, so the kernel OOM killer stays out of it.
+
+**Tradeoff.** Large merges or a careless `GROUP BY` over the whole backfill can
+hit 2.70 GiB and fail. I will have to size inserts and queries with that in
+mind, or use the external aggregation and sorting settings.
+
+**Revisit when.** Merges or dbt models fail on memory with reasonable batch
+sizes. First lever is the query, second is raising the limit.
+
+## 7. dbt-adapters must be pinned to 1.24.5 when dbt is added
+
+- Date: 2026-09-18
+- Status: Accepted (applies from the session that adds dbt)
+
+**Context.** Found while checking Python support for the dbt stack, before any
+dbt code exists. dbt-clickhouse 1.10.3 requires `dbt-adapters>=1.22.0,<1.25.0`.
+dbt-core 1.12.5 requires `dbt-adapters>=1.24.5,<2.0`. The intersection is a
+single version.
+
+**Decision.** When dbt goes into `pyproject.toml`, pin `dbt-adapters==1.24.5`
+explicitly, next to dbt-core and dbt-clickhouse, and let `uv.lock` hold it.
+
+**Why.** Today the resolver lands on 1.24.5 by itself, so the constraint is
+invisible. The day dbt-core raises its floor, the resolver will quietly walk
+dbt-core backwards instead of failing, and I would find out from a behaviour
+change. An explicit pin turns that into a resolution error I can read. Related:
+uv already resolves dbt-core to 1.12.0 rather than 1.12.5. My unverified guess
+is that 1.12.5 requires `dbt-core-experimental-parser>=2.0.0b1`, a pre-release
+that uv will not select by default. To be checked when dbt is added.
+
+**Tradeoff.** One more pin to maintain by hand, and no newer dbt-core until
+dbt-clickhouse widens its range.
+
+**Revisit when.** dbt-clickhouse publishes a release that accepts
+`dbt-adapters>=1.25`.
+
 ---
 
 ## Agent corrections
