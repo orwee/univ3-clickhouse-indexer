@@ -1,0 +1,40 @@
+[project]
+name = "univ3-clickhouse-indexer"
+version = "0.1.0"
+description = "Uniswap v3 Swap events -> ClickHouse -> dbt -> reconciliation"
+readme = "README.md"
+# 3.12 is the version every part of the planned stack (dbt-core, dbt-clickhouse,
+# clickhouse-connect) declares support for. See DECISIONS.md.
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "python-dotenv",
+    "clickhouse-connect",
+    "requests",
+    "pyyaml",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+# Application, not a library: nothing to build or publish. uv.lock pins the
+# exact versions; the code is imported from src/ via the pytest pythonpath.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106"]
