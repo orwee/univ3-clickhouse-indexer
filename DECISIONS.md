@@ -204,6 +204,60 @@ dbt-clickhouse widens its range.
 **Revisit when.** dbt-clickhouse publishes a release that accepts
 `dbt-adapters>=1.25`.
 
+## 8. Pool addresses come from Orwee, and are trusted only after on-chain checks
+
+- Date: 2026-09-18
+- Status: Accepted
+
+**Context.** I picked the three pools by filtering in the dashboard of Orwee's
+discovery engine (orwee.io). Orwee is multi-chain and multi-protocol, so an
+address coming out of it is not necessarily a Uniswap v3 pool, and not
+necessarily on Ethereum mainnet.
+
+**Decision.** `pools.yml` is filled in by hand and is the single source of
+addresses, but an address only goes in after `scripts/verify_pools.py` has
+checked it against mainnet: `eth_getCode`, then `factory()`, `token0()`,
+`token1()`, `fee()`, and `symbol()` / `decimals()` of each token. A pool is
+valid only if its `factory()` returns the official UniswapV3Factory. A pool
+that fails is reported, never silently replaced.
+
+**Where the factory address comes from.** Not from memory. It is the
+`UniswapV3Factory` row, "Mainnet" column, of the official deployments page:
+<https://docs.uniswap.org/contracts/v3/reference/deployments/ethereum-deployments>
+(it redirects to
+<https://developers.uniswap.org/docs/protocols/v3/deployments/v3-ethereum-deployments>).
+Value read on 2026-09-18: `0x1F98431c8aD98523631AE4a59f267346ea31F984`.
+**To be checked by me by hand against that page.**
+
+**Why.** A discovery tool tells me a pool is interesting, not what it is.
+Indexing a fork or a pool on another chain would produce numbers that look
+fine and reconcile against nothing. The same goes for the function selectors
+and the event `topic0`: they are constants in the code with the signature in a
+comment, and a test recomputes each with keccak-256 (pycryptodome, a dev-only
+dependency).
+
+**One check beyond what I asked for.** A contract can return anything from its
+own `factory()`. So the script also asks the factory itself,
+`getPool(token0, token1, fee)`, and compares the answer with the candidate
+address. That direction cannot be faked by the pool.
+
+**Result on 2026-09-18, at block 26003980.** All three candidates valid, both
+checks passing. Evidence in `docs/verification/pools-2026-09-18.json`.
+
+| Pool | Pair | Fee |
+|---|---|---|
+| `0xE0554a476A092703abdB3Ef35c80e0D76d32939F` | USDC / WETH | 0.01% |
+| `0x173821f6aD4c5324cd35753A9FD12D92f2eaAB29` | wstETH / USDC | 0.3% |
+| `0x4622Df6fB2d9Bee0DCDaCF545aCDB6a2b2f4f863` | wstETH / USDC | 0.05% |
+
+**Tradeoff.** The verification needs the Alchemy key, so it is a manual step
+run by me, not something CI or an agent can repeat. `symbol()` is informative
+only: anyone can deploy a token called USDC, which is why the token addresses
+are recorded next to each pool.
+
+**Revisit when.** A pool is added or replaced: run the script again and commit
+the new evidence file.
+
 ---
 
 ## Agent corrections
