@@ -77,3 +77,33 @@ Each log carries a non-standard `blockTimestamp` field (hex seconds). With it
 the block time comes for free; without it, one `eth_getBlockByNumber` call per
 distinct block would be needed (~200,000 more calls). The decoder treats the
 field as optional because other providers may not send it.
+
+## 2026-09-19: the same measurement with four pools
+
+USDC/WETH 0.05% was added (DECISIONS.md #9) to have the same pair in two fee
+tiers and a less lopsided data set. 120 windows of 10 blocks spread evenly over
+the last 216,000 blocks, ending at block 26,010,715 (tip minus 64): 1,200
+blocks, 4,896 logs, 121 requests through `rpc.JsonRpcClient` at 4 calls per
+second, no retries.
+
+| | Sample | Share | Extrapolated to 30 days |
+|---|---|---|---|
+| All pools | 4.08 logs per block | | **~881,000 rows** |
+| USDC/WETH 0.01% | 3,571 | 72.9% | ~643,000 |
+| USDC/WETH 0.05% | 1,282 | 26.2% | ~231,000 |
+| wstETH/USDC 0.05% | 41 | 0.8% | ~7,400 |
+| wstETH/USDC 0.3% | 2 | 0.04% | a few hundred |
+
+Logs per 10-block window: min 14, median 38, max 177. Same caveat as before:
+the total is good to perhaps ±15%, the two wstETH figures are order of
+magnitude only. Note that yesterday's sample put wstETH/USDC 0.05% at ~3,100
+rows and today's at ~7,400: with counts this small the estimate moves a lot.
+
+The skew went from 99.5% in one pool to 73% / 26% / 1%.
+
+**Disk.** Raw JSON is 891 bytes per log: ~785 MB for 30 days. The JSONL landing
+zone stores the raw log plus its decoded form on each line; the measured size
+per line is in the README section on the backfill.
+
+**Time.** Unchanged. The cost is per call, not per address, and all four pools
+travel in one call: still 21,600 calls, ~72 minutes at 5 calls per second.
