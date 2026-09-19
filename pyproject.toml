@@ -39,3 +39,8 @@ select = ["E", "F", "I", "B", "UP", "S"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "S105", "S106"]
+# Measurement scripts build SQL out of table and column NAMES, which cannot be bound
+# as parameters. Everything interpolated is a module constant or a value read back
+# from the database itself, never outside input. Long lines are SQL text.
+"scripts/schema_experiments.py" = ["S608", "E501"]
+"scripts/check_sql_practice.py" = ["S608", "E501"]
