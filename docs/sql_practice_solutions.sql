@@ -1,57 +1,72 @@
--- Soluciones de docs/SQL_PRACTICE.md. Ejecutadas contra ClickHouse 26.3.33.24.
--- Tablas: swaps (la candidata más sencilla de docs/SCHEMA_EXPERIMENTS.md) y pools.
--- Cada solución empieza en una línea "-- [N]" para poder ejecutarlas por separado.
+-- Soluciones de docs/SQL_PRACTICE.md contra el ESQUEMA REAL. Ejecutadas con
+-- scripts/check_sql_practice.py sobre ClickHouse 26.3.33.24.
+--   onchain.raw_swaps            tabla cruda (hashes y direcciones en binario, enteros crudos)
+--   onchain.swaps_daily          vista de lectura sobre la materialized view
+--   onchain_dbt.stg_swaps        staging de dbt (hex legible, Decimal, volume_usd)
+--   onchain_dbt.fct_pool_daily   mart diario (lleva pool_label y fee denormalizados)
+--   onchain_dbt.dim_pools        dimensión de pools
+-- Cada solución empieza en una línea "-- [N]".
 
 -- [1]
 SELECT
-    pool,
+    pool_address,
     count() AS swaps,
     min(block_timestamp) AS primero,
-    max(block_timestamp) AS ultimo
-FROM swaps
-GROUP BY pool
+    max(block_timestamp) AS ultimo,
+    concat('0x', lower(hex(argMax(tx_hash, (block_number, log_index))))) AS ultima_tx
+FROM onchain.raw_swaps
+GROUP BY pool_address
 ORDER BY swaps DESC;
 
 -- [2]
 SELECT
-    p.label,
-    toDate(s.block_timestamp) AS dia,
+    pool_label,
+    block_date,
+    swaps,
+    round(volume_usd, 2) AS volume_usd
+FROM onchain_dbt.fct_pool_daily
+ORDER BY pool_label, block_date;
+
+-- [2b]
+SELECT
+    d.pool_label,
+    s.block_date,
     count() AS swaps,
-    round(sum(abs(toFloat64(s.amount0)) / pow(10, p.decimals0)), 2) AS volumen_token0
-FROM swaps AS s
-INNER JOIN pools AS p ON p.address = s.pool
-GROUP BY p.label, dia
-ORDER BY p.label, dia;
+    round(sum(s.volume_usd), 2) AS volume_usd
+FROM onchain_dbt.stg_swaps AS s
+INNER JOIN onchain_dbt.dim_pools AS d ON d.pool_address = s.pool_address
+GROUP BY d.pool_label, s.block_date
+ORDER BY d.pool_label, s.block_date;
 
 -- [3]
 SELECT
     toStartOfInterval(block_timestamp, INTERVAL 4 HOUR) AS tramo,
     count() AS swaps,
-    round(sum(abs(toFloat64(amount0))) / 1e6, 2) AS usdc
-FROM swaps
-WHERE pool = (SELECT address FROM pools WHERE label = 'USDC/WETH 0.05%')
+    round(sum(volume_usd), 2) AS usd
+FROM onchain_dbt.stg_swaps
+WHERE pool_address = (SELECT pool_address FROM onchain_dbt.dim_pools WHERE pool_label = 'USDC/WETH 0.05%')
 GROUP BY tramo
 ORDER BY tramo;
 
 -- [4]
 SELECT
-    p.label,
-    countIf(s.amount0 > 0) AS pool_recibe_token0,
-    countIf(s.amount0 < 0) AS pool_paga_token0,
-    round(sumIf(toFloat64(s.amount0), s.amount0 > 0) / pow(10, any(p.decimals0)), 2) AS token0_entra,
-    round(-sumIf(toFloat64(s.amount0), s.amount0 < 0) / pow(10, any(p.decimals0)), 2) AS token0_sale
-FROM swaps AS s
-INNER JOIN pools AS p ON p.address = s.pool
-GROUP BY p.label
-ORDER BY p.label;
+    d.pool_label,
+    countIf(s.amount0_raw > 0) AS pool_recibe_token0,
+    countIf(s.amount0_raw < 0) AS pool_paga_token0,
+    round(sumIf(s.amount0, s.amount0_raw > 0), 2) AS token0_entra,
+    round(-sumIf(s.amount0, s.amount0_raw < 0), 2) AS token0_sale
+FROM onchain_dbt.stg_swaps AS s
+INNER JOIN onchain_dbt.dim_pools AS d ON d.pool_address = s.pool_address
+GROUP BY d.pool_label
+ORDER BY d.pool_label;
 
 -- [5]
 WITH pow(toFloat64(sqrt_price_x96) / pow(2, 96), 2) AS precio_crudo
 SELECT
-    toDate(block_timestamp) AS dia,
+    toDate(block_timestamp, 'UTC') AS dia,
     round(argMax(1e12 / precio_crudo, (block_number, log_index)), 2) AS cierre_usd_por_eth
-FROM swaps
-WHERE pool = (SELECT address FROM pools WHERE label = 'USDC/WETH 0.05%')
+FROM onchain.raw_swaps
+WHERE pool_address = (SELECT pool_address FROM onchain_dbt.dim_pools WHERE pool_label = 'USDC/WETH 0.05%')
 GROUP BY dia
 ORDER BY dia;
 
@@ -64,54 +79,44 @@ SELECT
     round(min(usd), 2) AS minimo,
     round(argMax(usd, (block_number, log_index)), 2) AS cierre,
     count() AS swaps
-FROM swaps
-WHERE pool = (SELECT address FROM pools WHERE label = 'USDC/WETH 0.05%')
+FROM onchain.raw_swaps
+WHERE pool_address = (SELECT pool_address FROM onchain_dbt.dim_pools WHERE pool_label = 'USDC/WETH 0.05%')
 GROUP BY hora
 ORDER BY hora
 LIMIT 48;
 
 -- [7]
 SELECT
-    p.label,
+    d.pool_label,
     count() AS swaps,
-    arrayMap(x -> round(x, 2), quantiles(0.5, 0.9, 0.99)(abs(toFloat64(s.amount0)) / 1e6)) AS p50_p90_p99_usdc,
-    round(quantileExact(0.5)(abs(toFloat64(s.amount0)) / 1e6), 2) AS mediana_exacta
-FROM swaps AS s
-INNER JOIN pools AS p ON p.address = s.pool
-WHERE p.token0 = 'USDC'
-GROUP BY p.label
-ORDER BY p.label;
+    arrayMap(x -> round(x, 2), quantiles(0.5, 0.9, 0.99)(toFloat64(s.volume_usd))) AS p50_p90_p99_usd,
+    round(quantileExact(0.5)(toFloat64(s.volume_usd)), 2) AS mediana_exacta
+FROM onchain_dbt.stg_swaps AS s
+INNER JOIN onchain_dbt.dim_pools AS d ON d.pool_address = s.pool_address
+GROUP BY d.pool_label
+ORDER BY d.pool_label;
 
 -- [8]
 SELECT
-    p.label,
-    toDate(s.block_timestamp) AS dia,
+    d.pool_label,
+    s.block_date,
     s.tx_hash,
-    round(abs(toFloat64(s.amount0)) / pow(10, p.decimals0), 2) AS token0
-FROM swaps AS s
-INNER JOIN pools AS p ON p.address = s.pool
-ORDER BY p.label, dia, abs(s.amount0) DESC
-LIMIT 3 BY p.label, dia;
+    round(s.volume_usd, 2) AS usd
+FROM onchain_dbt.stg_swaps AS s
+INNER JOIN onchain_dbt.dim_pools AS d ON d.pool_address = s.pool_address
+ORDER BY d.pool_label, s.block_date, s.volume_usd DESC
+LIMIT 3 BY d.pool_label, s.block_date;
 
 -- [9]
 SELECT
-    label,
-    dia,
-    usdc,
-    round(sum(usdc) OVER (PARTITION BY label ORDER BY dia), 2) AS acumulado,
-    round(100 * usdc / sum(usdc) OVER (PARTITION BY dia), 1) AS pct_del_dia
-FROM
-(
-    SELECT
-        p.label AS label,
-        toDate(s.block_timestamp) AS dia,
-        round(sum(abs(toFloat64(s.amount0))) / 1e6, 2) AS usdc
-    FROM swaps AS s
-    INNER JOIN pools AS p ON p.address = s.pool
-    WHERE p.token0 = 'USDC'
-    GROUP BY label, dia
-)
-ORDER BY dia, label;
+    pool_label,
+    block_date,
+    round(volume_usd, 2) AS usd,
+    round(sum(volume_usd) OVER (PARTITION BY pool_label ORDER BY block_date), 2) AS acumulado,
+    round(100 * volume_usd / sum(volume_usd) OVER (PARTITION BY block_date), 1) AS pct_del_dia
+FROM onchain_dbt.fct_pool_daily
+WHERE pool_label LIKE 'USDC/WETH%'
+ORDER BY block_date, pool_label;
 
 -- [10]
 SELECT
@@ -131,8 +136,8 @@ FROM
         SELECT
             block_timestamp, block_number, log_index,
             1e12 / pow(toFloat64(sqrt_price_x96) / pow(2, 96), 2) AS usd
-        FROM swaps
-        WHERE pool = (SELECT address FROM pools WHERE label = 'USDC/WETH 0.05%')
+        FROM onchain.raw_swaps
+        WHERE pool_address = (SELECT pool_address FROM onchain_dbt.dim_pools WHERE pool_label = 'USDC/WETH 0.05%')
     )
 )
 WHERE usd_anterior > 0
@@ -143,8 +148,8 @@ LIMIT 10;
 SELECT
     toStartOfHour(block_timestamp) AS hora,
     count() AS swaps
-FROM swaps
-WHERE pool = (SELECT address FROM pools WHERE label = 'wstETH/USDC 0.3%')
+FROM onchain.raw_swaps
+WHERE pool_address = (SELECT pool_address FROM onchain_dbt.dim_pools WHERE pool_label = 'wstETH/USDC 0.3%')
 GROUP BY hora
 ORDER BY hora WITH FILL STEP toIntervalHour(1)
 LIMIT 48;
@@ -159,10 +164,10 @@ FROM
 (
     SELECT
         s.tx_hash AS tx_hash,
-        groupUniqArray(p.label) AS pools_tocados,
+        groupUniqArray(d.pool_label) AS pools_tocados,
         count() AS n_swaps
-    FROM swaps AS s
-    INNER JOIN pools AS p ON p.address = s.pool
+    FROM onchain_dbt.stg_swaps AS s
+    INNER JOIN onchain_dbt.dim_pools AS d ON d.pool_address = s.pool_address
     GROUP BY tx_hash
     HAVING length(pools_tocados) > 1
 )
@@ -177,11 +182,11 @@ FROM
 (
     SELECT
         tx_hash,
-        arrayJoin(arraySort(groupUniqArray(pool))) AS pool_de_la_tx,
-        arrayStringConcat(arraySort(groupUniqArray(pool)), '+') AS ruta
-    FROM swaps
+        arrayJoin(arraySort(groupUniqArray(pool_address))) AS pool_de_la_tx,
+        arrayStringConcat(arraySort(groupUniqArray(pool_address)), '+') AS ruta
+    FROM onchain.raw_swaps
     GROUP BY tx_hash
-    HAVING uniqExact(pool) > 1
+    HAVING uniqExact(pool_address) > 1
 )
 GROUP BY ruta
 ORDER BY transacciones DESC;
@@ -199,53 +204,55 @@ FROM
     FROM
     (
         SELECT 1 AS k, block_timestamp, 1e12 / pow(toFloat64(sqrt_price_x96) / pow(2, 96), 2) AS usd
-        FROM swaps
-        WHERE pool = (SELECT address FROM pools WHERE label = 'USDC/WETH 0.05%')
+        FROM onchain.raw_swaps
+        WHERE pool_address = (SELECT pool_address FROM onchain_dbt.dim_pools WHERE pool_label = 'USDC/WETH 0.05%')
     ) AS a
     ASOF INNER JOIN
     (
         SELECT 1 AS k, block_timestamp, 1e12 / pow(toFloat64(sqrt_price_x96) / pow(2, 96), 2) AS usd
-        FROM swaps
-        WHERE pool = (SELECT address FROM pools WHERE label = 'USDC/WETH 0.01%')
+        FROM onchain.raw_swaps
+        WHERE pool_address = (SELECT pool_address FROM onchain_dbt.dim_pools WHERE pool_label = 'USDC/WETH 0.01%')
     ) AS b
     ON a.k = b.k AND a.block_timestamp >= b.block_timestamp
 );
 
 -- [14]
 SELECT
-    p.label,
+    d.pool_label,
     count() AS filas,
     countIf(s.tx_hash = '') AS filas_sin_swap,
     uniq(s.sender) AS senders_aprox,
     uniqExact(s.sender) AS senders_exactos
-FROM pools AS p
+FROM onchain_dbt.dim_pools AS d
 LEFT JOIN
 (
-    SELECT * FROM swaps WHERE block_timestamp < (SELECT min(block_timestamp) FROM swaps) + INTERVAL 30 MINUTE
-) AS s ON s.pool = p.address
-GROUP BY p.label
-ORDER BY p.label;
+    SELECT * FROM onchain_dbt.stg_swaps
+    WHERE block_timestamp < (SELECT min(block_timestamp) FROM onchain.raw_swaps) + INTERVAL 30 MINUTE
+) AS s ON s.pool_address = d.pool_address
+GROUP BY d.pool_label
+ORDER BY d.pool_label;
 
 -- [14b]
 SELECT
-    p.label,
+    d.pool_label,
     countIf(s.tx_hash IS NOT NULL) AS swaps_de_verdad
-FROM pools AS p
+FROM onchain_dbt.dim_pools AS d
 LEFT JOIN
 (
-    SELECT * FROM swaps WHERE block_timestamp < (SELECT min(block_timestamp) FROM swaps) + INTERVAL 30 MINUTE
-) AS s ON s.pool = p.address
-GROUP BY p.label
-ORDER BY p.label
+    SELECT * FROM onchain_dbt.stg_swaps
+    WHERE block_timestamp < (SELECT min(block_timestamp) FROM onchain.raw_swaps) + INTERVAL 30 MINUTE
+) AS s ON s.pool_address = d.pool_address
+GROUP BY d.pool_label
+ORDER BY d.pool_label
 SETTINGS join_use_nulls = 1;
 
 -- [15]
 EXPLAIN indexes = 1
 SELECT count()
-FROM swaps
-WHERE pool = (SELECT address FROM pools WHERE label = 'wstETH/USDC 0.05%')
-  AND block_timestamp >= (SELECT min(block_timestamp) FROM swaps) + INTERVAL 1 DAY
-  AND block_timestamp < (SELECT min(block_timestamp) FROM swaps) + INTERVAL 2 DAY;
+FROM onchain.raw_swaps
+WHERE pool_address = '0x4622df6fb2d9bee0dcdacf545acdb6a2b2f4f863'
+  AND block_timestamp >= toDateTime('2026-08-25 00:00:00', 'UTC')
+  AND block_timestamp < toDateTime('2026-08-26 00:00:00', 'UTC');
 
 -- [15a]
 SYSTEM FLUSH LOGS;
@@ -256,11 +263,48 @@ SELECT
     read_rows,
     formatReadableSize(read_bytes) AS leido,
     formatReadableSize(memory_usage) AS memoria,
-    substring(query, 1, 60) AS consulta
+    substring(replaceRegexpAll(query, '\\s+', ' '), 1, 60) AS consulta
 FROM system.query_log
 WHERE type = 'QueryFinish'
+  AND query_kind = 'Select'
   AND event_time > now() - INTERVAL 10 MINUTE
-  AND query ILIKE '%FROM swaps%'
+  AND has(databases, 'onchain')
   AND query NOT ILIKE '%query_log%'
 ORDER BY event_time DESC
 LIMIT 5;
+
+-- [16]
+SELECT
+    (SELECT count() FROM onchain.swaps_daily_agg) AS filas_en_el_destino,
+    (SELECT count() FROM onchain.swaps_daily) AS pool_dias_en_la_vista,
+    (SELECT uniqExact(pool_address, toDate(block_timestamp, 'UTC')) FROM onchain.raw_swaps) AS pool_dias_en_raw,
+    (SELECT sum(swaps) FROM onchain.swaps_daily_agg) AS swaps_sumando_el_destino,
+    (SELECT count() FROM onchain.raw_swaps) AS swaps_en_raw;
+
+-- [16b]
+SELECT
+    v.pool_address,
+    v.block_date,
+    v.swaps AS por_la_mv,
+    r.swaps AS directo
+FROM onchain.swaps_daily AS v
+INNER JOIN
+(
+    SELECT pool_address, toDate(block_timestamp, 'UTC') AS block_date, count() AS swaps
+    FROM onchain.raw_swaps
+    GROUP BY pool_address, block_date
+) AS r ON r.pool_address = v.pool_address AND r.block_date = v.block_date
+ORDER BY v.block_date DESC, v.pool_address
+LIMIT 8;
+
+-- [17]
+SELECT
+    block_number,
+    log_index,
+    pool_address,
+    concat('0x', lower(hex(sender))) AS sender,
+    amount0,
+    amount1
+FROM onchain.raw_swaps
+WHERE tx_hash = (SELECT tx_hash FROM onchain.raw_swaps ORDER BY block_number DESC, log_index DESC LIMIT 1)
+ORDER BY log_index;
