@@ -38,7 +38,8 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "B", "UP", "S"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "S105", "S106"]
+# S608: tests build SQL from their own throw-away database name, never from input.
+"tests/*" = ["S101", "S105", "S106", "S608"]
 # Measurement scripts build SQL out of table and column NAMES, which cannot be bound
 # as parameters. Everything interpolated is a module constant or a value read back
 # from the database itself, never outside input. Long lines are SQL text.
