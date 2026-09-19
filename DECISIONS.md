@@ -318,6 +318,10 @@ where a batch delivered twice rewrites the same file.
 Replacing moves the cost of a pipeline defect onto every query, forever, and
 makes the sorting key serve deduplication instead of queries.
 
+Repeated on the full 30 days (863,587 swaps) the picture is the same: 64.4%
+lost with a non-unique key, the total 10.5% too high without `FINAL`, and
+`FINAL` on unmerged parts 2.8x slower (114 ms vs 41 ms) with no pruning.
+
 **Tradeoff.** Nothing inside the table protects me. If the load ever inserts a
 file twice, the duplicates stay until I reload. So the load verifies itself
 (row count against the landing zone, zero duplicates by `(block_number,
@@ -347,6 +351,11 @@ condition cache off:
 - time not in the key, `(pool, block_number, log_index)`: **348,759 rows read**
   (43 of 57 granules), because a date filter cannot use an index that does not
   contain the date.
+
+On the full 30 days the first figure does not move (**32,768 rows**, 4 of 106
+granules) and the second grows with the table (**634,211 rows**, 78 of 106):
+a query the key serves well reads the same as the data doubles, one it does
+not serve reads in proportion.
 
 Pool first because there are 4 distinct values: the small pools prune to a
 single granule, and a filter on the date alone still prunes (8 of 57 granules)
@@ -420,7 +429,9 @@ Raw integers, never scaled by decimals in this table.
 - **`tx_hash` as hex text was 52.9% of the table on disk** (30.1 of 56.9 MB)
   and compressed 1.1x, because a hash is random. Binary halves the bytes of the
   single largest column. The three 256-bit columns together were 28%, and
-  compress 2.0x to 4.3x.
+  compress 2.0x to 4.3x. Measured afterwards on the real table, 863,587 rows:
+  73.2 MB against 105.2 MB with text hashes (**-30%**, 84.8 bytes per row
+  instead of 122). `tx_hash` is still the largest column at 35.7%.
 - `pool_address` stays readable text because `LowCardinality` with 4 values
   costs 2.4 KB in total.
 
