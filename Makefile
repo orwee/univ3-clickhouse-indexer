@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help up down logs ch-client test lint load load-full load-verify sanity dbt-seed dbt-build dbt-test
+.PHONY: help up down logs ch-client test lint load load-full load-verify sanity mv-setup mv-check dbt-seed dbt-build dbt-test
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -52,3 +52,9 @@ dbt-build: dbt-seed ## seed, run and test every dbt model against the real data
 
 dbt-test: ## run only the dbt tests
 	$(DBT) test
+
+mv-setup: ## create the daily materialized view in the raw database and backfill it, once
+	PYTHONPATH=src uv run python -m univ3_indexer.mv --setup
+
+mv-check: ## swaps_daily (through the view) against a direct GROUP BY; non-zero exit on mismatch
+	PYTHONPATH=src uv run python -m univ3_indexer.mv --check
