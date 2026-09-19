@@ -258,6 +258,36 @@ are recorded next to each pool.
 **Revisit when.** A pool is added or replaced: run the script again and commit
 the new evidence file.
 
+## 9. A fourth pool, derived from the factory instead of typed
+
+- Date: 2026-09-19
+- Status: Accepted
+
+**Context.** The first measurement showed a badly skewed data set: one pool
+(USDC/WETH 0.01%) produced 99.5% of the rows and wstETH/USDC 0.3% hardly trades.
+That makes every per-pool comparison degenerate, and it hides what an `ORDER BY`
+starting with the pool actually prunes.
+
+**Decision.** Add USDC/WETH 0.05% on Uniswap v3 mainnet, keeping the other
+three. The same pair in two fee tiers is also the more interesting comparison.
+
+**How the address was obtained.** Not from memory and not from a website: the
+official factory was asked `getPool(USDC, WETH, 500)`, with the two token
+addresses taken from the on-chain evidence of entry 8, and the answer went
+through the same verification as the other pools
+(`scripts/verify_pools.py --get-pool`). Result at block 26010777:
+`0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640`, valid. Evidence in
+`docs/verification/pools-2026-09-19.json`.
+
+**Effect, measured.** ~4.08 swaps per block, ~881,000 rows for 30 days, split
+73% / 26% / 1%. Backfill time does not change: all pools travel in one call.
+
+**Tradeoff.** About 30% more rows and disk. A checkpoint written for three
+pools cannot be resumed with four (the runner refuses, on purpose), so the pool
+set has to be final before the backfill starts.
+
+**Revisit when.** I want a pair that is not USDC/WETH to carry real volume.
+
 ---
 
 ## Agent corrections
