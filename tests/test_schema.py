@@ -72,3 +72,12 @@ def test_the_primary_key_is_a_prefix_of_the_sorting_key_and_not_unique(clickhous
         f"FROM {table} LIMIT 1"
     ).result_rows[0]
     assert back == (-(2**255), 2**255 - 1, 2**160 - 1, 2**128 - 1, -887272, "01" * 32)
+
+
+def test_only_plain_identifiers_reach_sql_text():
+    import pytest
+
+    assert ch.qualified("onchain") == "onchain.raw_swaps"
+    for bad in ("onchain; DROP TABLE x", "a.b", "", "1abc", "x y"):
+        with pytest.raises(ValueError, match="identifier"):
+            ch.qualified(bad)
