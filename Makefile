@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help up down logs ch-client test lint
+.PHONY: help up down logs ch-client test lint load load-full load-verify
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -25,3 +25,15 @@ test: ## run the test suite
 lint: ## ruff lint + format check
 	uv run ruff check .
 	uv run ruff format --check .
+
+# Where the backfill landed its JSONL files. Override: make load LANDING=/some/dir
+LANDING ?= /var/lib/univ3-indexer/landing
+
+load: ## load what is missing from the landing zone into ClickHouse, then verify
+	PYTHONPATH=src uv run python -m univ3_indexer.loader --mode incremental --landing $(LANDING)
+
+load-full: ## truncate the raw table, reload everything, then verify
+	PYTHONPATH=src uv run python -m univ3_indexer.loader --mode full --landing $(LANDING)
+
+load-verify: ## only compare ClickHouse with the landing zone (non-zero exit on mismatch)
+	PYTHONPATH=src uv run python -m univ3_indexer.loader --verify-only --landing $(LANDING)
