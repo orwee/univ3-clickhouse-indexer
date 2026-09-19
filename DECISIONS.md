@@ -288,6 +288,178 @@ set has to be final before the backfill starts.
 
 **Revisit when.** I want a pair that is not USDC/WETH to carry real volume.
 
+## 10. Engine: MergeTree, with deduplication left to the load
+
+> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+
+- Date: 2026-09-19
+- Status: Accepted
+
+**Context.** Logs of finalised blocks never change, so duplicates can only come
+from my own pipeline: the backfill runner delivers at least once. The choice
+was between letting the engine clean up (ReplacingMergeTree) or making the load
+idempotent and keeping a plain MergeTree.
+
+**Decision.** `ENGINE = MergeTree`. Deduplication is not the engine's job. The
+load is idempotent because the table is rebuilt from the JSONL landing zone,
+where a batch delivered twice rewrites the same file.
+
+**Why.** Measured on 463,447 real swaps (docs/SCHEMA_EXPERIMENTS.md):
+
+- A ReplacingMergeTree whose sorting key is not unique per swap **lost 65.7% of
+  the rows** (463,447 loaded, 159,151 kept), with no error, already at insert
+  time and before any merge.
+- With a correct key, and 10% of the files redelivered, the table total read
+  **11.2% too high** (515,330 instead of 463,447) for as long as the merge had
+  not happened and the query did not say `FINAL`. Nothing warns about it.
+- `FINAL` on unmerged parts cost **3x** on the main query (69 ms vs 23 ms) and
+  **removed index pruning**: a one-day query read the whole table.
+
+Replacing moves the cost of a pipeline defect onto every query, forever, and
+makes the sorting key serve deduplication instead of queries.
+
+**Tradeoff.** Nothing inside the table protects me. If the load ever inserts a
+file twice, the duplicates stay until I reload. So the load verifies itself
+(row count against the landing zone, zero duplicates by `(block_number,
+log_index)`) and fails loudly.
+
+**Revisit when.** The data stops being append-only (for example ingesting
+blocks that can still be reorganised), or the landing zone goes away.
+
+## 11. ORDER BY (pool_address, block_timestamp, block_number, log_index), PRIMARY KEY on the first two
+
+> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+
+- Date: 2026-09-19
+- Status: Accepted
+
+**Context.** The sorting key decides what a filtered query has to read. The
+main query (daily volume per pool) reads the whole table with any key, so the
+key has to be chosen for the filtered queries around it: one pool, a date range.
+
+**Decision.** `ORDER BY (pool_address, block_timestamp, block_number,
+log_index)` with `PRIMARY KEY (pool_address, block_timestamp)`.
+
+**Why.** Measured for one day of the biggest pool (74.5% of the rows), query
+condition cache off:
+
+- time in the key, `(pool, timestamp)`: **32,768 rows read** (4 of 57 granules);
+- time not in the key, `(pool, block_number, log_index)`: **348,759 rows read**
+  (43 of 57 granules), because a date filter cannot use an index that does not
+  contain the date.
+
+Pool first because there are 4 distinct values: the small pools prune to a
+single granule, and a filter on the date alone still prunes (8 of 57 granules)
+since the index can skip inside each of the few pool values. `block_number,
+log_index` at the end make the physical order deterministic and equal to chain
+order inside a block, where every swap shares one timestamp. They are left out
+of the PRIMARY KEY because they add nothing to pruning: the in-memory index
+stays at two columns.
+
+**Tradeoff.** A query for all pools on one day reads slightly more than with
+the timestamp first (65,536 vs 49,152 rows). `block_timestamp` and
+`block_number` carry the same information, so one of them is redundant in the
+key; it costs nothing measurable.
+
+**Revisit when.** There are hundreds of pools (then the first key column stops
+being low-cardinality and date-only filters stop pruning), or the dominant
+query stops filtering by pool.
+
+## 12. PARTITION BY month, for management and not for speed
+
+> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+
+- Date: 2026-09-19
+- Status: Accepted
+
+**Context.** About 30 days and 860,000 rows. Options were no partitioning,
+monthly or daily.
+
+**Decision.** `PARTITION BY toYYYYMM(block_timestamp)`.
+
+**Why.** Partitioning is a data-management unit, not a performance feature,
+and the measurement agrees: with the same sorting key, monthly partitioning
+**changed no read at all** (32,768 rows for the one-day query with and without
+it; the partition was pruned, but the primary index had already skipped those
+granules). What it gives is the ability to drop, detach or replace one month
+as a unit, and it is the answer that does not have to be corrected if the
+window grows from 30 days to a year (12 partitions). Daily would be 30
+partitions of 3 granules each today and 365 in a year, with one part per
+partition touched by every insert.
+
+**Tradeoff.** One more part per month, and an insert that crosses a month
+boundary creates two parts instead of one (seen in the experiment: 114 parts
+instead of 113).
+
+**Revisit when.** Retention or reloads need a finer unit than a month.
+
+## 13. Types: lossless integers, and hashes and addresses in binary
+
+> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+
+- Date: 2026-09-19
+- Status: Accepted
+
+**Context.** Solidity types do not map one to one, and the choice decides both
+correctness and most of the disk.
+
+**Decision.** `amount0`, `amount1` `Int256`; `sqrt_price_x96` `UInt256` (uint160
+on chain); `liquidity` `UInt128`; `tick` `Int32` (int24 on chain);
+`block_number` `UInt64`; `log_index` `UInt32`; `block_timestamp`
+`DateTime('UTC')`; `pool_address` `LowCardinality(String)`. `tx_hash` as
+`FixedString(32)` and `sender`, `recipient` as `FixedString(20)`, **binary**.
+Raw integers, never scaled by decimals in this table.
+
+**Why.**
+
+- A real swap of 1,136 WETH needs **70 bits**: `Int64` overflows on real data,
+  by a factor of 123. `tick` reaches ±206,590, which does not fit `Int16`. The
+  256-bit and 128-bit types round-trip through clickhouse-connect exactly, bit
+  for bit, over their whole range; through `Float64` the same value loses
+  55,221 wei without any error. Reconciliation needs exact equality.
+- **`tx_hash` as hex text was 52.9% of the table on disk** (30.1 of 56.9 MB)
+  and compressed 1.1x, because a hash is random. Binary halves the bytes of the
+  single largest column. The three 256-bit columns together were 28%, and
+  compress 2.0x to 4.3x.
+- `pool_address` stays readable text because `LowCardinality` with 4 values
+  costs 2.4 KB in total.
+
+**Tradeoff.** Hashes and addresses are unreadable in a plain `SELECT`: every
+display needs `lower(hex(col))` and every filter `unhex('…')`, and the join
+against the subgraph (whose ids are hex text) needs the conversion. The
+staging model in dbt is where that is done once. Arithmetic on 256-bit integers
+is slower than on 64-bit; irrelevant at this size.
+
+**Revisit when.** The conversions become a source of mistakes in ad-hoc
+queries: then a readable alias column, not a change of storage type.
+
+## 14. Nothing from pools.yml is denormalised into the raw table
+
+> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+
+- Date: 2026-09-19
+- Status: Accepted
+
+**Context.** Symbols, decimals, fee and label live in `pools.yml`. ClickHouse
+culture is to denormalise, because joins load their right-hand side in memory
+and wide tables are cheap in a columnar store.
+
+**Decision.** The raw table carries only `pool_address`. `pools.yml` becomes a
+dbt seed, and whatever needs denormalising is denormalised in the marts.
+
+**Why.** The raw table is a faithful copy of the chain, and `pools.yml` stays
+the single source for everything maintained by hand. A label is editorial: if
+it were copied into 860,000 rows, fixing a typo would mean rewriting the table.
+The cost of the join that this forces depends on the size of its right-hand
+side, which is 4 rows.
+
+**Tradeoff.** Every model that needs decimals or a label joins the seed. The
+daily mart is where I denormalise label and fee on purpose, as the deliberate
+example of the opposite choice.
+
+**Revisit when.** The pool dimension grows to thousands of rows: then a
+dictionary, or denormalising at load time.
+
 ---
 
 ## Agent corrections
