@@ -94,13 +94,20 @@ def _rows(client, database: str, name: str, parameters: dict | None = None) -> l
     return [dict(zip(result.column_names, row, strict=True)) for row in result.result_rows]
 
 
-def run(client, database: str, threshold: float = DEFAULT_THRESHOLD, pools=None) -> Result:
+def run(
+    client,
+    database: str,
+    threshold: float = DEFAULT_THRESHOLD,
+    pools=None,
+    internal_only: bool = False,
+) -> Result:
+    """``internal_only`` runs A alone: for a database that has no external table at all."""
     ch.qualified(database)
     pools = pools if pools is not None else load_pools()
     parameters = {**stable_leg_parameters(pools, stablecoin_symbols()), "source": external.SOURCE}
     return Result(
         internal=_rows(client, database, "02_internal_a.sql"),
-        external=_rows(client, database, "03_external_b.sql", parameters),
+        external=[] if internal_only else _rows(client, database, "03_external_b.sql", parameters),
         threshold=threshold,
         labels={str(p.key): p.label for p in pools},
     )
