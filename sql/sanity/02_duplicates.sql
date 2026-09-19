@@ -11,6 +11,14 @@ SELECT
     groupUniqArray(pool_address) AS pools,
     lower(hex(any(tx_hash))) AS tx_hash
 FROM raw_swaps
+WHERE (block_number, log_index) IN
+(
+    -- Aggregate the bare keys first and fetch details only for the offenders. Carrying
+    -- tx_hash and an array through a GROUP BY of 860k distinct keys took 661 MiB.
+    SELECT block_number, log_index
+    FROM raw_swaps
+    GROUP BY block_number, log_index
+    HAVING count() > 1
+)
 GROUP BY block_number, log_index
-HAVING copies > 1
 ORDER BY block_number, log_index
