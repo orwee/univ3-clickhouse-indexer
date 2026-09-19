@@ -46,4 +46,6 @@ select = ["E", "F", "I", "B", "UP", "S"]
 "scripts/schema_experiments.py" = ["S608", "E501"]
 # The only interpolated value is the table name, validated by clickhouse.qualified().
 "src/univ3_indexer/loader.py" = ["S608"]
+# Long lines are Markdown table rows.
+"src/univ3_indexer/sanity.py" = ["E501"]
 "scripts/check_sql_practice.py" = ["S608", "E501"]

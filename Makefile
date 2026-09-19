@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help up down logs ch-client test lint load load-full load-verify
+.PHONY: help up down logs ch-client test lint load load-full load-verify sanity
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -37,3 +37,6 @@ load-full: ## truncate the raw table, reload everything, then verify
 
 load-verify: ## only compare ClickHouse with the landing zone (non-zero exit on mismatch)
 	PYTHONPATH=src uv run python -m univ3_indexer.loader --verify-only --landing $(LANDING)
+
+sanity: ## run sql/sanity/*.sql and write reports/sanity.md (non-zero exit on a defect)
+	PYTHONPATH=src uv run python -m univ3_indexer.sanity
