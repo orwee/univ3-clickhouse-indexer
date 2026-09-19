@@ -1,8 +1,14 @@
 .DEFAULT_GOAL := help
-.PHONY: help up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external mv-setup mv-check dbt-seed dbt-build dbt-test
+DEMO = docker compose -f docker-compose.demo.yml
+
+.PHONY: help demo up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external mv-setup mv-check dbt-seed dbt-build dbt-test
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
+
+demo: ## the whole pipeline on the committed fixtures: only Docker needed, no API key
+	$(DEMO) up --build --abort-on-container-exit --exit-code-from demo-runner; \
+	  status=$$?; $(DEMO) down --volumes --remove-orphans; exit $$status
 
 up: ## start ClickHouse and wait until it is healthy
 	docker compose up -d --wait

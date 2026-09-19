@@ -1,6 +1,7 @@
 # secrets and local pointers (real secrets live outside the repo, see .env.example)
 .env
 *.env
+!demo/demo.env
 
 # local data, never committed
 data/
