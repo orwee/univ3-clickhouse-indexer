@@ -1,0 +1,37 @@
+name: univ3
+version: "0.1.0"
+config-version: 2
+profile: univ3
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # THE one place that says which token symbols count as a US dollar. volume_usd is the
+  # absolute value of the leg whose symbol is in this list; with no such leg it is NULL.
+  # No oracle, no invented price. Symbols are trustworthy only because every pool in
+  # pools.yml was verified on chain (DECISIONS.md #8, #9): anyone can deploy a "USDC".
+  stablecoin_symbols: ["USDC", "USDT", "DAI"]
+
+models:
+  univ3:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+
+seeds:
+  univ3:
+    pools:
+      +column_types:
+        pool_address: String
+        token0: String
+        token1: String
+        decimals0: UInt8
+        decimals1: UInt8
+        fee: UInt32
+        label: String

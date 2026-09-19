@@ -1,0 +1,18 @@
+# No real value lives here: everything comes from the environment. `make dbt-build`
+# loads ~/secrets/clickhouse.env into the environment through scripts/run_dbt.py, which
+# also refuses to run if the target database is the raw one.
+univ3:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+      driver: http
+      secure: false
+      host: "{{ env_var('CH_HOST') }}"
+      port: "{{ env_var('CH_PORT') | int }}"
+      user: "{{ env_var('CLICKHOUSE_USER') }}"
+      password: "{{ env_var('CLICKHOUSE_PASSWORD') }}"
+      # dbt calls it schema; in ClickHouse it is a database. dbt owns this one and
+      # NEVER writes into the raw database.
+      schema: "{{ env_var('DBT_TARGET_DATABASE', 'onchain_dbt') }}"
+      threads: 2
