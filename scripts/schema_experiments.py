@@ -183,17 +183,36 @@ def storage(client, table: str) -> dict:
     return dict(zip(keys, (int(v) for v in row), strict=True))
 
 
-def measure(client, sql: str, runs: int = 5) -> dict:
+def _run(client, sql: str, runs: int, condition_cache: int) -> list[tuple]:
     ids = []
     for _ in range(runs):
         query_id = str(uuid.uuid4())
-        client.query(sql, settings={"query_id": query_id, "use_query_cache": 0})
+        client.query(
+            sql,
+            settings={
+                "query_id": query_id,
+                "use_query_cache": 0,
+                "use_query_condition_cache": condition_cache,
+            },
+        )
         ids.append(query_id)
     client.command("SYSTEM FLUSH LOGS")
-    stats = client.query(
+    return client.query(
         "SELECT query_duration_ms, read_rows, read_bytes, memory_usage FROM system.query_log "
         f"WHERE type = 'QueryFinish' AND query_id IN {tuple(ids)!r} ORDER BY event_time_microseconds"
     ).result_rows
+
+
+def measure(client, sql: str, runs: int = 5) -> dict:
+    """What the ORDER BY prunes by itself: the query condition cache is switched OFF.
+
+    It is on by default (use_query_condition_cache = 1) and remembers, per filter, which
+    granules had no matching rows. From the second execution on it hides the difference
+    between sorting keys, which is exactly what is being measured here. The numbers with
+    the cache on are reported next to the others, because that is what production sees.
+    """
+    stats = _run(client, sql, runs, condition_cache=0)
+    cached = _run(client, sql, 3, condition_cache=1)
     explain = client.query(f"EXPLAIN indexes = 1 {sql}").result_rows
     text = [r[0].strip() for r in explain]
     granules = [t for t in text if t.startswith("Granules:")]
@@ -204,6 +223,8 @@ def measure(client, sql: str, runs: int = 5) -> dict:
         "read_rows": stats[-1][1],
         "read_bytes": stats[-1][2],
         "memory_bytes": stats[-1][3],
+        "read_rows_with_condition_cache": cached[-1][1],
+        "read_bytes_with_condition_cache": cached[-1][2],
         "granules_after_primary_key": granules[-1] if granules else None,
         "parts_after_pruning": parts[-1] if parts else None,
     }
