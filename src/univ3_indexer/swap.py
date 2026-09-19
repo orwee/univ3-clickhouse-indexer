@@ -25,6 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from univ3_indexer.abi import SWAP_TOPIC0
+from univ3_indexer.addresses import Address, normalize
 
 WORD = 32
 _DATA_WORDS = 5
@@ -92,6 +93,13 @@ def _quantity(log: dict, key: str) -> int:
         raise SwapDecodeError(f"{key}: missing or not a hex quantity") from exc
 
 
+def _pool_address(log: dict) -> Address:
+    try:
+        return normalize(log.get("address"))
+    except ValueError as exc:
+        raise SwapDecodeError("address: missing or not an address") from exc
+
+
 def decode_swap(log: dict) -> Swap:
     """Decode one log exactly as returned by ``eth_getLogs``."""
     if log.get("removed"):
@@ -120,7 +128,7 @@ def decode_swap(log: dict) -> Swap:
 
     timestamp = log.get("blockTimestamp")
     return Swap(
-        pool=str(log.get("address", "")).lower(),
+        pool=_pool_address(log),
         block_number=_quantity(log, "blockNumber"),
         block_hash=str(log.get("blockHash", "")).lower(),
         block_timestamp=int(timestamp, 16) if timestamp else None,

@@ -28,6 +28,7 @@ import requests
 from Crypto.Hash import keccak
 
 from univ3_indexer import abi, config
+from univ3_indexer.addresses import normalize, same
 
 # Source: official Uniswap deployments page, "Mainnet" column, UniswapV3Factory.
 # https://docs.uniswap.org/contracts/v3/reference/deployments/ethereum-deployments
@@ -61,7 +62,7 @@ class Rpc:
 
 def checksum(address: str) -> str:
     """EIP-55 mixed-case checksum."""
-    raw = address.lower().removeprefix("0x")
+    raw = normalize(address).removeprefix("0x")
     digest = keccak.new(digest_bits=256, data=raw.encode("ascii")).hexdigest()
     return "0x" + "".join(c.upper() if int(digest[i], 16) >= 8 else c for i, c in enumerate(raw))
 
@@ -71,7 +72,7 @@ def word_to_address(word: str) -> str:
 
 
 def pad_address(address: str) -> str:
-    return address.lower().removeprefix("0x").rjust(64, "0")
+    return normalize(address).removeprefix("0x").rjust(64, "0")
 
 
 def decode_symbol(result: str) -> str:
@@ -121,7 +122,7 @@ def verify(rpc: Rpc, candidate: str) -> dict:
         report["reason"] = "factory() did not return: not a Uniswap v3 style pool"
         return report
     report["factory"] = word_to_address(raw["factory"])
-    report["factory_matches"] = report["factory"].lower() == UNISWAP_V3_FACTORY_MAINNET.lower()
+    report["factory_matches"] = same(report["factory"], UNISWAP_V3_FACTORY_MAINNET)
 
     for side in ("token0", "token1"):
         if raw[side] is None:
@@ -150,7 +151,7 @@ def verify(rpc: Rpc, candidate: str) -> dict:
         pool, err = outcome(rpc.eth_call(UNISWAP_V3_FACTORY_MAINNET, data))
         report["factory_get_pool"] = word_to_address(pool) if pool else None
         report["factory_get_pool_matches"] = bool(pool) and (
-            report["factory_get_pool"].lower() == candidate.lower()
+            same(report["factory_get_pool"], candidate)
         )
 
     report["valid"] = bool(report["factory_matches"])
@@ -173,7 +174,7 @@ def derive(rpc: Rpc, token_a: str, token_b: str, fee: int) -> tuple[str | None, 
         return None, record
     pool = word_to_address(result)
     record["pool"] = pool
-    if pool.lower() == ZERO_ADDRESS:
+    if same(pool, ZERO_ADDRESS):
         record["error"] = "the factory has no pool for this pair and fee tier"
         return None, record
     return pool, record

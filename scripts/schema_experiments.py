@@ -269,7 +269,7 @@ def main() -> int:
         shares = client.query(
             f"SELECT pool, count() AS n FROM {DB}.mt_pool_ts GROUP BY pool ORDER BY n DESC"
         ).result_rows
-        labels = {p.address.lower(): p.label for p in load_pools()}
+        labels = {p.key: p.label for p in load_pools()}
         out["rows_per_pool"] = {labels[a]: n for a, n in shares}
         big, small = shares[0][0], shares[-1][0]
         day = client.command(

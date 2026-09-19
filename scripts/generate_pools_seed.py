@@ -25,10 +25,8 @@ def render() -> str:
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow(HEADER)
-    for p in sorted(load_pools(), key=lambda p: p.address.lower()):
-        writer.writerow(
-            [p.address.lower(), p.token0, p.token1, p.decimals0, p.decimals1, p.fee, p.label]
-        )  # noqa: E501
+    for p in sorted(load_pools(), key=lambda p: p.key):
+        writer.writerow([p.key, p.token0, p.token1, p.decimals0, p.decimals1, p.fee, p.label])  # noqa: E501
     return out.getvalue()
 
 

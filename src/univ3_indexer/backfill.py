@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Protocol
 
 from univ3_indexer.abi import SWAP_TOPIC0
+from univ3_indexer.addresses import normalize
 from univ3_indexer.rpc import MAX_BLOCK_RANGE, chunk_ranges
 from univ3_indexer.swap import Swap, decode_swap
 
@@ -142,7 +143,7 @@ def _validated(logs: list[dict], from_block: int, to_block: int, pools: set[str]
             raise BackfillError(
                 f"node returned a log from block {number}, outside {from_block}-{to_block}"
             )
-        if entry["address"].lower() not in pools:
+        if normalize(entry["address"]) not in pools:
             raise BackfillError(f"node returned a log from an unrequested address in {number}")
     return logs
 
@@ -163,7 +164,7 @@ def run_backfill(
     """Fetch [start_block, end_block] (inclusive), resuming from the checkpoint."""
     if chunks_per_batch < 1:
         raise ValueError("chunks_per_batch must be at least 1")
-    wanted = tuple(sorted(p.lower() for p in pools))
+    wanted = tuple(sorted(normalize(p) for p in pools))
     if not wanted:
         raise BackfillError("no pools to index")
 

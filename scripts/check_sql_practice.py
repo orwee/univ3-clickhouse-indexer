@@ -55,7 +55,7 @@ def main() -> int:
         pools = load_pools()
         client.insert(
             f"{DB}.pools",
-            [[p.address.lower(), p.token0, p.token1, p.decimals0, p.decimals1, p.fee, p.label]
+            [[p.key, p.token0, p.token1, p.decimals0, p.decimals1, p.fee, p.label]
              for p in pools],
         )  # fmt: skip
         files = landing.landed_files(args.landing)

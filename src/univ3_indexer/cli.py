@@ -235,7 +235,7 @@ def main(argv: Sequence[str] | None = None, *, client=None) -> int:
         for path in (out, checkpoint_path):
             if path == config.REPO_ROOT or config.REPO_ROOT in path.parents:
                 raise config.ConfigError(f"{path} is inside the working copy: choose another path")
-        pools = tuple(sorted(p.address.lower() for p in load_pools()))
+        pools = tuple(sorted(p.key for p in load_pools()))
         plan_path = checkpoint_path.with_name("plan.json")
 
         if client is None and not (args.dry_run and (explicit or plan_path.exists())):
