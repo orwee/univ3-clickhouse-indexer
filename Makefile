@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help up down logs ch-client test lint load load-full load-verify sanity
+.PHONY: help up down logs ch-client test lint load load-full load-verify sanity dbt-seed dbt-build dbt-test
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -40,3 +40,15 @@ load-verify: ## only compare ClickHouse with the landing zone (non-zero exit on 
 
 sanity: ## run sql/sanity/*.sql and write reports/sanity.md (non-zero exit on a defect)
 	PYTHONPATH=src uv run python -m univ3_indexer.sanity
+
+# dbt reads `onchain` and writes ONLY into its own database (onchain_dbt by default).
+DBT = PYTHONPATH=src uv run --group dbt python scripts/run_dbt.py
+
+dbt-seed: ## regenerate dbt/seeds/pools.csv from pools.yml
+	PYTHONPATH=src uv run python scripts/generate_pools_seed.py
+
+dbt-build: dbt-seed ## seed, run and test every dbt model against the real data
+	$(DBT) build
+
+dbt-test: ## run only the dbt tests
+	$(DBT) test

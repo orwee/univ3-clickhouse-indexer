@@ -115,3 +115,19 @@ print(landing.check_coverage(d), sum(1 for _ in landing.read_landing(d)))"
 `check_coverage` fails on any gap or overlap between files;
 `read_landing(d, redecode=True)` decodes again from the raw logs, which is how
 a fixed decoder is applied to data already on disk.
+
+## Load, sanity and dbt
+
+```
+make load            # landing zone -> onchain.raw_swaps (incremental, idempotent), then verify
+make load-full       # truncate and reload everything, then verify
+make sanity          # sql/sanity/*.sql -> reports/sanity.md; non-zero exit on a defect
+make dbt-build       # seed + models + tests, into the onchain_dbt database
+make dbt-test        # only the dbt tests
+```
+
+dbt reads `onchain` and writes only into `onchain_dbt`; the launcher refuses to run
+otherwise. `dbt/profiles.yml` holds no real value: `scripts/run_dbt.py` loads the
+credentials from the secrets file into the environment, without printing them.
+`dbt/seeds/pools.csv` is generated from `pools.yml` (`make dbt-seed`), and a test fails
+if they diverge.
