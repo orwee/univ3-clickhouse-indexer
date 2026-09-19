@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from univ3_indexer import clickhouse as ch
-from univ3_indexer import config, landing
+from univ3_indexer import config, landing, mv
 
 log = logging.getLogger("univ3_indexer.loader")
 
@@ -113,8 +113,14 @@ def load(client, database: str, landing_dir: Path, mode: str) -> LoadSummary:
     files = landing.landed_files(landing_dir)
     summary = LoadSummary()
 
+    has_mv = mv.exists(client, database)
     if mode == "full":
         client.command(f"TRUNCATE TABLE {table}")
+        if has_mv:
+            # The materialized view is an insert trigger: it did not see the TRUNCATE, so
+            # its target still holds the old totals, and the reload below would add every
+            # row to them a second time. Empty the target too; the trigger refills it.
+            client.command(f"TRUNCATE TABLE {ch.qualified(database, mv.TARGET)}")
         pending = files
     else:
         present = _rows_per_block(client, table)
@@ -145,6 +151,12 @@ def load(client, database: str, landing_dir: Path, mode: str) -> LoadSummary:
         summary.rows_inserted += len(rows)
         log.info("inserted %d rows from %d files (through block %d)", len(rows), len(batch),
                  batch[-1][1])  # fmt: skip
+    if has_mv and summary.files_repaired:
+        # A repair deleted rows the trigger had already counted, then inserted them again:
+        # the target is now too high for those days. Only a rebuild makes it exact.
+        log.warning("%d file(s) were repaired: rebuilding the materialized view target",
+                    summary.files_repaired)  # fmt: skip
+        mv.rebuild(client, database)
     return summary
 
 
@@ -200,6 +212,14 @@ def verify(client, database: str, landing_dir: Path) -> Verification:
         v.problems.append(
             f"table blocks {min_block}-{max_block} fall outside the landing coverage {coverage}"
         )
+    if mv.exists(client, database):
+        differing = mv.mismatches(client, database)
+        v.facts["materialized_view_mismatches"] = len(differing)
+        if differing:
+            v.problems.append(
+                f"swaps_daily differs from a direct GROUP BY on {len(differing)} pool-day(s), "
+                f"first: {differing[0][:2]}"
+            )
     if rows:
         present = _rows_per_block(client, table)
         for from_block, to_block, path in files:
