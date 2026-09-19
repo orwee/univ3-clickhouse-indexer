@@ -4,6 +4,58 @@ Mediciones para que Roberto decida el esquema. **Este documento no elige nada.**
 Complementa a `SCHEMA_OPTIONS.md` (que razona) con números medidos. Las decisiones
 van a `DECISIONS.md`, escritas por él.
 
+## Actualización: los 30 días completos (863.587 swaps)
+
+Repetido el 2026-09-19 con el backfill terminado: 216 ficheros, bloques 25.794.751 a
+26.010.750, **863.587 swaps**. Mismo script, misma versión, caché de condiciones
+apagada y encendida. Resultado bruto en `docs/experiments/schema-2026-09-19-30d.json`.
+El resto del documento describe la primera pasada, con el 52 % de los datos; se deja
+tal cual porque el método y las explicaciones son los mismos. **Ninguna observación
+cambia de signo; las diferencias crecen con los datos.**
+
+Reparto: USDC/WETH 0.01% 630.611 (73,0 %) · USDC/WETH 0.05% 227.678 (26,4 %) ·
+wstETH/USDC 0.05% 4.688 (0,5 %) · wstETH/USDC 0.3% 610 (0,07 %).
+
+| Observación | Primera pasada (463.447) | 30 días (863.587) |
+|---|---|---|
+| Replacing con clave no única: filas perdidas | 65,7 % | **64,4 %** (quedan 307.720) |
+| Replacing sin `FINAL` ni merge: total inflado | 11,2 % | **10,5 %** (954.496 en vez de 863.587) |
+| `FINAL` sin mergear, consulta principal | 69 ms frente a 23 (3,0×) | **114 ms frente a 41 (2,8×)**, 45 MB de memoria frente a 9 |
+| `FINAL` sin mergear, un día de un pool | lee la tabla entera | lee la tabla entera (954.496 filas, 116 ms frente a 21) |
+| Un día del pool grande, `(pool, timestamp)` | 32.768 filas · 4/57 gránulos | **32.768 filas · 4/106 gránulos** |
+| Un día del pool grande, `(pool, block_number, log_index)` | 348.759 filas · 43/57 | **634.211 filas · 78/106** (19 veces más) |
+| …la misma, con la caché de condiciones encendida | 49.152 | 49.152 |
+| Un día del pool pequeño, claves con `pool` delante | 8.192 filas · 1 gránulo | 8.192 filas · 1 gránulo |
+| Un día del pool pequeño, `(timestamp, pool)` | 49.152 filas | 49.152 filas |
+| Un día, todos los pools: `(pool, ts)` / `(ts, pool)` / `(pool, block, log)` | 65.536 / 49.152 / 463.447 | 65.536 / 49.152 / **863.587** |
+| Partición mensual frente a ninguna: filas leídas | idénticas | **idénticas** (poda 1 de 2 partes; el índice ya las descartaba) |
+| Consulta principal, cualquier clave | tabla entera, 19 a 23 ms | tabla entera, **34 a 42 ms** |
+| `tx_hash` en hex: parte del disco | 52,9 % | **53,0 %** (55,8 de 105,2 MB) |
+| Tamaño de tabla con hashes en texto | 56,9 MB · 123 B/fila | **105,2 MB · 122 B/fila** |
+
+Lo que se lee de la tabla, sin valorarlo: lo que lee una consulta bien servida por la
+clave **no crece** con la tabla (32.768 filas con el doble de datos), y lo que lee una mal
+servida crece en proporción (de 348.759 a 634.211).
+
+### La tabla real, con los tipos decididos
+
+Tras estos experimentos se decidió el esquema (DECISIONS.md #10 a #14) y se cargó
+`onchain.raw_swaps`. Medido sobre esa tabla, con `tx_hash`, `sender` y `recipient` en
+binario (`FixedString`):
+
+| | Hashes en texto (candidata) | Hashes en binario (tabla real) |
+|---|---|---|
+| Comprimido | 105,2 MB | **73,2 MB (−30 %)** |
+| Bytes por fila | 122 | **84,8** |
+| `tx_hash` | 55,8 MB · 53,0 % | **26,2 MB · 35,7 %** |
+| `sender` + `recipient` | 12,5 MB | 8,0 MB |
+| Particiones / partes tras la carga | | 2 particiones, 5 partes (9 inserts) |
+
+`tx_hash` sigue siendo la columna mayor incluso en binario: es aleatorio y no comprime
+(ratio 1,0). Los tres enteros de 256 bits suman el 38,6 % de la tabla real.
+
+---
+
 ## Qué se midió y con qué
 
 - **Datos:** los primeros 113 ficheros de la zona de aterrizaje del backfill real,
