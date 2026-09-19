@@ -57,3 +57,4 @@ select = ["E", "F", "I", "B", "UP", "S"]
 # Long lines are Markdown table rows.
 "src/univ3_indexer/sanity.py" = ["E501"]
 "scripts/check_sql_practice.py" = ["S608", "E501"]
+"scripts/query_performance.py" = ["S608", "E501"]
