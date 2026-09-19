@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help up down logs ch-client test lint load load-full load-verify sanity fetch-external mv-setup mv-check dbt-seed dbt-build dbt-test
+.PHONY: help up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external mv-setup mv-check dbt-seed dbt-build dbt-test
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -61,3 +61,9 @@ mv-check: ## swaps_daily (through the view) against a direct GROUP BY; non-zero 
 
 fetch-external: ## daily volume per pool from the public GeckoTerminal API (no key) into ClickHouse
 	PYTHONPATH=src uv run python -m univ3_indexer.external --fetch
+
+# Relative difference beyond which a pool-day of the external comparison is listed.
+RECONCILE_THRESHOLD ?= 0.01
+
+reconcile: ## A internal (must be exactly zero) + B external -> reports/reconciliation.{csv,md} + evidence
+	PYTHONPATH=src uv run python -m univ3_indexer.reconcile --threshold $(RECONCILE_THRESHOLD) --evidence
