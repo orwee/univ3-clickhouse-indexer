@@ -12,49 +12,38 @@ justo el tipo de tropiezo que aparece en una prueba.
 
 ## Preparar el entorno
 
+Los ejercicios corren contra el **esquema real**, no contra una tabla de prácticas:
+
 ```
-PYTHONPATH=src:scripts uv run python scripts/check_sql_practice.py \
-    --landing /var/lib/univ3-indexer/landing --keep
+make up && make load && make mv-setup && make dbt-build     # una vez
+PYTHONPATH=src uv run python scripts/check_sql_practice.py  # ejecuta TODAS las soluciones (solo lectura)
 make ch-client
-USE test_sql_practice;
 ```
 
-`--keep` deja la base `test_sql_practice` creada. Al terminar: `DROP DATABASE test_sql_practice`.
+Sin datos propios, `make demo` deja las mismas tablas en bases `demo_*` con los fixtures.
 
 ## Las tablas
 
-`swaps` es la candidata más sencilla de `SCHEMA_EXPERIMENTS.md`:
-`MergeTree ORDER BY (pool, block_timestamp)`, sin particionar.
-
-| Columna | Tipo | Nota |
+| Tabla | Qué es | Ojo con |
 |---|---|---|
-| pool | LowCardinality(String) | dirección en minúsculas |
-| block_number | UInt32 | |
-| block_timestamp | DateTime('UTC') | |
-| log_index | UInt32 | índice del log dentro del **bloque** |
-| tx_hash, sender, recipient | String | hex |
-| amount0, amount1 | Int256 | con signo, desde el punto de vista del pool: positivo = el pool recibe |
-| sqrt_price_x96 | UInt256 | precio tras el swap, ver abajo |
-| liquidity | UInt128 | |
-| tick | Int32 | |
+| `onchain.raw_swaps` | Un swap por fila, tal como sale de la cadena. `MergeTree`, `ORDER BY (pool_address, block_timestamp, block_number, log_index)`, partición mensual | `tx_hash`, `sender` y `recipient` son **binarios** (`FixedString`): `lower(hex(x))` para verlos, `unhex('…')` para filtrar. `amount0` / `amount1` son `Int256` crudos con signo (positivo = el pool recibe) |
+| `onchain.swaps_daily` | Vista de lectura sobre la materialized view: swaps y volumen **crudo** por pool y día | Se lee la vista, no `swaps_daily_agg` (ejercicio 16) |
+| `onchain_dbt.stg_swaps` | Staging de dbt (view): hashes en hex, `block_date`, importes escalados `Decimal(76, 18)` junto a los crudos (`amount0_raw`), `volume_usd` | Es una vista: cada consulta recalcula el escalado sobre `raw_swaps` |
+| `onchain_dbt.fct_pool_daily` | Mart diario: swaps, volumen de cada token, `volume_usd`, `fees_usd` | Lleva `pool_label` y `fee` **denormalizados**: no hace falta JOIN |
+| `onchain_dbt.dim_pools` | `pools.yml` como tabla | `pool_address` en minúsculas, como en todo ClickHouse |
 
-`pools` es `pools.yml`: `address`, `token0`, `token1`, `decimals0`, `decimals1`, `fee`, `label`.
-
-Dos fórmulas que necesitarás:
-
-- Importe legible: `amount / 10^decimals`.
-- Precio crudo (token1 por token0, en unidades mínimas): `(sqrt_price_x96 / 2^96)^2`.
-  En los pools USDC/WETH (token0 = USDC con 6 decimales, token1 = WETH con 18),
-  el precio en dólares por ETH es `1e12 / precio_crudo`.
+Fórmulas: importe legible = `amount / 10^decimals` (ya hecho en `stg_swaps`). Precio crudo
+(token1 por token0) = `(sqrt_price_x96 / 2^96)^2`; en los pools USDC/WETH el precio en dólares por
+ETH es `1e12 / precio_crudo`.
 
 ## Ejercicios
 
 **1. Calentamiento.** Swaps por pool, con la fecha del primero y del último.
 Ordenado de más a menos.
 
-**2. Volumen diario por pool.** Es la consulta principal del proyecto. Por pool
-(con su `label`) y día: número de swaps y volumen en unidades legibles de token0.
-Ojo: `amount0` tiene signo.
+**2. Volumen diario por pool.** Es la consulta principal del proyecto. (a) Sácala del mart, sin
+ningún JOIN. (b) Sácala de `stg_swaps` uniendo con `dim_pools` y comprueba que coincide. ¿Qué
+ganas y qué pierdes con cada una?
 
 **3. Tramos de 4 horas.** Para USDC/WETH 0.05%, swaps y volumen en USDC por tramos
 de 4 horas. No uses `toStartOfHour`.
@@ -108,17 +97,28 @@ gránulos leerá una consulta de un día sobre wstETH/USDC 0.05%. (b) Después d
 ejecutar varias consultas, saca de las tablas de sistema cuánto tardó y cuántas
 filas y bytes leyó cada una.
 
-## Qué cambiaría con el esquema final
+**16. La materialized view por dentro.** En una sola fila: cuántas filas tiene
+`swaps_daily_agg`, cuántos pool-días da la vista `swaps_daily`, cuántos pool-días hay de verdad en
+`raw_swaps`, y el total de swaps por cada camino. ¿Por qué el destino tiene más filas que pool-días
+y aun así los totales cuadran? (b) Compara, para los últimos días, los swaps por la MV y por un
+`GROUP BY` directo.
 
-- **ReplacingMergeTree:** todas las consultas necesitarían `FROM swaps FINAL` (o
-  agregar por la identidad del log) para no contar duplicados pendientes de merge.
-  Olvidarlo no da error: da un número más alto.
-- **ORDER BY (pool, block_number, log_index):** los resultados son los mismos; lo
-  que cambia es el ejercicio 15. Un filtro por fecha ya no usa el índice primario,
-  salvo que haya un índice `minmax` sobre el timestamp o partición por fecha.
-- **Partición mensual:** nada cambia en las consultas. En el 15 aparece además la
-  poda por partición (`Parts: x/y`).
-- **Hashes como `FixedString(32)`:** el ejercicio 8 necesitaría
-  `lower(hex(tx_hash))` para mostrarlos, y los filtros por hash, `unhex(...)`.
-- **Denormalizar `label` y decimales en `swaps`:** desaparecen los `JOIN pools` de
-  los ejercicios 2, 4, 7, 8, 9 y 12.
+**17. Buscar por hash en una columna binaria.** Saca todos los swaps de la transacción más reciente
+de la tabla, filtrando `raw_swaps` por `tx_hash`. ¿Cómo escribirías el filtro si te dan el hash
+como texto `0x…`? ¿Cuántas filas lee esa consulta y por qué?
+
+## Qué cambió al pasar al esquema real
+
+Esta práctica se escribió primero contra una tabla candidata y se adaptó después al esquema
+decidido (DECISIONS.md #10 a #14). Lo que hubo que tocar es, en sí, materia de entrevista:
+
+- **Hashes binarios:** cualquier `tx_hash` o `sender` de `raw_swaps` necesita `lower(hex(...))`
+  para verse y `unhex(...)` para filtrarse. En `stg_swaps` ya vienen en texto.
+- **`pool` pasó a `pool_address`**, y la etiqueta ya no sale de un JOIN obligatorio: el mart la
+  lleva denormalizada (ejercicios 2 y 9), el staging no (2b, 4, 7, 8, 12).
+- **Importes:** los ejercicios de volumen usan `volume_usd` y `amount0` de `stg_swaps`, que son
+  `Decimal` exactos, en vez de dividir un `Int256` convertido a float.
+- **Partición mensual:** en el ejercicio 15 `EXPLAIN` muestra ahora tres etapas (min/max de
+  partición, clave de partición, clave primaria) y `Parts: 1/2`.
+- **No es ReplacingMergeTree**, así que ninguna consulta necesita `FINAL`. La única tabla del
+  proyecto que sí lo exige es `external_daily_volume`.

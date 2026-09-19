@@ -1,9 +1,11 @@
 # Soluciones comentadas
 
-El SQL está en [`sql_practice_solutions.sql`](sql_practice_solutions.sql), una
-solución por bloque `-- [N]`. Aquí va lo que hay que saber decir de cada una, y la
-diferencia con Postgres donde la hay. Los números de ejemplo son de los primeros
-tres días de datos (~108.000 swaps).
+El SQL está en [`sql_practice_solutions.sql`](sql_practice_solutions.sql), una solución por bloque
+`-- [N]`, contra el **esquema real** (`onchain.raw_swaps`, `onchain.swaps_daily`,
+`onchain_dbt.stg_swaps`, `onchain_dbt.fct_pool_daily`). Las 23 sentencias se ejecutan con
+`scripts/check_sql_practice.py`, que solo admite lecturas. Aquí va lo que hay que saber decir de
+cada una, y la diferencia con Postgres donde la hay. Los números de ejemplo de los ejercicios 7 a
+14 son de una primera pasada con tres días de datos; los del 16 y el 17, de la tabla completa.
 
 ## 1. Calentamiento
 
@@ -13,14 +15,19 @@ ordenar y agrupar por alias: `ORDER BY swaps`. ClickHouse resuelve alias del
 
 ## 2. Volumen diario por pool
 
-`abs(amount0)` porque el signo indica dirección, no tamaño. `toFloat64(amount0)`
-antes de dividir: `amount0` es `Int256`, y para un volumen agregado la precisión
-de un double sobra, pero **para reconciliar no**: ahí se suma en `Int256` y se
-convierte al final.
+(a) Desde el mart es un `SELECT` sin JOIN ni agregación: `pool_label` y `fee` están
+**denormalizados** en `fct_pool_daily` a propósito. (b) Desde `stg_swaps` hay que unir con
+`dim_pools` y agregar 881.187 filas. Dan lo mismo (hay un test de dbt que lo exige). Lo que se
+intercambia: el mart responde al instante y se lee solo, pero su etiqueta es tan fresca como el
+último `dbt build`; el staging es siempre actual y recalcula todo en cada consulta, porque es una
+vista.
 
-El `JOIN` contra `pools` (4 filas) es gratis: ClickHouse carga el lado derecho en
-una tabla hash en memoria. Por eso la tabla pequeña va **a la derecha**; en
-versiones antiguas el planificador no las reordenaba.
+El JOIN contra `dim_pools` (4 filas) es gratis: ClickHouse carga el lado derecho en una tabla hash
+en memoria. Por eso la tabla pequeña va **a la derecha**.
+
+`volume_usd` y `amount0` son `Decimal(76, 18)` exactos. Para un volumen agregado un double
+sobraría, pero **para reconciliar no**: por eso el proyecto escala con Decimal y la comprobación
+interna se hace en enteros crudos.
 
 ## 3. Tramos de 4 horas
 
@@ -182,6 +189,33 @@ En Postgres el equivalente es `EXPLAIN (ANALYZE, BUFFERS)` y `pg_stat_statements
 La diferencia de fondo: en Postgres miras si usó el índice; en ClickHouse miras
 **cuántos gránulos leyó**, porque el índice siempre "se usa" y lo que cambia es
 cuánto descarta.
+
+## 16. La materialized view por dentro
+
+Resultado real: el destino tiene **136 filas**, la vista da **124 pool-días**, que son los que hay
+en `raw_swaps`, y los swaps suman **881.187** por los dos caminos.
+
+El destino es un `AggregatingMergeTree`: cada INSERT en `raw_swaps` dispara la vista y añade al
+destino **una fila por cada (pool, día) presente en ese bloque insertado**. Las filas con la misma
+clave se funden (sumando, por `SimpleAggregateFunction(sum)`) cuando las partes se mezclan, que es
+eventual. Hasta entonces hay varias filas por clave: 136 en vez de 124. La suma cuadra igual porque
+sumar es asociativo; lo que no cuadraría es un `count()` o leer una fila suelta. Por eso existe
+`swaps_daily`, que hace `GROUP BY` + `sum()` al leer, y por eso nadie lee el destino directamente.
+
+La pregunta de entrevista que viene detrás: *"¿y si creas la MV sobre una tabla que ya tiene
+datos?"* El destino queda **vacío**: una MV de ClickHouse es un disparador de INSERT, no una
+consulta guardada (`docs/MATERIALIZED_VIEW.md`).
+
+## 17. Buscar por hash en una columna binaria
+
+`tx_hash` es `FixedString(32)`: si te dan `0xabc…` en texto, el filtro es
+`WHERE tx_hash = unhex('abc…')` (sin el `0x`). Comparar contra el texto no da error: no casa nada.
+La solución evita escribir un hash a mano tomándolo de una subconsulta.
+
+Lee **toda la tabla** (881.187 filas): `tx_hash` no está en la clave de ordenación ni en ningún
+índice. En `docs/QUERY_PERFORMANCE.md` está medido qué cambia con un índice `bloom_filter`
+(8.192 filas, 1,4 % más de disco) y cómo la caché de condiciones de consulta disimula el problema a
+partir de la segunda ejecución del **mismo** hash.
 
 ## Diferencias con Postgres que hacen tropezar, en una lista
 
