@@ -1,0 +1,524 @@
+{
+ "clickhouse": "26.3.33.24",
+ "source": "onchain",
+ "rows": 881187,
+ "probe": {
+  "big_pool": "0xe0554a476a092703abdb3ef35c80e0d76d32939f",
+  "small_pool": "0x173821f6ad4c5324cd35753a9fd12d92f2eaab29",
+  "day": "2026-08-25",
+  "tx_hash": "0x677df8036b41f976c0b964ab5a2a5968156d2058d4a0e3c280529043a3f52d1e"
+ },
+ "base": {
+  "size": {
+   "parts": 2,
+   "rows": 881187,
+   "compressed_bytes": 74684804,
+   "marks": 111
+  },
+  "queries": {
+   "daily_volume_all_pools": {
+    "ms_median": 34,
+    "ms_all": [
+     37,
+     36,
+     34,
+     33,
+     30
+    ],
+    "read_rows": 881187,
+    "read_bytes": 32603919,
+    "memory_bytes": 13895032,
+    "read_rows_with_condition_cache": 881187,
+    "read_bytes_with_condition_cache": 32603919,
+    "granules_after_primary_key": "Granules: 109/109",
+    "parts_after_pruning": "Parts: 2/2",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "      ReadFromMergeTree (test_query_perf.base)",
+     "      Indexes:",
+     "        MinMax",
+     "          Condition: true",
+     "          Parts: 2/2",
+     "          Granules: 109/109",
+     "        Partition",
+     "          Condition: true",
+     "          Parts: 2/2",
+     "          Granules: 109/109",
+     "        PrimaryKey",
+     "          Condition: true",
+     "          Parts: 2/2",
+     "          Granules: 109/109"
+    ]
+   },
+   "one_pool_one_day_big": {
+    "ms_median": 5,
+    "ms_all": [
+     6,
+     5,
+     5,
+     4,
+     4
+    ],
+    "read_rows": 24576,
+    "read_bytes": 909312,
+    "memory_bytes": 6202178,
+    "read_rows_with_condition_cache": 24576,
+    "read_bytes_with_condition_cache": 909312,
+    "granules_after_primary_key": "Granules: 3/43",
+    "parts_after_pruning": "Parts: 1/1",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "        ReadFromMergeTree (test_query_perf.base)",
+     "        Indexes:",
+     "          MinMax",
+     "            Keys:",
+     "            Condition: and((block_timestamp in (-Inf, 1787702399]), (block_timestamp in [1787616000, +Inf)))",
+     "            Parts: 1/2",
+     "            Granules: 43/109",
+     "          Partition",
+     "            Keys:",
+     "            Condition: and((toYYYYMM(block_timestamp) in (-Inf, 202608]), (toYYYYMM(block_timestamp) in [202608, +Inf)))",
+     "            Parts: 1/1",
+     "            Granules: 43/43",
+     "          PrimaryKey",
+     "            Keys:",
+     "            Condition: and((block_timestamp in (-Inf, 1787702399]), and((block_timestamp in [1787616000, +Inf)), (pool_address in ['0xe0554a476a092703abdb3ef35c80e0d76d32939f', '0xe0554a476a092703abdb3ef35c80e0d76d32939f'])))",
+     "            Parts: 1/1",
+     "            Granules: 3/43",
+     "            Search Algorithm: binary search"
+    ]
+   },
+   "one_pool_one_day_small": {
+    "ms_median": 4,
+    "ms_all": [
+     4,
+     4,
+     4,
+     3,
+     4
+    ],
+    "read_rows": 8192,
+    "read_bytes": 36061,
+    "memory_bytes": 5191222,
+    "read_rows_with_condition_cache": 8192,
+    "read_bytes_with_condition_cache": 36061,
+    "granules_after_primary_key": "Granules: 1/43",
+    "parts_after_pruning": "Parts: 1/1",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "        ReadFromMergeTree (test_query_perf.base)",
+     "        Indexes:",
+     "          MinMax",
+     "            Keys:",
+     "            Condition: and((block_timestamp in (-Inf, 1787702399]), (block_timestamp in [1787616000, +Inf)))",
+     "            Parts: 1/2",
+     "            Granules: 43/109",
+     "          Partition",
+     "            Keys:",
+     "            Condition: and((toYYYYMM(block_timestamp) in (-Inf, 202608]), (toYYYYMM(block_timestamp) in [202608, +Inf)))",
+     "            Parts: 1/1",
+     "            Granules: 43/43",
+     "          PrimaryKey",
+     "            Keys:",
+     "            Condition: and((block_timestamp in (-Inf, 1787702399]), and((block_timestamp in [1787616000, +Inf)), (pool_address in ['0x173821f6ad4c5324cd35753a9fd12d92f2eaab29', '0x173821f6ad4c5324cd35753a9fd12d92f2eaab29'])))",
+     "            Parts: 1/1",
+     "            Granules: 1/43",
+     "            Search Algorithm: binary search"
+    ]
+   },
+   "all_pools_one_day": {
+    "ms_median": 5,
+    "ms_all": [
+     6,
+     6,
+     5,
+     5,
+     5
+    ],
+    "read_rows": 57344,
+    "read_bytes": 2121994,
+    "memory_bytes": 5322828,
+    "read_rows_with_condition_cache": 57344,
+    "read_bytes_with_condition_cache": 2121994,
+    "granules_after_primary_key": "Granules: 7/43",
+    "parts_after_pruning": "Parts: 1/1",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "        ReadFromMergeTree (test_query_perf.base)",
+     "        Indexes:",
+     "          MinMax",
+     "            Keys:",
+     "            Condition: and((block_timestamp in (-Inf, 1787702399]), (block_timestamp in [1787616000, +Inf)))",
+     "            Parts: 1/2",
+     "            Granules: 43/109",
+     "          Partition",
+     "            Keys:",
+     "            Condition: and((toYYYYMM(block_timestamp) in (-Inf, 202608]), (toYYYYMM(block_timestamp) in [202608, +Inf)))",
+     "            Parts: 1/1",
+     "            Granules: 43/43",
+     "          PrimaryKey",
+     "            Keys:",
+     "            Condition: and((block_timestamp in (-Inf, 1787702399]), (block_timestamp in [1787616000, +Inf)))",
+     "            Parts: 1/1",
+     "            Granules: 7/43",
+     "            Search Algorithm: generic exclusion search"
+    ]
+   },
+   "all_pools_one_week": {
+    "ms_median": 8,
+    "ms_all": [
+     9,
+     8,
+     8,
+     7,
+     8
+    ],
+    "read_rows": 208897,
+    "read_bytes": 7729347,
+    "memory_bytes": 9306120,
+    "read_rows_with_condition_cache": 208897,
+    "read_bytes_with_condition_cache": 7729347,
+    "granules_after_primary_key": "Granules: 26/43",
+    "parts_after_pruning": "Parts: 1/1",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "        ReadFromMergeTree (test_query_perf.base)",
+     "        Indexes:",
+     "          MinMax",
+     "            Keys:",
+     "            Condition: and((block_timestamp in (-Inf, 1788220799]), (block_timestamp in [1787616000, +Inf)))",
+     "            Parts: 1/2",
+     "            Granules: 43/109",
+     "          Partition",
+     "            Keys:",
+     "            Condition: and((toYYYYMM(block_timestamp) in (-Inf, 202609]), (toYYYYMM(block_timestamp) in [202608, +Inf)))",
+     "            Parts: 1/1",
+     "            Granules: 43/43",
+     "          PrimaryKey",
+     "            Keys:",
+     "            Condition: and((block_timestamp in (-Inf, 1788220799]), (block_timestamp in [1787616000, +Inf)))",
+     "            Parts: 1/1",
+     "            Granules: 26/43",
+     "            Search Algorithm: generic exclusion search"
+    ]
+   },
+   "point_lookup_tx_hash": {
+    "ms_median": 6,
+    "ms_all": [
+     6,
+     6,
+     7,
+     6,
+     7
+    ],
+    "read_rows": 881187,
+    "read_bytes": 28862936,
+    "memory_bytes": 4401284,
+    "read_rows_with_condition_cache": 8192,
+    "read_bytes_with_condition_cache": 884744,
+    "granules_after_primary_key": "Granules: 109/109",
+    "parts_after_pruning": "Parts: 2/2",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "    ReadFromMergeTree (test_query_perf.base)",
+     "    Indexes:",
+     "      MinMax",
+     "        Condition: true",
+     "        Parts: 2/2",
+     "        Granules: 109/109",
+     "      Partition",
+     "        Condition: true",
+     "        Parts: 2/2",
+     "        Granules: 109/109",
+     "      PrimaryKey",
+     "        Condition: true",
+     "        Parts: 2/2",
+     "        Granules: 109/109"
+    ]
+   },
+   "point_lookup_absent_hash": {
+    "ms_median": 7,
+    "ms_all": [
+     7,
+     7,
+     8,
+     7,
+     7
+    ],
+    "read_rows": 881187,
+    "read_bytes": 28198848,
+    "memory_bytes": 4392868,
+    "read_rows_with_condition_cache": 0,
+    "read_bytes_with_condition_cache": 0,
+    "granules_after_primary_key": "Granules: 109/109",
+    "parts_after_pruning": "Parts: 2/2"
+   }
+  }
+ },
+ "projection": {
+  "table_bytes_before": 74684804,
+  "table_bytes_after": 74684804,
+  "projection_bytes": 75011083,
+  "build_seconds": 0.39,
+  "queries": {
+   "all_pools_one_day": {
+    "ms_median": 5,
+    "ms_all": [
+     5,
+     5,
+     4,
+     5,
+     4
+    ],
+    "read_rows": 40960,
+    "read_bytes": 1515520,
+    "memory_bytes": 6266343,
+    "read_rows_with_condition_cache": 40960,
+    "read_bytes_with_condition_cache": 1515520,
+    "granules_after_primary_key": "Granules: 5/43",
+    "parts_after_pruning": "Parts: 1/1",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "      ReadFromMergeTree (by_time)",
+     "      Indexes:",
+     "        PrimaryKey",
+     "          Keys:",
+     "          Condition: and((block_timestamp in (-Inf, 1787702399]), (block_timestamp in [1787616000, +Inf)))",
+     "          Parts: 1/1",
+     "          Granules: 5/43",
+     "          Search Algorithm: binary search"
+    ]
+   },
+   "all_pools_one_week": {
+    "ms_median": 6,
+    "ms_all": [
+     6,
+     6,
+     7,
+     6,
+     7
+    ],
+    "read_rows": 200705,
+    "read_bytes": 7426085,
+    "memory_bytes": 9917944,
+    "read_rows_with_condition_cache": 200705,
+    "read_bytes_with_condition_cache": 7426085,
+    "granules_after_primary_key": "Granules: 25/43",
+    "parts_after_pruning": "Parts: 1/1",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "      ReadFromMergeTree (by_time)",
+     "      Indexes:",
+     "        PrimaryKey",
+     "          Keys:",
+     "          Condition: and((block_timestamp in (-Inf, 1788220799]), (block_timestamp in [1787616000, +Inf)))",
+     "          Parts: 1/1",
+     "          Granules: 25/43",
+     "          Search Algorithm: binary search"
+    ]
+   },
+   "one_pool_one_day_big": {
+    "ms_median": 4,
+    "ms_all": [
+     5,
+     5,
+     4,
+     4,
+     4
+    ],
+    "read_rows": 24576,
+    "read_bytes": 909312,
+    "memory_bytes": 6206634,
+    "read_rows_with_condition_cache": 24576,
+    "read_bytes_with_condition_cache": 909312,
+    "granules_after_primary_key": "Granules: 3/43",
+    "parts_after_pruning": "Parts: 1/1",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "        ReadFromMergeTree (test_query_perf.proj)",
+     "        Indexes:",
+     "          MinMax",
+     "            Keys:",
+     "            Condition: and((block_timestamp in (-Inf, 1787702399]), (block_timestamp in [1787616000, +Inf)))",
+     "            Parts: 1/2",
+     "            Granules: 43/109",
+     "          Partition",
+     "            Keys:",
+     "            Condition: and((toYYYYMM(block_timestamp) in (-Inf, 202608]), (toYYYYMM(block_timestamp) in [202608, +Inf)))",
+     "            Parts: 1/1",
+     "            Granules: 43/43",
+     "          PrimaryKey",
+     "            Keys:",
+     "            Condition: and((block_timestamp in (-Inf, 1787702399]), and((block_timestamp in [1787616000, +Inf)), (pool_address in ['0xe0554a476a092703abdb3ef35c80e0d76d32939f', '0xe0554a476a092703abdb3ef35c80e0d76d32939f'])))",
+     "            Parts: 1/1",
+     "            Granules: 3/43",
+     "            Search Algorithm: binary search"
+    ]
+   },
+   "daily_volume_all_pools": {
+    "ms_median": 34,
+    "ms_all": [
+     32,
+     37,
+     32,
+     34,
+     34
+    ],
+    "read_rows": 881187,
+    "read_bytes": 32603919,
+    "memory_bytes": 13895032,
+    "read_rows_with_condition_cache": 881187,
+    "read_bytes_with_condition_cache": 32603919,
+    "granules_after_primary_key": "Granules: 109/109",
+    "parts_after_pruning": "Parts: 2/2",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "      ReadFromMergeTree (test_query_perf.proj)",
+     "      Indexes:",
+     "        MinMax",
+     "          Condition: true",
+     "          Parts: 2/2",
+     "          Granules: 109/109",
+     "        Partition",
+     "          Condition: true",
+     "          Parts: 2/2",
+     "          Granules: 109/109",
+     "        PrimaryKey",
+     "          Condition: true",
+     "          Parts: 2/2",
+     "          Granules: 109/109"
+    ]
+   }
+  }
+ },
+ "bloom_filter": {
+  "index_compressed_bytes": 1069149,
+  "index_uncompressed_bytes": 1064526,
+  "build_seconds": 0.04,
+  "table_bytes": 74684804,
+  "queries": {
+   "point_lookup_tx_hash": {
+    "ms_median": 3,
+    "ms_all": [
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "read_rows": 8192,
+    "read_bytes": 884744,
+    "memory_bytes": 4433692,
+    "read_rows_with_condition_cache": 8192,
+    "read_bytes_with_condition_cache": 884744,
+    "granules_after_primary_key": "Granules: 1/109",
+    "parts_after_pruning": "Parts: 1/2",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "    ReadFromMergeTree (test_query_perf.bloom)",
+     "    Indexes:",
+     "      MinMax",
+     "        Condition: true",
+     "        Parts: 2/2",
+     "        Granules: 109/109",
+     "      Partition",
+     "        Condition: true",
+     "        Parts: 2/2",
+     "        Granules: 109/109",
+     "      PrimaryKey",
+     "        Condition: true",
+     "        Parts: 2/2",
+     "        Granules: 109/109",
+     "      Skip",
+     "        Name: tx_bloom",
+     "        Description: bloom_filter GRANULARITY 1",
+     "        Parts: 1/2",
+     "        Granules: 1/109"
+    ]
+   },
+   "point_lookup_absent_hash": {
+    "ms_median": 2,
+    "ms_all": [
+     3,
+     2,
+     2,
+     2,
+     2
+    ],
+    "read_rows": 24576,
+    "read_bytes": 786456,
+    "memory_bytes": 4424156,
+    "read_rows_with_condition_cache": 24576,
+    "read_bytes_with_condition_cache": 786456,
+    "granules_after_primary_key": "Granules: 3/109",
+    "parts_after_pruning": "Parts: 2/2",
+    "explain": [
+     "Expression ((Project names + Projection))",
+     "    ReadFromMergeTree (test_query_perf.bloom)",
+     "    Indexes:",
+     "      MinMax",
+     "        Condition: true",
+     "        Parts: 2/2",
+     "        Granules: 109/109",
+     "      Partition",
+     "        Condition: true",
+     "        Parts: 2/2",
+     "        Granules: 109/109",
+     "      PrimaryKey",
+     "        Condition: true",
+     "        Parts: 2/2",
+     "        Granules: 109/109",
+     "      Skip",
+     "        Name: tx_bloom",
+     "        Description: bloom_filter GRANULARITY 1",
+     "        Parts: 2/2",
+     "        Granules: 3/109"
+    ]
+   }
+  }
+ },
+ "inserts": {
+  "rows": 50000,
+  "ins_one_batch": {
+   "inserts": 1,
+   "rows_per_insert": 50000,
+   "insert_seconds": 0.14,
+   "active_parts_right_after": 1,
+   "after_20s": {
+    "parts": 1,
+    "rows": 50000,
+    "compressed_bytes": 4319514,
+    "marks": 7
+   },
+   "parts_still_on_disk_incl_inactive": 1,
+   "part_log": {
+    "new_parts": 1,
+    "merges": 0,
+    "rows_rewritten_by_merges": 0,
+    "merge_ms": 0,
+    "bytes_written_by_merges": 0
+   }
+  },
+  "ins_many_batches": {
+   "inserts": 1000,
+   "rows_per_insert": 50,
+   "insert_seconds": 74.59,
+   "active_parts_right_after": 7,
+   "after_20s": {
+    "parts": 6,
+    "rows": 50000,
+    "compressed_bytes": 4329192,
+    "marks": 17
+   },
+   "parts_still_on_disk_incl_inactive": 1491,
+   "part_log": {
+    "new_parts": 1000,
+    "merges": 491,
+    "rows_rewritten_by_merges": 4598150,
+    "merge_ms": 12785,
+    "bytes_written_by_merges": 399131220
+   }
+  }
+ },
+ "database_dropped": true
+}
