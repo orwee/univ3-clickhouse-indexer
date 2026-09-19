@@ -45,3 +45,73 @@ Requirements: Docker with the compose plugin, [uv](https://docs.astral.sh/uv/),
 
 `make down` stops the server and keeps the data: it lives in a named Docker
 volume. `make logs` follows the server log.
+
+## Backfill to a raw landing zone
+
+The backfill does not write to ClickHouse. It lands every Swap log as JSONL on
+disk, so ClickHouse can be loaded and reloaded as often as the schema changes
+without spending another provider call. Each line holds the decoded swap
+(integers as strings, because amounts are int256) and the raw log it came from.
+
+It needs `ALCHEMY_API_KEY`, so it runs as a user who can read `api-keys.env`.
+Data goes **outside the repo**: `/var/lib/univ3-indexer` when run as root,
+`~/.local/share/univ3-indexer` otherwise, or wherever `UNIV3_DATA_DIR` points.
+
+| | 30 days, 4 pools (measured 2026-09-19) |
+|---|---|
+| Calls | 21,600 (10 blocks each, all pools in one call) |
+| Time | ~72 min at the default 5 calls per second |
+| Rows | ~881,000 |
+| Disk | ~1.3 GB of JSONL (~1,480 bytes per line; gzip shrinks it ~7.7x) |
+| Files | ~216, one per 1,000 blocks: `swaps_<from>_<to>.jsonl` |
+
+**See the plan without fetching or writing anything:**
+
+```
+PYTHONPATH=src uv run python -m univ3_indexer.cli --days 30 --dry-run
+```
+
+**Launch** (detached, so it survives the terminal):
+
+```
+tmux new-session -d -s backfill \
+  'PYTHONPATH=src .venv/bin/python -m univ3_indexer.cli --days 30 --rps 5 \
+     --log-file /var/lib/univ3-indexer/backfill.log'
+```
+
+**Watch the progress.** A plain line every 5 batches, no progress bar:
+
+```
+tail -f /var/lib/univ3-indexer/backfill.log
+# 2026-09-19 12:00:00 INFO block 25801000 |  12.5% | rows this run 110000 | 4.98 calls/s (0 retries) | 50 blocks/s | ETA 1h03m00s
+cat /var/lib/univ3-indexer/checkpoint.json     # last block safely on disk
+```
+
+**Stop it cleanly:** `tmux send-keys -t backfill C-c` (or `kill -TERM <pid>`).
+It exits with code 130. At most the batch in flight is lost: 100 calls.
+
+**Resume:** run exactly the same command again. The block window and the pool
+set were saved in `plan.json` on the first run, so `--days 30` does not slide
+forward; the run continues from `checkpoint.json`. Re-running a range rewrites
+the same file, so resuming never duplicates rows. To backfill a different
+window or pool set, use another `--checkpoint` and `--out`.
+
+Exit codes: `0` finished, `2` bad arguments, `3` the provider rejected a
+request permanently (for instance `-32600`, range too wide: not retried), `4`
+network trouble outlasted the retries, `5` more than 20% of requests needed a
+retry (aborted to protect the quota: lower `--rps` and resume), `130`
+interrupted. In every case the checkpoint only points at files that are
+completely on disk.
+
+**Check what landed:**
+
+```
+PYTHONPATH=src uv run python -c "
+from univ3_indexer import config, landing
+d = config.data_dir() / 'landing'
+print(landing.check_coverage(d), sum(1 for _ in landing.read_landing(d)))"
+```
+
+`check_coverage` fails on any gap or overlap between files;
+`read_landing(d, redecode=True)` decodes again from the raw logs, which is how
+a fixed decoder is applied to data already on disk.
