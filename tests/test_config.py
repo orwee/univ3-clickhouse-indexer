@@ -124,7 +124,15 @@ def test_data_dir_defaults_to_xdg_data_home_outside_the_repo(monkeypatch, tmp_pa
     monkeypatch.delenv(config.DATA_DIR_POINTER, raising=False)
     monkeypatch.setattr(config, "REPO_ROOT", tmp_path / "repo-without-dotenv")
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(config.os, "geteuid", lambda: 1001)
     assert config.data_dir() == (tmp_path / "xdg" / "univ3-indexer").resolve()
+
+
+def test_data_dir_for_root_is_var_lib(monkeypatch, tmp_path):
+    monkeypatch.delenv(config.DATA_DIR_POINTER, raising=False)
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path / "repo-without-dotenv")
+    monkeypatch.setattr(config.os, "geteuid", lambda: 0)
+    assert config.data_dir() == config.Path(config.ROOT_DATA_DIR)
 
 
 def test_data_dir_can_be_pointed_elsewhere(monkeypatch, tmp_path):

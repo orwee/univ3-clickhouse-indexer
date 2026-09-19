@@ -113,6 +113,7 @@ def require_api_key(name: str) -> str:
 
 
 DATA_DIR_POINTER = "UNIV3_DATA_DIR"
+ROOT_DATA_DIR = "/var/lib/univ3-indexer"
 
 
 def data_dir() -> Path:
@@ -123,13 +124,16 @@ def data_dir() -> Path:
     the repo owner cannot modify or clean up.
 
     Resolution order: ``UNIV3_DATA_DIR`` in the environment, the same pointer in
-    the repo ``.env``, then ``$XDG_DATA_HOME/univ3-indexer`` (which defaults to
-    ``~/.local/share/univ3-indexer`` of whoever runs the process).
+    the repo ``.env``, then ``/var/lib/univ3-indexer`` when running as root (the
+    conventional place for a system service's state), otherwise
+    ``$XDG_DATA_HOME/univ3-indexer`` (``~/.local/share/univ3-indexer``).
     """
     raw = os.environ.get(DATA_DIR_POINTER)
     if not raw:
         repo_env, _ = _read_env_file(REPO_ROOT / ".env")
         raw = repo_env.get(DATA_DIR_POINTER)
+    if not raw and os.geteuid() == 0:
+        raw = ROOT_DATA_DIR
     if not raw:
         xdg = os.environ.get("XDG_DATA_HOME") or "~/.local/share"
         raw = str(Path(xdg) / "univ3-indexer")
