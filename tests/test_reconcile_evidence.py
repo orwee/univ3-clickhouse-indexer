@@ -194,3 +194,55 @@ def test_without_the_hourly_table_the_section_says_so(clickhouse, database):
     result = synthetic([])
     assert reconcile._hourly_by_pool_day(clickhouse, database, result, parameters()) is None
     assert "section skipped" in "\n".join(reconcile._evidence_hourly(result, None))
+
+
+# --- H2 out of sample: the placebo query, on the planted swaps -------------------------------
+
+
+def test_the_placebo_revalues_as_many_swaps_as_are_displaced_but_other_ones(clickhouse, database):
+    from univ3_indexer import h2_check
+
+    ((key, row),) = h2_check.adjustments(clickhouse, database, parameters(), seed=1).items()
+    assert key == (POOL, DAY)
+    assert (row["displaced_swaps"], row["placebo_swaps"]) == (3, 3)
+    # The three displaced swaps are worth less at the reference; sixty normal ones are worth the
+    # same either way, so revaluing three of THEM changes nothing.
+    expected = (1_000_000 + 1_000_500) * (1.0001**-4000 - 1) + 2_000 * (1.0001**-8000 - 1)
+    assert row["delta_displaced"] == pytest.approx(expected, rel=1e-6)
+    assert row["delta_placebo"] == pytest.approx(0, abs=1e-6)
+    assert row["delta_all"] == pytest.approx(row["delta_displaced"], rel=1e-9)
+
+
+def test_the_placebo_is_reproducible_for_a_seed_and_differs_between_seeds(
+    clickhouse, temp_database
+):
+    from univ3_indexer import h2_check
+
+    ch.apply_ddl(clickhouse, temp_database)
+    rows = planted()
+    # make the normal swaps differ in how far they were executed from the reference, so that
+    # WHICH ones the placebo picks shows in the sum
+    for i, row in enumerate(rows):
+        if row[5] == OTHERS:
+            row[8] = int(row[8] * (1 + i / 1000))  # the WETH leg
+    clickhouse.insert(ch.qualified(temp_database), rows, column_names=loader.COLUMNS)
+
+    def placebo(seed):
+        rows = h2_check.adjustments(clickhouse, temp_database, parameters(), seed=seed)
+        return rows[(POOL, DAY)]["delta_placebo"]
+
+    picks = [placebo(seed) for seed in (1, 1, 2, 3, 4)]
+    assert picks[0] == picks[1], "same seed, same swaps"
+    assert len(set(picks)) > 1, "another seed, other swaps"
+
+
+def test_the_protocol_constants_are_the_preregistered_ones():
+    import datetime as dt
+
+    from univ3_indexer import h2_check
+
+    assert h2_check.HOLD_OUT == (dt.date(2026, 8, 10), dt.date(2026, 8, 19))
+    assert h2_check.IN_SAMPLE == (dt.date(2026, 8, 21), dt.date(2026, 9, 19))
+    assert h2_check.PLACEBO_SEEDS == list(range(1, 21))
+    assert reconcile.DISPLACEMENT_TICKS == 100
+    assert (reconcile.DEFAULT_THRESHOLD, reconcile.DEFAULT_ABS_THRESHOLD) == (0.01, 1000.0)
