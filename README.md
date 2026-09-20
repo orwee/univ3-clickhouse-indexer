@@ -111,6 +111,7 @@ uv downloads Python 3.12 by itself.
 | Create and backfill the materialized view, once | `make mv-setup` | no |
 | Sanity queries, report in `reports/sanity.md` | `make sanity` | no |
 | dbt: seed, staging, marts, tests | `make dbt-build` | no |
+| Show that every dbt test can fail (breaks data in throw-away databases) | `make dbt-prove` | no |
 | Daily volume from the external source | `make fetch-external` | no (public API) |
 | Hourly candles, to see in which hours a day differs (optional) | `make fetch-external-hourly` | no (public API) |
 | Reconcile, reports in `reports/` | `make reconcile` | no |

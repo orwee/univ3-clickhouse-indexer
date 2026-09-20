@@ -7,11 +7,11 @@ seeds:
       fails if the two diverge. Addresses are lower-case here, to match the raw table.
     columns:
       - name: pool_address
-        tests: [not_null, unique]
+        description: "Lower-case. String, not Nullable: not_default, because not_null cannot fail here."
+        tests: [unique, not_default]
       - name: fee
         description: Fee in hundredths of a basis point (500 = 0.05%). fee / 1e6 is the fraction.
         tests:
-          - not_null
           - accepted_values:
               arguments:
                 values: [100, 500, 3000, 10000]
@@ -27,39 +27,32 @@ models:
           arguments:
             columns: [block_number, log_index]
     columns:
+      # Only volume_usd is Nullable in this model. On every other column not_null could never
+      # fail in ClickHouse, and a relationships test to the seed could not either, because the
+      # model INNER JOINs that seed: those tests were removed. What replaced them looks at
+      # the source (assert_every_raw_pool_is_in_the_seed), at the type default (not_default)
+      # and at the content (the singular tests in dbt/tests/).
       - name: pool_address
-        tests:
-          - not_null
-          - relationships:
-              arguments:
-                to: ref('pools')
-                field: pool_address
       - name: block_number
-        tests: [not_null]
       - name: log_index
-        tests: [not_null]
       - name: block_timestamp
-        tests: [not_null]
+        description: UTC. 1970-01-01 would mean a log that was landed without its timestamp.
+        tests: [not_default]
       - name: block_date
         description: UTC calendar day of the block.
-        tests: [not_null]
       - name: tx_hash
-        description: "'0x' + 64 lower-case hex characters."
-        tests: [not_null]
+        description: "'0x' + 64 lower-case hex characters (assert_hashes_and_addresses_are_well_formed)."
       - name: amount0_raw
         description: Signed Int256 exactly as emitted. Positive = the pool received it.
-        tests: [not_null]
       - name: amount1_raw
-        tests: [not_null]
       - name: amount0
-        description: amount0_raw divided by 10^decimals0, as an exact Decimal(76, 18). Never a float.
-        tests: [not_null]
+        description: >
+          amount0_raw divided by 10^decimals0, as an exact Decimal(76, 18). Never a float.
+          Zero is legitimate (dust swaps), so there is no not_default here;
+          assert_scaled_amounts_lose_no_digits checks the scaling.
       - name: amount1
-        tests: [not_null]
       - name: amount0_abs
-        tests: [not_null]
       - name: amount1_abs
-        tests: [not_null]
       - name: volume_usd
         description: >
           Absolute value of the stablecoin leg (symbols in the stablecoin_symbols var).

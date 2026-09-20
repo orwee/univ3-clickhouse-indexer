@@ -1,80 +1,69 @@
 version: 2
 
+# In ClickHouse a column is Nullable only if its type says so. not_null is kept ONLY on the
+# columns that are (volume_usd, fees_usd, smart_money_share_of_volume_usd); everywhere else
+# it could never fail and was removed, together with the relationships tests to a dimension
+# the models INNER JOIN and the non_negative tests on unsigned integers and sums of abs().
+# scripts/prove_dbt_tests_can_fail.py breaks the data on purpose and shows each remaining
+# test failing.
+
 models:
   - name: dim_pools
     description: One row per pool, from the seed generated out of pools.yml.
     columns:
       - name: pool_address
-        tests: [not_null, unique]
+        tests: [unique]
       - name: pool_label
-        tests: [not_null, unique]
+        description: Hand-written in pools.yml. assert_pool_label_states_its_fee_tier checks it against fee.
+        tests: [unique, not_default]
       - name: fee
-        tests: [not_null]
       - name: fee_fraction
         description: fee / 1e6, exact Decimal. 0.0005 for the 0.05% tier.
-        tests:
-          - not_null
-          - non_negative
 
   - name: fct_pool_daily
     description: >
       Daily activity per pool: swaps, volume of each token, volume_usd and estimated
       fees_usd. Carries pool_label and fee denormalised on purpose (see the model).
+      assert_mart_accounts_for_every_raw_swap compares it with the raw source, and
+      assert_denormalised_copies_match_the_dimension with dim_pools.
     tests:
       - unique_combination:
           arguments:
             columns: [pool_address, block_date]
     columns:
       - name: pool_address
-        tests:
-          - not_null
-          - relationships:
-              arguments:
-                to: ref('dim_pools')
-                field: pool_address
       - name: block_date
-        tests: [not_null]
       - name: pool_label
-        tests: [not_null]
+        tests: [not_default]
       - name: fee
-        tests: [not_null]
       - name: swaps
-        tests: [not_null, non_negative]
       - name: volume_token0
-        tests: [not_null, non_negative]
       - name: volume_token1
-        tests: [not_null, non_negative]
       - name: volume_usd
-        description: Sum of the stablecoin leg. NULL for a pool without a stablecoin.
-        tests: [not_null, non_negative]
+        description: "Sum of the stablecoin leg. Nullable: NULL for a pool without a stablecoin."
+        tests: [not_null]
       - name: fees_usd
-        description: volume_usd * fee / 1e6. An estimate; see the model header.
-        tests: [not_null, non_negative]
+        description: volume_usd * fee / 1e6. An estimate; see the model header. Nullable.
+        tests: [not_null]
 
   - name: fct_pool_daily_smart_money
     description: >
       Per pool and UTC day that was fetched from the Nansen API: our swaps and USD volume, the
       part that sits in transactions of smart-money traders, and both shares. Aggregates only.
       Empty when the Nansen aggregate was never computed (no API key).
+      assert_smart_money_is_a_part_of_the_pool_day checks the ranges.
     tests:
       - unique_combination:
           arguments:
             columns: [pool_address, block_date]
     columns:
       - name: pool_address
-        tests:
-          - not_null
-          - relationships:
-              arguments:
-                to: ref('dim_pools')
-                field: pool_address
       - name: block_date
-        tests: [not_null]
       - name: smart_money_swaps
-        tests: [not_null]
       - name: smart_money_share_of_swaps
         description: smart_money_swaps / swaps, between 0 and 1.
-        tests: [not_null]
       - name: smart_money_share_of_volume_usd
-        description: smart_money_volume_usd / volume_usd (stablecoin leg at 1 USD), between 0 and 1.
+        description: >
+          smart_money_volume_usd / volume_usd (stablecoin leg at 1 USD), between 0 and 1.
+          Nullable, because volume_usd is.
         tests: [not_null]
