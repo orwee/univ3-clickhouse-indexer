@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime
+import re
 import statistics
 import sys
 from dataclasses import dataclass, field
@@ -43,7 +44,8 @@ DISPLACEMENT_TICKS = 100  # "displaced" = more than this many ticks from the ref
 DISPLACEMENT_SENSITIVITY = [25, 50, 100, 200, 500, 1000]
 MIDNIGHT_MINUTES = 10
 SHIFTS = range(-12, 13)
-PENDING = "PENDIENTE — lo escribe Roberto"
+DRAFT = "DRAFT — to be reviewed and rewritten by Roberto"
+FINDINGS = config.REPO_ROOT / "docs" / "RECONCILIATION_FINDINGS.md"
 
 
 def _sql(name: str) -> str:
@@ -324,6 +326,17 @@ def _quantiles(values: list[float]) -> str:
     return " | ".join(_pct(v) for v in (ordered[0], pick(0.25), pick(0.5), pick(0.75), ordered[-1]))
 
 
+def draft_findings() -> list[str]:
+    """The draft findings are written once, in docs/RECONCILIATION_FINDINGS.md. Here only their
+    titles and states, so that the two cannot drift apart. The rest of this report stays
+    numbers only."""
+    titles = re.findall(r"^### (\d+\. .+)$", FINDINGS.read_text(encoding="utf-8"), re.MULTILINE)
+    return [f"**{DRAFT}**", "",
+            "Drafted by a coding agent from the numbers of one run; the text, with each figure "
+            "and the section of this report behind it, is `docs/RECONCILIATION_FINDINGS.md`. "
+            "Titles and states only:", "", *[f"- {t}" for t in titles]]  # fmt: skip
+
+
 def render_evidence(client, database: str, result: Result, pools=None) -> str:
     pools = pools if pools is not None else load_pools()
     parameters = {**stable_leg_parameters(pools, stablecoin_symbols()), "source": external.SOURCE}
@@ -332,9 +345,9 @@ def render_evidence(client, database: str, result: Result, pools=None) -> str:
     labels = result.labels
     out = [
         "# Reconciliation evidence", "",
-        "Numbers only. This file describes what was measured; it does not say why, and it does "
-        "not say what is acceptable.", "",
-        "## Hallazgos", "", PENDING, "",
+        "Numbers only, from section 1 on: what was measured, not why, and not what is "
+        "acceptable. The one exception is the list right below, which is a draft and says so.", "",
+        "## Hallazgos", "", *draft_findings(), "",
         "## 1. Day boundary", "",
         f"Our volume recomputed with the day cut moved from -12 h to +12 h in steps of 1 h, "
         f"against the external days, over {first_full} to {last_full} (days complete on our side "
