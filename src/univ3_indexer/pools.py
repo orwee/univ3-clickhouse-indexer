@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from univ3_indexer.addresses import Address, normalize
 from univ3_indexer.config import REPO_ROOT
 
 POOLS_FILE = REPO_ROOT / "pools.yml"
@@ -29,6 +30,11 @@ class Pool:
     decimals1: int
     fee: int
     label: str
+
+    @property
+    def key(self) -> Address:
+        """The address as stored and compared everywhere outside pools.yml: lower-case."""
+        return normalize(self.address)
 
 
 def load_pools(path: Path = POOLS_FILE) -> list[Pool]:
@@ -54,7 +60,7 @@ def load_pools(path: Path = POOLS_FILE) -> list[Pool]:
                 raise PoolsFileError(f"{where}: {name} must be an integer between 0 and 255")
         pools.append(pool)
 
-    addresses = [p.address.lower() for p in pools]
+    addresses = [p.key for p in pools]
     if len(set(addresses)) != len(addresses):
         raise PoolsFileError(f"{path}: the same pool address is listed twice")
     return pools

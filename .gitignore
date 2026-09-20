@@ -1,12 +1,14 @@
 # secrets and local pointers (real secrets live outside the repo, see .env.example)
 .env
 *.env
+!demo/demo.env
 
 # local data, never committed
 data/
 cache/
 labels/
 logs/
+reports/
 
 # python
 __pycache__/
@@ -17,3 +19,5 @@ __pycache__/
 # dbt
 target/
 dbt_packages/
+dbt/logs/
+dbt/.user.yml

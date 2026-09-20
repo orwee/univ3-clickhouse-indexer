@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Raw tables loaded from the JSONL landing zone. dbt only reads them.
+    schema: "{{ env_var('CLICKHOUSE_DB', 'onchain') }}"
+    tables:
+      - name: raw_swaps
+        description: >
+          One row per Uniswap v3 Swap log. Raw integers, hashes and addresses in binary
+          (sql/001_raw_swaps.sql, DECISIONS.md #10 to #14).

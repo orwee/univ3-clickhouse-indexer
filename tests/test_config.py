@@ -118,3 +118,30 @@ def test_unreadable_api_keys_file_says_permission_denied(monkeypatch, tmp_path):
 def test_unknown_api_key_name_is_a_programming_error():
     with pytest.raises(ValueError, match="unknown API key name"):
         config.require_api_key("SOMETHING_ELSE")
+
+
+def test_data_dir_defaults_to_xdg_data_home_outside_the_repo(monkeypatch, tmp_path):
+    monkeypatch.delenv(config.DATA_DIR_POINTER, raising=False)
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path / "repo-without-dotenv")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(config.os, "geteuid", lambda: 1001)
+    assert config.data_dir() == (tmp_path / "xdg" / "univ3-indexer").resolve()
+
+
+def test_data_dir_for_root_is_var_lib(monkeypatch, tmp_path):
+    monkeypatch.delenv(config.DATA_DIR_POINTER, raising=False)
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path / "repo-without-dotenv")
+    monkeypatch.setattr(config.os, "geteuid", lambda: 0)
+    assert config.data_dir() == config.Path(config.ROOT_DATA_DIR)
+
+
+def test_data_dir_can_be_pointed_elsewhere(monkeypatch, tmp_path):
+    monkeypatch.setenv(config.DATA_DIR_POINTER, str(tmp_path / "elsewhere"))
+    assert config.data_dir() == (tmp_path / "elsewhere").resolve()
+
+
+@pytest.mark.parametrize("inside", ["", "data", "src/../cache/x"])
+def test_data_dir_inside_the_working_copy_is_refused(monkeypatch, inside):
+    monkeypatch.setenv(config.DATA_DIR_POINTER, str(config.REPO_ROOT / inside))
+    with pytest.raises(config.ConfigError, match="inside the working copy"):
+        config.data_dir()

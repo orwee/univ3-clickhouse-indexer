@@ -14,6 +14,11 @@ dependencies = [
 ]
 
 [dependency-groups]
+dbt = [
+    "dbt-adapters==1.24.5",
+    "dbt-clickhouse==1.10.3",
+    "dbt-core>=1.12,<1.13",
+]
 dev = [
     "pycryptodome>=3.23.0",
     "pytest",
@@ -38,4 +43,19 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "B", "UP", "S"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "S105", "S106"]
+# S608: tests build SQL from their own throw-away database name, never from input.
+"tests/*" = ["S101", "S105", "S106", "S608"]
+# Measurement scripts build SQL out of table and column NAMES, which cannot be bound
+# as parameters. Everything interpolated is a module constant or a value read back
+# from the database itself, never outside input. Long lines are SQL text.
+"scripts/schema_experiments.py" = ["S608", "E501"]
+# The only interpolated value is the table name, validated by clickhouse.qualified().
+"src/univ3_indexer/loader.py" = ["S608"]
+"src/univ3_indexer/mv.py" = ["S608"]
+# Long lines are Markdown table rows; the only interpolated name is validated.
+"src/univ3_indexer/reconcile.py" = ["E501", "S608"]
+# Long lines are Markdown table rows.
+"src/univ3_indexer/sanity.py" = ["E501"]
+"scripts/check_sql_practice.py" = ["S608", "E501"]
+"scripts/query_performance.py" = ["S608", "E501"]
+"scripts/demo.py" = ["S608"]

@@ -23,3 +23,7 @@ def test_selector_is_first_four_bytes_of_keccak(signature, selector):
 def test_every_selector_constant_is_covered():
     constants = {v for k, v in vars(abi).items() if k.startswith("SELECTOR_")}
     assert constants == set(abi.SELECTORS.values())
+
+
+def test_swap_topic0_is_keccak_of_the_signature():
+    assert abi.SWAP_TOPIC0 == "0x" + keccak256_hex(abi.SWAP_SIGNATURE)

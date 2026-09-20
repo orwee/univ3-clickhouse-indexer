@@ -1,0 +1,27 @@
+# `make demo`: the whole pipeline on the committed fixtures, with no API key and nothing
+# installed but Docker. A throw-away ClickHouse (same pinned image as the real one, no
+# published ports, no named volume) and a runner that loads the fixtures, builds the
+# materialized view, runs dbt and reconciles. Everything is removed afterwards.
+name: univ3-demo
+
+services:
+  clickhouse-demo:
+    image: clickhouse/clickhouse-server:26.3.33.24
+    env_file: demo/demo.env
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  demo-runner:
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
+    env_file: demo/demo.env
+    depends_on:
+      clickhouse-demo:
+        condition: service_healthy
