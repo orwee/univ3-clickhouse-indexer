@@ -78,7 +78,9 @@ CREDIT_HEADERS = {
 # --- the documented cost and the budget -----------------------------------------------------------
 
 
-def test_the_documented_cost_is_the_one_read_in_the_official_table():
+def test_the_costs_and_the_ceiling_the_client_works_with_are_pinned():
+    # This cannot read Nansen's table: it pins the figures that were read there by hand, so
+    # that changing one is a visible edit and not a side effect.
     assert nansen.DOCUMENTED_COST == {"smart-money/dex-trades": 5, "tgm/dex-trades": 1}
     assert nansen.DEFAULT_BUDGET == 40, "the ceiling Roberto set for the tgm/dex-trades campaign"
 

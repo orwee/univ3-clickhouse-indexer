@@ -7,12 +7,15 @@ volume.
 
 It is a learning project: I built it to work with ClickHouse hands-on (MergeTree parts and
 merges, sparse primary indexes, materialized views, the system tables) rather than read
-about it. Every design choice is written down in [DECISIONS.md](DECISIONS.md) with the
-number that was measured for it, and the places where something went wrong are kept, not
-cleaned up.
+about it. The design choices are written down in [DECISIONS.md](DECISIONS.md), with the
+number that was measured wherever one was, and what went wrong along the way is kept where
+it happened instead of being cleaned up (for example the double count in
+[docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md) and the measurements spoiled by a
+cache in [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md)).
 
-Data in the working database today: 881,187 swaps of 4 pools over 31 days
-(2026-08-20 to 2026-09-19).
+Data in the working database on 2026-09-20: 898,404 swaps of 4 pools over 32 days
+(2026-08-20 to 2026-09-20). Some documents were measured on earlier states of the same
+table (863,587 and 881,187 rows) and say so.
 
 ## Architecture
 
@@ -74,7 +77,7 @@ make demo
 
 Runs the whole pipeline on the 242 real Swap logs committed as test fixtures, inside a
 throw-away ClickHouse: land, create the materialized view, load and verify, reload twice,
-`dbt build` (50 tests), internal reconciliation. About a minute once the images are
+`dbt build` (seed, models and every dbt test), internal reconciliation. About a minute once the images are
 pulled. It removes its containers, network and volumes when it ends, and returns a
 non-zero exit code if any step does not hold.
 
@@ -88,7 +91,7 @@ uv downloads Python 3.12 by itself.
 | Secrets files, outside the repo (names in `.env.example`) | by hand | |
 | Start ClickHouse | `make up` | no |
 | Check pool addresses on chain | `scripts/verify_pools.py` | **Alchemy** |
-| Backfill Swap logs to the landing zone | `python -m univ3_indexer.cli --days 30` | **Alchemy** |
+| Backfill Swap logs to the landing zone | `PYTHONPATH=src uv run python -m univ3_indexer.cli --days 30` | **Alchemy** |
 | Load the landing zone, idempotent, self-verifying | `make load` | no |
 | Create and backfill the materialized view, once | `make mv-setup` | no |
 | Sanity queries, report in `reports/sanity.md` | `make sanity` | no |
@@ -136,7 +139,7 @@ One or two sentences each; the reasoning is in [DECISIONS.md](DECISIONS.md), in 
 | Hard 3 GiB memory limit, no swap [#6](DECISIONS.md#6-a-hard-3-gib-memory-limit-with-no-swap-and-what-clickhouse-does-with-it) | A database that swaps gets slow in a way that is hard to attribute. | ClickHouse derives 2.70 GiB from the cgroup |
 | `dbt-adapters==1.24.5` [#7](DECISIONS.md#7-dbt-adapters-must-be-pinned-to-1245-when-dbt-is-added) | The only version dbt-core 1.12 and dbt-clickhouse 1.10.3 both accept. | |
 | Pool addresses verified on chain [#8](DECISIONS.md#8-pool-addresses-come-from-orwee-and-are-trusted-only-after-on-chain-checks), fourth pool derived from the factory [#9](DECISIONS.md#9-a-fourth-pool-derived-from-the-factory-instead-of-typed) | An address is trusted after `factory()` and `getPool()` agree, never typed from memory. | 4 of 4 pools valid |
-| MergeTree; deduplication belongs to the load [#10](DECISIONS.md#10-engine-mergetree-with-deduplication-left-to-the-load) | Finalised logs never change, so duplicates can only come from the pipeline. | Replacing with a non-unique key lost 64.4% of rows; without `FINAL` a total read 10.5% high; `FINAL` on unmerged parts 2.8x slower, no pruning. [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md) |
+| MergeTree; deduplication belongs to the load [#10](DECISIONS.md#10-engine-mergetree-with-deduplication-left-to-the-load) | Finalised logs never change, so duplicates can only come from the pipeline. | Replacing with a non-unique key lost 64.4% of rows; without `FINAL` a total read 10.5% high; `FINAL` on unmerged parts 2.8x slower. [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md) |
 | `ORDER BY (pool_address, block_timestamp, block_number, log_index)` [#11](DECISIONS.md#11-order-by-pool_address-block_timestamp-block_number-log_index-primary-key-on-the-first-two) | Chosen for filtered queries; the whole-table aggregate is a full scan with any key. | One pool, one day: 32,768 rows read against 634,211 with a key that lacks the time |
 | Monthly partitions [#12](DECISIONS.md#12-partition-by-month-for-management-and-not-for-speed) | A management unit, not a speed feature. | No read changed with or without it |
 | Int256 / UInt256 / UInt128, hashes in binary [#13](DECISIONS.md#13-types-lossless-integers-and-hashes-and-addresses-in-binary) | Lossless, and the largest column halved. | A real 1,136 WETH swap needs 70 bits; binary hashes made the table 30% smaller (84.8 bytes per row) |
@@ -151,12 +154,14 @@ times).
 
 ## How this was built
 
-The design decisions are mine, and so is [DECISIONS.md](DECISIONS.md); entries that an
-agent drafted from my notes say so at the top until I rewrite them. The implementation was
-done in unattended coding-agent sessions working from written specifications. Every change
-arrived as a pull request that a person reviewed and merged; the agents have no access to
-`main`. Where an agent got something wrong, or I had to redirect it, there is a line under
-[Agent corrections](DECISIONS.md#agent-corrections).
+The design decisions are mine. In [DECISIONS.md](DECISIONS.md), entries 1 to 9 are in my
+words; entries 10 to 17 were drafted by a coding agent from my notes and carry a banner that
+says so until I rewrite them, and the same goes for the findings and the limitations below.
+The implementation was done in unattended coding-agent sessions working from written
+specifications. Every change arrived as a pull request that I merged myself; the agents work
+on branches and do not push to `main` ([AGENTS.md](AGENTS.md) ends with a table of which of
+its rules a barrier enforces and which depend on the agent following them). Where I had to
+redirect an agent there is a line under [Agent corrections](DECISIONS.md#agent-corrections).
 
 ## Reconciliation findings
 
@@ -195,7 +200,9 @@ draft.
   signer is known only for the fraction of transactions that came back from Nansen
   ([docs/NANSEN.md](docs/NANSEN.md)).
 - **A stablecoin is taken at exactly 1 USD**, and a pool without one gets `volume_usd = NULL`.
-  Nothing in the pipeline checks the first assumption.
+  Nothing in the pipeline checks the first assumption, although the external source's
+  `close_usd` for USDC/WETH 0.01% is a USDC price and is stored (0.9990 to 1.0008 over the
+  window): it is never read.
 - **One external source, with no published methodology.** Finding 7 is a reading that fits the
   numbers, not a fact about GeckoTerminal.
 - **Batch backfill.** No continuous ingestion, no orchestration, no alerting: `make` targets

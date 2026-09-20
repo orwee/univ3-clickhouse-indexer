@@ -47,7 +47,8 @@ WITH
             day,
             greatest(abs(start_tick - reference_tick), abs(end_tick - reference_tick)) AS displacement,
             if(stable_is_0, a0, a1) / pow(10, stable_dec)                              AS usd,
-            -- raw price of token1 in token0 is 1.0001^tick; the stable leg's decimals do the rest
+            -- 1.0001^tick = raw units of token1 per raw unit of token0 (the price of token0
+            -- in token1); the stable leg's decimals do the rest
             if(stable_is_0, a1 / pow(1.0001, reference_tick), a0 * pow(1.0001, reference_tick))
                 / pow(10, stable_dec)                                                  AS usd_at_reference
         FROM swaps

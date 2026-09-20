@@ -1,6 +1,9 @@
--- INDEPENDENT recomputation of the daily aggregates, straight from raw_swaps.
--- No dbt model and no materialized view is read here, and the arithmetic is written
--- differently from both on purpose, so that agreeing with them means something:
+-- Recomputation of the daily aggregates, straight from raw_swaps. No dbt model and no
+-- materialized view is read here. What agreeing with the view proves is the BOOKKEEPING of
+-- the insert trigger (nothing lost, nothing counted twice, across backfill, incremental
+-- loads, full reloads and repairs). It proves nothing about the data: same table, same rows.
+-- The arithmetic is written differently on purpose, so that a shared mistake in an
+-- expression would not hide:
 --   * the day comes from toStartOfDay(..., 'UTC'), not from toDate();
 --   * |amount| is "what came in minus what went out" (sumIf positives - sumIf negatives),
 --     not abs(). For a signed integer these are the same number by definition.

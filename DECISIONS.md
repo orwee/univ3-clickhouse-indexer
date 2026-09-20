@@ -46,7 +46,8 @@ compare parts, merges and query plans side by side.
 ## 2. RPC as the raw source, the subgraph only as an external check
 
 - Date: 2026-09-18
-- Status: Accepted
+- Status: Accepted for the RPC part. The choice of the subgraph as the external
+  check is superseded by #17
 
 **Context.** Swap events are available from an Ethereum JSON-RPC node and,
 already decoded, from the Uniswap subgraph.
@@ -295,14 +296,20 @@ set has to be final before the backfill starts.
 - Date: 2026-09-19
 - Status: Accepted
 
-**Context.** Logs of finalised blocks never change, so duplicates can only come
-from my own pipeline: the backfill runner delivers at least once. The choice
+**Context.** The backfill stays 64 blocks behind the chain tip, where a reorg is
+not a practical concern (it does not ask the node for the `finalized` tag, so
+"finalised" would be claiming too much: see Limitations in the README). Logs that
+deep do not change, so duplicates can only come from my own pipeline: the backfill runner delivers at least once. The choice
 was between letting the engine clean up (ReplacingMergeTree) or making the load
 idempotent and keeping a plain MergeTree.
 
 **Decision.** `ENGINE = MergeTree`. Deduplication is not the engine's job. The
-load is idempotent because the table is rebuilt from the JSONL landing zone,
-where a batch delivered twice rewrites the same file.
+landing zone is idempotent (a batch delivered twice rewrites the same file) and
+the load is made idempotent on top of it: a full load rebuilds the table, and the
+incremental load compares each file's row count with what the table holds for
+that block range, then skips, inserts or repairs. What this does not cover is an
+INSERT retried after the server had already applied it; `make load-verify`
+(duplicates, counts, coverage) is what would catch that.
 
 **Why.** Measured on 463,447 real swaps (docs/SCHEMA_EXPERIMENTS.md):
 
@@ -312,15 +319,17 @@ where a batch delivered twice rewrites the same file.
 - With a correct key, and 10% of the files redelivered, the table total read
   **11.2% too high** (515,330 instead of 463,447) for as long as the merge had
   not happened and the query did not say `FINAL`. Nothing warns about it.
-- `FINAL` on unmerged parts cost **3x** on the main query (69 ms vs 23 ms) and
-  **removed index pruning**: a one-day query read the whole table.
+- `FINAL` on unmerged parts cost **3x** on the main query (69 ms vs 23 ms). (An
+  earlier version of this entry added that it "removed index pruning". The raw
+  results do not show that: the one-day query read the whole table with and
+  without `FINAL`, because the key tested there had no time in it.)
 
 Replacing moves the cost of a pipeline defect onto every query, forever, and
 makes the sorting key serve deduplication instead of queries.
 
 Repeated on the full 30 days (863,587 swaps) the picture is the same: 64.4%
 lost with a non-unique key, the total 10.5% too high without `FINAL`, and
-`FINAL` on unmerged parts 2.8x slower (114 ms vs 41 ms) with no pruning.
+`FINAL` on unmerged parts 2.8x slower (114 ms vs 41 ms).
 
 **Tradeoff.** Nothing inside the table protects me. If the load ever inserts a
 file twice, the duplicates stay until I reload. So the load verifies itself
@@ -436,8 +445,8 @@ Raw integers, never scaled by decimals in this table.
   costs 2.4 KB in total.
 
 **Tradeoff.** Hashes and addresses are unreadable in a plain `SELECT`: every
-display needs `lower(hex(col))` and every filter `unhex('…')`, and the join
-against the subgraph (whose ids are hex text) needs the conversion. The
+display needs `lower(hex(col))` and every filter `unhex('…')`, and any join
+against an outside source that carries hex text needs the conversion. The
 staging model in dbt is where that is done once. Arithmetic on 256-bit integers
 is slower than on 64-bit; irrelevant at this size.
 
@@ -541,6 +550,35 @@ it.
 
 **Revisit when.** Pools of very different size are added: then the absolute
 threshold should scale with the pool (for example a fraction of its median day).
+
+---
+
+## 17. The external check is GeckoTerminal, not the subgraph
+
+> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+
+- Date: 2026-09-20
+- Status: Accepted. Supersedes the external-check half of #2
+
+**Context.** #2 planned to reconcile against the Uniswap subgraph. When the
+external check was built, the requirement was a second source that needs no API
+key, so that the reconciliation can be reproduced by anyone who clones the repo.
+
+**Decision.** Daily USD volume per pool from the public GeckoTerminal API
+(`src/univ3_indexer/external.py`, docs/EXTERNAL_SOURCE.md). No subgraph code was
+ever written.
+
+**Why.** The principle of #2 stands: the check is only worth something if the two
+paths are independent, and someone else's indexer is. GeckoTerminal needs no key
+and serves six months of daily candles per pool in one call.
+
+**Tradeoff.** It publishes no methodology: not the day boundary, not how a swap
+is valued, not whether anything is filtered. The first was observed; the second
+is what findings 7 and 9 of docs/RECONCILIATION_FINDINGS.md run into. The
+subgraph would have given per-swap rows to join on, and a documented schema.
+
+**Revisit when.** A difference has to be explained swap by swap: then a source
+with per-swap rows (the subgraph, or a second indexer) is the next step.
 
 ---
 

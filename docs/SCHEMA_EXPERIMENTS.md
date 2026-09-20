@@ -21,7 +21,7 @@ wstETH/USDC 0.05% 4.688 (0,5 %) · wstETH/USDC 0.3% 610 (0,07 %).
 | Replacing con clave no única: filas perdidas | 65,7 % | **64,4 %** (quedan 307.720) |
 | Replacing sin `FINAL` ni merge: total inflado | 11,2 % | **10,5 %** (954.496 en vez de 863.587) |
 | `FINAL` sin mergear, consulta principal | 69 ms frente a 23 (3,0×) | **114 ms frente a 41 (2,8×)**, 45 MB de memoria frente a 9 |
-| `FINAL` sin mergear, un día de un pool | lee la tabla entera | lee la tabla entera (954.496 filas, 116 ms frente a 21) |
+| `FINAL` sin mergear, un día de un pool | tabla entera, **igual que sin `FINAL`** | tabla entera con y sin `FINAL` (954.496 filas); 116 ms frente a 21. La clave probada aquí no lleva tiempo: no había poda que perder |
 | Un día del pool grande, `(pool, timestamp)` | 32.768 filas · 4/57 gránulos | **32.768 filas · 4/106 gránulos** |
 | Un día del pool grande, `(pool, block_number, log_index)` | 348.759 filas · 43/57 | **634.211 filas · 78/106** (19 veces más) |
 | …la misma, con la caché de condiciones encendida | 49.152 | 49.152 |
@@ -284,8 +284,10 @@ lo que hace el ejecutor del backfill si muere entre el sink y el checkpoint.
 - **Sin `FINAL` y sin merge, el total sale inflado un 11,2 % y nada avisa.** Es el
   escenario del que habla `SCHEMA_OPTIONS.md`, ahora con cifra.
 - **`FINAL` con muchas partes pequeñas cuesta 3 veces más** en la consulta principal
-  (69 frente a 23 ms) y **anula la poda**: la consulta de un día lee la tabla entera
-  (67 ms frente a 13). En absoluto siguen siendo milisegundos.
+  (69 frente a 23 ms). La consulta de un día tarda 67 ms frente a 13, pero lee las
+  mismas filas con y sin `FINAL` (la tabla entera: la clave de este experimento no lleva
+  tiempo). Una versión anterior de este texto decía que `FINAL` "anula la poda": los
+  resultados crudos no lo muestran. En absoluto siguen siendo milisegundos.
 - **Con la tabla ya mergeada, `FINAL` es casi gratis en tiempo** (22 frente a 25 ms),
   pero lee **5 veces más bytes** en la consulta filtrada (12,9 frente a 2,5 MB). Mi
   explicación, no comprobada: con `FINAL` el filtro no se adelanta a la lectura

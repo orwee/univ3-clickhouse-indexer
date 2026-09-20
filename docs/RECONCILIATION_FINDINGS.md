@@ -48,7 +48,10 @@ one-hour shift only moves 0.13% to 0.18-0.23%, so for that pool the test says le
 Valuing every swap by its stablecoin leg at 1 USD, or by the other leg at the pool's own
 price, differs by -0.0038% (USDC/WETH 0.05%) and +0.0203% (USDC/WETH 0.01%) over the window;
 -0.0148% and -0.70% in the two thin pools ([evidence §2](evidence/2026-09-20/reconciliation_evidence.md#2-the-stablecoin-leg-against-the-other-leg-at-the-pools-own-price)). This does **not** measure whether USDC
-was worth 1 USD: there is no external USDC price anywhere in the pipeline.
+was worth 1 USD: both valuations end up in USDC. An outside USDC price does exist in the
+data and is not used: for USDC/WETH 0.01% the source's daily close is the price of USDC, and
+it stayed between 0.9990 and 1.0008 over the 30 compared days (`close_usd` in
+`external_daily_volume`).
 
 ### 5. In the liquid pools the 30-day totals agree and the daily noise is centred — EXPLAINED
 

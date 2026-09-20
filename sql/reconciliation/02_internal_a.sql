@@ -30,3 +30,8 @@ WHERE r.pool_address = '' OR v.pool_address = ''
    OR r.amount0_abs_sum != v.amount0_abs_sum
    OR r.amount1_abs_sum != v.amount1_abs_sum
 ORDER BY pool_address, block_date
+-- join_use_nulls is PINNED to 0. These comparisons rely on an unmatched side being filled
+-- with defaults ('' and 0). With join_use_nulls = 1 (a user profile can set it) they would
+-- compare with NULL, the WHERE would drop exactly the rows that matter, and a day missing
+-- from one side would read as "no differences".
+SETTINGS join_use_nulls = 0

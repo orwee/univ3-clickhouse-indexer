@@ -115,16 +115,24 @@ insert blocks, partly merged already), 0 differences.
 | Delete rows from the source and reinsert them | Those days are too high | `test_an_incremental_repair_with_the_view_attached_stays_exact` |
 
 The way out of all of them is the same: `make mv-check` to find out, and
-`python -m univ3_indexer.mv --rebuild` (truncate the target, aggregate the source
+`PYTHONPATH=src uv run python -m univ3_indexer.mv --rebuild` (truncate the target, aggregate the source
 again) to repair, with ingestion stopped. `make load`, `make load-full` and
 `make load-verify` now compare `swaps_daily` with a direct `GROUP BY` and exit
 non-zero when they differ.
 
 ## With a live writer
 
-Not needed here, written down because it is the usual situation. The view only
-handles inserts that start after it exists, so: create the view first; note a
-cut-off that every in-flight insert is safely above or below (a block number,
-here); then backfill `WHERE block_number <= cut-off`. Rows above the cut-off
-belong to the trigger and rows at or below it to the backfill. The cut-off is
-inclusive on exactly one side, and the test for the edge is the one that matters.
+**A sketch, not something this repo does or tests.** Everything above was done with
+ingestion stopped, and the tests of the cut-off (`test_c_…`) are sequential, with no
+concurrent writer.
+
+The view only handles inserts that start after it exists, so the usual recipe is: create
+the view first; note a cut-off; backfill `WHERE block_number <= cut-off`. For "rows above
+the cut-off belong to the trigger and rows at or below it to the backfill" to be TRUE,
+two things must hold that nothing in `002_swaps_daily_mv.sql` enforces (the trigger has
+no block predicate): inserts arrive in increasing block order, and the cut-off is the
+last block inserted before the view existed. This loader breaks the first one whenever it
+repairs an old file. With a live writer the robust version puts the predicate in the view
+itself (`WHERE block_number > X`, with X still in the future), waits for ingestion to
+pass X, and then backfills `<= X`; or it backfills into a second target and swaps the
+tables.
