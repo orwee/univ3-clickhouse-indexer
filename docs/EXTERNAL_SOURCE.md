@@ -56,3 +56,13 @@ nothing. `volume_usd` is `Float64` because the source publishes a JSON float.
 Raw response bodies are kept outside the working copy, under
 `<data dir>/external/geckoterminal/`. The four bodies of the first load are
 committed unmodified as test fixtures in `tests/fixtures/geckoterminal/`.
+
+## Hourly candles, for localising a day that differs
+
+`make fetch-external-hourly` loads the last 1,000 hourly candles per pool (about 41 days; the
+same endpoint with the `hour` timeframe, one call per pool) into `external_hourly_volume`
+(`sql/004_external_hourly_volume.sql`, same `ReplacingMergeTree(fetched_at)` + `FINAL` rules).
+They are not part of the reconciliation itself. The evidence report uses them to say in which
+hours of a flagged pool-day the two sources part. Observed on 2026-09-20: the 24 hourly
+candles of a day add up to its daily candle to the dollar, every timestamp is on the hour, and
+hours without trades are omitted, as days are.

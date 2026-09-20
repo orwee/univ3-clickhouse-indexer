@@ -51,6 +51,10 @@ MAX_LIMIT = 1000
 TABLE = "external_daily_volume"
 DDL = ch.SQL_DIR / "002_external_daily_volume.sql"
 COLUMNS = ["source", "pool_address", "date", "volume_usd", "close_usd", "fetched_at"]
+HOURLY_TABLE = "external_hourly_volume"
+HOURLY_DDL = ch.SQL_DIR / "004_external_hourly_volume.sql"
+HOURLY_COLUMNS = ["source", "pool_address", "hour", "volume_usd", "fetched_at"]
+TIMEFRAMES = ("day", "hour")
 _RETRYABLE = {429, 500, 502, 503, 504}
 
 
@@ -91,12 +95,18 @@ class GeckoTerminalClient:
 
     def daily_ohlcv_raw(self, pool: str, limit: int = MAX_LIMIT) -> str:
         """The response body, untouched, for one pool of pools.yml."""
+        return self.ohlcv_raw(pool, "day", limit)
+
+    def ohlcv_raw(self, pool: str, timeframe: str, limit: int = MAX_LIMIT) -> str:
+        """Daily or hourly candles, newest first, for one pool of pools.yml."""
+        if timeframe not in TIMEFRAMES:
+            raise ValueError(f"timeframe must be one of {TIMEFRAMES}")
         key = normalize(pool)
         if key not in self._allowed:
             raise ExternalSourceError(f"{key} is not in pools.yml: refusing to query it")
         if not 1 <= limit <= MAX_LIMIT:
             raise ValueError(f"limit must be between 1 and {MAX_LIMIT}")
-        url = f"{BASE_URL}/networks/{NETWORK}/pools/{key}/ohlcv/day"
+        url = f"{BASE_URL}/networks/{NETWORK}/pools/{key}/ohlcv/{timeframe}"
         params = {"aggregate": 1, "limit": limit, "currency": "usd"}
         problem = "no attempt made"
         for attempt in range(1, self._max_attempts + 1):
@@ -161,6 +171,45 @@ def parse_daily(pool: str, body: str) -> list[DailyVolume]:
     return [by_day[day] for day in sorted(by_day)]
 
 
+def parse_hourly(pool: str, body: str) -> list[tuple[datetime.datetime, float]]:
+    """(start of the hour in UTC, volume in USD), oldest first. The same candle twice is kept
+    once; two different candles for one hour are refused, as for the days."""
+    key = normalize(pool)
+    try:
+        candles = json.loads(body)["data"]["attributes"]["ohlcv_list"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ExternalSourceError(f"unexpected GeckoTerminal response for {key}") from exc
+    by_hour: dict[int, float] = {}
+    for candle in candles:
+        if len(candle) != 6:
+            raise ExternalSourceError(f"a candle for {key} does not have 6 fields")
+        timestamp, volume = int(candle[0]), float(candle[5])
+        if timestamp % 3600:
+            raise ExternalSourceError(f"an hourly candle for {key} does not start on the hour")
+        if by_hour.setdefault(timestamp, volume) != volume:
+            raise ExternalSourceError(f"two DIFFERENT hourly candles for {key}: refusing to choose")
+    return [(datetime.datetime.fromtimestamp(t, datetime.UTC), by_hour[t]) for t in sorted(by_hour)]
+
+
+def fetch_hourly(client, database: str, gecko: GeckoTerminalClient, raw_dir: Path | None) -> dict:
+    ch.apply_ddl(client, database, HOURLY_DDL)
+    fetched_at = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
+    summary = {}
+    for pool in load_pools():
+        body = gecko.ohlcv_raw(pool.key, "hour")
+        if raw_dir:
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            (raw_dir / f"{pool.key}.hour.json").write_text(body, encoding="utf-8")
+        rows = parse_hourly(pool.key, body)
+        data = [[SOURCE, str(pool.key), hour, volume, fetched_at] for hour, volume in rows]
+        if data:
+            client.insert(ch.qualified(database, HOURLY_TABLE), data, column_names=HOURLY_COLUMNS)
+        summary[pool.label] = {"hours": len(rows), "first": str(rows[0][0]) if rows else None,
+                               "last": str(rows[-1][0]) if rows else None}  # fmt: skip
+        log.info("%s: %d hourly candles", pool.label, len(rows))
+    return summary
+
+
 def store(client, database: str, rows: list[DailyVolume], fetched_at: datetime.datetime) -> int:
     ch.apply_ddl(client, database, DDL)
     data = [
@@ -193,13 +242,20 @@ def fetch_all(client, database: str, gecko: GeckoTerminalClient, raw_dir: Path |
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m univ3_indexer.external")
-    parser.add_argument("--fetch", action="store_true", required=True)
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--fetch", action="store_true", help="daily candles")
+    action.add_argument(
+        "--fetch-hourly",
+        action="store_true",
+        help="the last 1,000 hourly candles, to localise a day that differs",
+    )
     parser.add_argument("--database", help="default: CLICKHOUSE_DB")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     database = args.database or config.load_clickhouse_config().database
     raw_dir = config.data_dir() / "external" / SOURCE  # outside the working copy
-    summary = fetch_all(ch.connect(database=database), database, GeckoTerminalClient(), raw_dir)
+    fetcher = fetch_hourly if args.fetch_hourly else fetch_all
+    summary = fetcher(ch.connect(database=database), database, GeckoTerminalClient(), raw_dir)
     print(json.dumps(summary, indent=2))
     return 0
 
