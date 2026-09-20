@@ -109,6 +109,31 @@ def test_block_number():
     assert client.block_number() == 26_003_778
 
 
+def test_finalized_block_number_asks_for_the_tag_and_reads_the_number():
+    session = FakeSession(ok({"number": "0x18cc900", "hash": "0x" + "ab" * 32}))
+    client, _ = make_client(session)
+    assert client.finalized_block_number() == 0x18CC900
+    sent = session.requests[0]["json"]
+    assert (sent["method"], sent["params"]) == ("eth_getBlockByNumber", ["finalized", False])
+
+
+@pytest.mark.parametrize("result", [None, {}, {"number": None}, "0x10"])
+def test_a_node_without_a_finalized_block_is_an_rpc_error(result):
+    client, _ = make_client(FakeSession(ok(result)))
+    with pytest.raises(RpcError, match="no block"):
+        client.finalized_block_number()
+
+
+def test_a_node_that_rejects_the_tag_is_an_rpc_error_and_is_not_retried():
+    error = {"code": -32602, "message": "invalid block tag"}
+    rejected = FakeResponse(200, {"jsonrpc": "2.0", "id": 1, "error": error})
+    session = FakeSession(rejected)
+    client, _ = make_client(session)
+    with pytest.raises(RpcError) as caught:
+        client.finalized_block_number()
+    assert caught.value.code == -32602 and len(session.requests) == 1
+
+
 def test_get_logs_sends_every_pool_in_one_call_with_hex_bounds_and_timeouts():
     session = FakeSession(ok([{"logIndex": "0x1"}]))
     client, _ = make_client(session, connect_timeout=3, read_timeout=11)
@@ -246,3 +271,12 @@ def test_key_is_redacted_from_rpc_error_messages():
 def test_repr_does_not_show_the_url():
     client, _ = make_client(FakeSession())
     assert FAKE_KEY not in repr(client) and "alchemy" not in repr(client)
+
+
+def test_block_hash_asks_for_the_height_in_hex():
+    session = FakeSession(ok({"number": "0x10", "hash": "0x" + "cd" * 32}))
+    client, _ = make_client(session)
+    assert client.block_hash(16) == "0x" + "cd" * 32
+    assert session.requests[0]["json"]["params"] == ["0x10", False]
+    with pytest.raises(RpcError, match="no block"):
+        make_client(FakeSession(ok(None)))[0].block_hash(16)

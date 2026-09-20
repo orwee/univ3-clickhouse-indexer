@@ -223,9 +223,13 @@ draft.
 **DRAFT — to be reviewed and rewritten by Roberto**
 
 - **One protocol, one chain.** Uniswap v3 on Ethereum mainnet, four pools.
-- **No reorg handling.** The backfill stays 64 blocks behind the tip and never revisits a
-  block. `raw_swaps` has no `block_hash` and no `tx_index`; the landing zone keeps the whole
-  raw log, so both can be recovered without calling the provider again.
+- **No reorg handling, by staying out of their reach.** A backfill ends at the block the
+  node reports as finalised (`eth_getBlockByNumber("finalized")`); if the provider does not
+  know that tag it falls back to 64 blocks behind the tip and says in the log and in
+  `plan.json` that the window is not finalised. It never revisits a block. The data loaded
+  before 2026-09-21 was fetched with the 64-block rule. `raw_swaps` has no `block_hash` and no
+  `tx_index`; the landing zone keeps the whole raw log, so both can be recovered without
+  calling the provider again.
 - **No `tx.from`.** A Swap log carries `sender` and `recipient`, which are mostly routers. The
   signer is known only for the fraction of transactions that came back from Nansen
   ([docs/NANSEN.md](docs/NANSEN.md)).

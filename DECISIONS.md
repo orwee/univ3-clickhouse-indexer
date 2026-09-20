@@ -296,10 +296,11 @@ set has to be final before the backfill starts.
 - Date: 2026-09-19
 - Status: Accepted
 
-**Context.** The backfill stays 64 blocks behind the chain tip, where a reorg is
-not a practical concern (it does not ask the node for the `finalized` tag, so
-"finalised" would be claiming too much: see Limitations in the README). Logs that
-deep do not change, so duplicates can only come from my own pipeline: the backfill runner delivers at least once. The choice
+**Context.** The backfill ends at the block the node reports as finalised
+(`eth_getBlockByNumber("finalized")`, since 2026-09-21; until then it ended 64
+blocks behind the tip, which is deep but is not finality: the provider's finalised
+block was 93 blocks behind its tip when this was checked). Finalised logs do not
+change, so duplicates can only come from my own pipeline: the backfill runner delivers at least once. The choice
 was between letting the engine clean up (ReplacingMergeTree) or making the load
 idempotent and keeping a plain MergeTree.
 
