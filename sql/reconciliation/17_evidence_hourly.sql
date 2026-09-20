@@ -29,3 +29,8 @@ SELECT
 FROM ours AS o
 FULL OUTER JOIN theirs AS t ON t.hour_start = o.hour_start
 ORDER BY hour_of_day
+-- join_use_nulls is PINNED to 0. These comparisons rely on an unmatched side being filled
+-- with defaults ('' and 0). With join_use_nulls = 1 (a user profile can set it) they would
+-- compare with NULL, the WHERE would drop exactly the rows that matter, and a day missing
+-- from one side would read as "no differences".
+SETTINGS join_use_nulls = 0

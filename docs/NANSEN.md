@@ -1,9 +1,12 @@
 # Nansen: what it adds to a Swap log, what runs today, and what production would add
 
 A Uniswap v3 `Swap` log says which pool traded, how much, at what price, and names two
-addresses: `sender` (whoever called the pool, almost always a router or an aggregator) and
-`recipient`. It does **not** say who signed the transaction. In this dataset the eight
-largest senders are 69% of the volume and they are contracts, not people.
+addresses: `sender` and `recipient`. It does **not** say who signed the transaction.
+`sender` is the caller of the pool's `swap()`, and Uniswap v3 collects the input token through
+a callback on that caller, so a sender is always a contract (a router, an aggregator, a bot's
+own contract) and never the wallet behind it. In this dataset the eight largest senders carry
+69% of the USD volume and the largest one 32%
+([sql/examples/03_sender_concentration.sql](../sql/examples/03_sender_concentration.sql)).
 
 Nansen brings the two things the log lacks:
 
@@ -31,8 +34,11 @@ table (<https://docs.nansen.ai/getting-started/credits.md>, "Endpoint Credit Cos
 | USDC, 2026-08-21 to 2026-09-19, smart money only | `tgm/dex-trades` | 1 | 2 | 2 |
 | **Total** | | | **5** | **9** |
 
-Balance: 100 trial credits at the start, **91 left**. The ceiling for the `tgm/dex-trades`
-campaign was 40 credits; it used 4.
+Balance: 100 trial credits at the start, **91 left**. The Free plan is 100 one-time trial
+credits and, once they are gone, a daily top-up back to a 10-credit balance: that steady
+state is the "10 credits a day" of DECISIONS.md #4 and AGENTS.md, written before the trial
+credits were known to be intact. The ceiling for the `tgm/dex-trades` campaign, 40 credits,
+was the owner's cap out of the 95 then left, not a function of the allowance; it used 4.
 
 ### The probe, and why the token is USDC and not WETH
 
@@ -48,7 +54,7 @@ single page, which put 30 days at about 1,440 trades, two pages of 1,000. The re
 
 ### The result
 
-`python -m univ3_indexer.nansen --daily USDC …` crosses the cached trades with `raw_swaps` by
+`PYTHONPATH=src uv run python -m univ3_indexer.nansen --daily USDC …` crosses the cached trades with `raw_swaps` by
 transaction hash and stores one row per pool and UTC day in `nansen_smart_money_daily`
 (`sql/003_nansen_smart_money_daily.sql`); the dbt model `fct_pool_daily_smart_money` divides
 by `fct_pool_daily`. 30 complete days, 120 pool-days, 2026-08-21 to 2026-09-19:
@@ -80,9 +86,9 @@ What this measures and what it does not:
 
 ```
 # as the user who can read the API key; 1 credit per page that is not cached yet
-python -m univ3_indexer.nansen --fetch-tgm USDC --from 2026-08-21 --to 2026-09-19 --max-pages 10
+PYTHONPATH=src uv run python -m univ3_indexer.nansen --fetch-tgm USDC --from 2026-08-21 --to 2026-09-19 --max-pages 10
 # no call: cross the cached pages and store the aggregate; then the mart
-python -m univ3_indexer.nansen --daily USDC --from 2026-08-21 --to 2026-09-19
+PYTHONPATH=src uv run python -m univ3_indexer.nansen --daily USDC --from 2026-08-21 --to 2026-09-19
 make dbt-build
 ```
 

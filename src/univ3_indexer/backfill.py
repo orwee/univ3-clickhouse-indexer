@@ -1,7 +1,7 @@
 """Resumable backfill: RPC chunks -> batches -> a sink, with a checkpoint.
 
-Nothing here knows where the data ends up. A ``Sink`` receives batches; the
-ClickHouse sink does not exist yet and its design is a separate decision.
+Nothing here knows where the data ends up. A ``Sink`` receives batches; the only
+one is the JSONL landing zone (landing.py), and loader.py takes it from there.
 
 Vocabulary
     chunk  one ``eth_getLogs`` call: at most 10 blocks (provider limit).
@@ -46,7 +46,10 @@ from univ3_indexer.swap import Swap, decode_swap
 
 log = logging.getLogger(__name__)
 
-CONFIRMATIONS = 64  # two epochs: finalised under normal conditions
+# 64 blocks = two epochs behind the tip. NOT the same as finalised: under normal conditions
+# the finalised checkpoint trails the head by 64 to 95 slots, and the node is never asked for
+# the `finalized` tag. Deep enough that a reorg is not a practical concern; no more than that.
+CONFIRMATIONS = 64
 CHECKPOINT_VERSION = 1
 
 

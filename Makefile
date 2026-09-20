@@ -32,17 +32,21 @@ lint: ## ruff lint + format check
 	uv run ruff check .
 	uv run ruff format --check .
 
-# Where the backfill landed its JSONL files. Override: make load LANDING=/some/dir
-LANDING ?= /var/lib/univ3-indexer/landing
+# Where the backfill landed its JSONL files. Empty = the loader's own default, which is the
+# same <data dir>/landing the backfill writes to (config.data_dir(): UNIV3_DATA_DIR, else
+# /var/lib/univ3-indexer as root, else ~/.local/share/univ3-indexer).
+# Override: make load LANDING=/some/dir
+LANDING ?=
+LANDING_ARG = $(if $(LANDING),--landing $(LANDING),)
 
 load: ## load what is missing from the landing zone into ClickHouse, then verify
-	PYTHONPATH=src uv run python -m univ3_indexer.loader --mode incremental --landing $(LANDING)
+	PYTHONPATH=src uv run python -m univ3_indexer.loader --mode incremental $(LANDING_ARG)
 
 load-full: ## truncate the raw table, reload everything, then verify
-	PYTHONPATH=src uv run python -m univ3_indexer.loader --mode full --landing $(LANDING)
+	PYTHONPATH=src uv run python -m univ3_indexer.loader --mode full $(LANDING_ARG)
 
 load-verify: ## only compare ClickHouse with the landing zone (non-zero exit on mismatch)
-	PYTHONPATH=src uv run python -m univ3_indexer.loader --verify-only --landing $(LANDING)
+	PYTHONPATH=src uv run python -m univ3_indexer.loader --verify-only $(LANDING_ARG)
 
 sanity: ## run sql/sanity/*.sql and write reports/sanity.md (non-zero exit on a defect)
 	PYTHONPATH=src uv run python -m univ3_indexer.sanity

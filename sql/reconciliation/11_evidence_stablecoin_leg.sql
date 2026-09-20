@@ -1,4 +1,6 @@
--- EVIDENCE, the "a stablecoin is 1 USD" assumption. Two valuations of the same swaps:
+-- EVIDENCE: does it matter WHICH LEG of a swap is valued? It does NOT test whether a
+-- stablecoin is worth 1 USD: both valuations end up in the same stablecoin, so what this
+-- measures is the fee plus the price impact. Two valuations of the same swaps:
 --   stable_leg_usd   |stablecoin leg| / 10^decimals          (what volume_usd uses)
 --   other_leg_usd    |other leg| converted into the stablecoin at the pool's OWN price
 --                    right after that swap, from sqrt_price_x96:

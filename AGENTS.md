@@ -47,8 +47,9 @@ text in the pull request description and let the owner write it.
 - Never read, list or try to access `/root/secrets` or anything else under
   `/root`. Never look for API keys elsewhere (shell history, process
   environments, other users' files, credential stores, `gh auth token`).
-- Never call the Nansen API. Not once, not to test. The owner has 10 credits
-  per day.
+- Never call the Nansen API. Not once, not to test. The Free plan is 100
+  one-time trial credits and then a daily top-up to a 10-credit balance
+  (docs/NANSEN.md); a label lookup costs 100.
 - You do not have the Alchemy key and do not need it: tests never touch the
   network. Code that needs a key must get it through
   `config.require_api_key()`, which fails loudly when the key is unavailable.

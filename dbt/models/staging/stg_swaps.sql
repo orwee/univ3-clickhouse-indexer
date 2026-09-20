@@ -1,5 +1,7 @@
 {#
-  One row per swap, made readable. Nothing is filtered out and nothing is aggregated.
+  One row per swap, made readable. Nothing is aggregated. The INNER JOIN with the seed
+  DROPS any swap whose pool is not in pools.yml; the loader only loads those pools, and
+  dbt/tests/assert_every_raw_pool_is_in_the_seed.sql fails if one ever slips through.
 
   * Hashes and addresses: binary in the raw table, '0x…' lower-case hex here.
   * Amounts: the raw Int256 is kept (amount0_raw, amount1_raw) and a scaled Decimal is

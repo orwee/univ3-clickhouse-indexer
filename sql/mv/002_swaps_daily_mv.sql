@@ -5,8 +5,8 @@
 -- be backfilled once, by hand (010_backfill.sql).
 --
 -- `TO swaps_daily_agg` is explicit on purpose. Without TO, ClickHouse creates a hidden
--- `.inner` table that cannot be given its own engine settings, is awkward to backfill
--- and disappears with the view. With TO the target is an ordinary table that outlives
+-- `.inner` table (its engine is then declared inside the CREATE MATERIALIZED VIEW) that
+-- is awkward to backfill and disappears with the view. With TO the target is an ordinary table that outlives
 -- the view and can be truncated, backfilled and inspected.
 --
 -- The column names and types of the SELECT must match the target: count() is UInt64,

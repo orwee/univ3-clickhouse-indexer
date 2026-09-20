@@ -102,8 +102,9 @@ rows and today's at ~7,400: with counts this small the estimate moves a lot.
 The skew went from 99.5% in one pool to 73% / 26% / 1%.
 
 **Disk.** Raw JSON is 891 bytes per log: ~785 MB for 30 days. The JSONL landing
-zone stores the raw log plus its decoded form on each line; the measured size
-per line is in the README section on the backfill.
+zone stores the raw log plus its decoded form on each line: about 1.5 KB per line,
+~6 MB per 1,000-block file (the figure in the docstring of
+`src/univ3_indexer/landing.py`).
 
 **Time.** Unchanged. The cost is per call, not per address, and all four pools
 travel in one call: still 21,600 calls, ~72 minutes at 5 calls per second.

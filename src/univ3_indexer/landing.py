@@ -18,7 +18,8 @@ mangled by any JSON reader that goes through a float (2**53 limit).
 A file exists for every batch, including batches with no swaps (empty file):
 the set of file names proves which blocks were fetched.
 
-File size. The default batch is 100 chunks = 1,000 blocks: ~4,000 rows and
+File size. The CLI's default batch is 100 chunks = 1,000 blocks (`run_backfill` itself
+defaults to 50): ~4,000 rows and
 ~6 MB per file, ~216 files for 30 days. Small enough that a crash loses at most
 100 calls (~20 s at 5 calls per second) and a batch fits in memory trivially;
 large enough not to litter the directory with tens of thousands of files.
