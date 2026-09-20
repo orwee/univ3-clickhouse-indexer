@@ -14,6 +14,64 @@ Mediciones para que Roberto decida el esquema. **Este documento no elige nada.**
 Complementa a `SCHEMA_OPTIONS.md` (que razona) con números medidos. Las decisiones
 van a `DECISIONS.md`, escritas por él.
 
+## Actualización 2026-09-21: `FINAL` medido con la clave REAL
+
+Lo que este documento midió sobre `FINAL` (más abajo) usaba una Replacing ordenada por
+`(pool, block_number, log_index)`, una clave **sin tiempo**: con ella una consulta de un día
+no podía podar ni con `FINAL` ni sin él. Una revisión independiente lo señaló. Aquí se repite
+con el `ORDER BY` de la tabla real, `(pool_address, block_timestamp, block_number, log_index)`,
+que además es único por log y por tanto sirve también de clave de deduplicación.
+
+`scripts/final_experiment.py`, resultados crudos en
+`docs/experiments/final-real-key-2026-09-21.json`. Dos tablas con las mismas columnas y la
+misma clave, MergeTree y ReplacingMergeTree, llenadas desde la tabla real (898.404 filas) con
+los mismos 200 inserts, merges parados, y una de cada diez porciones entregada dos veces
+(90.081 filas repetidas: 988.485 filas almacenadas). Se mide sin mezclar (221 partes) y tras
+`OPTIMIZE FINAL` (2 partes, una por partición mensual). Un MergeTree normal rechaza `FINAL`
+(`ILLEGAL_FINAL`), así que ahí solo hay medida sin él.
+
+**Replacing, 221 partes sin mezclar**
+
+| Consulta | Sin `FINAL`: filas · bytes · ms · memoria | Con `FINAL` | Respuesta sin / con |
+|---|---|---|---|
+| Volumen diario, todos los pools | 988.485 · 36,6 MB · 45 ms · 9 MB | 988.485 · 48,5 MB · **116 ms (2,6×)** · **48 MB** | total inflado un 10,0 % / correcto |
+| Un día del pool grande | 39.756 · 1,47 MB · 6 ms | **39.756** · 1,95 MB · 10 ms | 28.179 swaps (**+17,6 %**) / 23.961 |
+| Un día del pool pequeño | 39.756 · 1,47 MB · 7 ms | 39.756 · 1,95 MB · 7 ms | 19 / 14 |
+| Un día, todos los pools | 39.756 · 1,43 MB · 5 ms | 39.756 · 1,95 MB · 7 ms | 36.562 / 31.013 |
+
+**Replacing, tras mezclar (2 partes; los duplicados ya no existen: 898.404 filas, ni una perdida)**
+
+| Consulta | Sin `FINAL` | Con `FINAL` | Con `FINAL` y `do_not_merge_across_partitions_select_final = 1` |
+|---|---|---|---|
+| Volumen diario, todos los pools | 898.404 · 33,2 MB · 39 ms | 898.404 · 33,2 MB · 51 ms (1,3×) | 898.404 · 33,2 MB · **39 ms** |
+| Un día del pool grande | 24.576 · 0,91 MB · 4 ms | 24.576 · 0,91 MB · 4 ms | igual |
+| Un día del pool pequeño | 8.192 · 0,04 MB · 3 ms | 8.192 · 0,30 MB · 4 ms | igual que con `FINAL` |
+| Un día, todos los pools | 57.344 · 2,06 MB · 5 ms | 57.344 · 2,06 MB · 5 ms | igual |
+
+**MergeTree con los mismos duplicados:** 988.485 filas sin mezclar y **988.485 tras mezclar**.
+Nada los quita nunca; el día del pool grande sigue diciendo 28.179 swaps.
+
+La caché de condiciones, apagada o encendida, no cambió ninguna cifra de filas ni de bytes:
+todas estas consultas podan por la clave y no le dejan nada que recordar.
+
+Lo que dicen estos números, sin decidir nada:
+
+- **Con la clave real, `FINAL` no quita la poda.** Lee exactamente las mismas filas que la
+  consulta sin `FINAL`, mezclada o sin mezclar. Lee más bytes sin mezclar (+32 %: necesita las
+  columnas de la clave) y prácticamente los mismos una vez mezclada.
+- **El coste de `FINAL` está en la consulta que lo lee todo y solo mientras hay muchas
+  partes:** 2,6× en tiempo y 5× en memoria. Mezclada, 1,3×, y con
+  `do_not_merge_across_partitions_select_final = 1`, nada medible. Las consultas filtradas
+  pagan entre 0 y 4 ms.
+- **La clave real es única por log:** la Replacing no perdió ninguna fila (el 64,4 % perdido
+  de más abajo es de una clave NO única, un mal uso, no de esta).
+- **Sin `FINAL`, la Replacing sin mezclar da la misma cifra equivocada que el MergeTree.** La
+  diferencia es que en la Replacing el error desaparece al mezclar o al decir `FINAL`, y en el
+  MergeTree no desaparece nunca: ahí toda la defensa es que la carga no duplique.
+- Un hecho que no depende del motor: la materialized view es un disparador de INSERT, así que
+  una fila entregada dos veces **entra dos veces en `swaps_daily_agg`** aunque la tabla origen
+  fuera Replacing. Con la vista puesta, la carga tiene que ser idempotente de todos modos.
+
 ## Actualización: los 30 días completos (863.587 swaps)
 
 Repetido el 2026-09-19 con el backfill terminado: 216 ficheros, bloques 25.794.751 a

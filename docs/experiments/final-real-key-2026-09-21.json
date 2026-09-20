@@ -1,0 +1,746 @@
+{
+ "clickhouse": "26.3.33.24",
+ "source": "onchain",
+ "inserts": 200,
+ "duplicate_every": 10,
+ "rows_in_source": 898404,
+ "rows_redelivered": 90081,
+ "probe": {
+  "big_pool": "0xe0554a476a092703abdb3ef35c80e0d76d32939f",
+  "small_pool": "0x173821f6ad4c5324cd35753a9fd12d92f2eaab29",
+  "day": "2026-08-25"
+ },
+ "unmerged": {
+  "plain": {
+   "state": {
+    "parts": 221,
+    "rows": 988485,
+    "compressed_bytes": 84279092,
+    "partitions": 2
+   },
+   "queries": {
+    "no_final": {
+     "daily_volume_all_pools": {
+      "ms_median": 41,
+      "ms_all": [
+       41,
+       41,
+       41,
+       40,
+       39
+      ],
+      "read_rows": 988485,
+      "read_bytes": 36616913,
+      "memory_bytes": 9680528,
+      "read_rows_with_condition_cache": 988485,
+      "read_bytes_with_condition_cache": 36616913,
+      "granules_after_primary_key": "Granules: 221/221",
+      "parts_after_pruning": "Parts: 221/221",
+      "answer": [
+       "164",
+       "2414087554631499781"
+      ]
+     },
+     "one_pool_one_day_big": {
+      "ms_median": 6,
+      "ms_all": [
+       7,
+       6,
+       6,
+       6,
+       6
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1472636,
+      "memory_bytes": 8268114,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1472636,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "28179",
+       "65692834574152"
+      ]
+     },
+     "one_pool_one_day_small": {
+      "ms_median": 6,
+      "ms_all": [
+       6,
+       6,
+       5,
+       7,
+       7
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1472636,
+      "memory_bytes": 8724566,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1472636,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "19",
+       "7886755191689428"
+      ]
+     },
+     "all_pools_one_day": {
+      "ms_median": 5,
+      "ms_all": [
+       5,
+       5,
+       5,
+       5,
+       5
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1431216,
+      "memory_bytes": 8043068,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1431216,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "36562",
+       "5047393287027067701"
+      ]
+     }
+    }
+   }
+  },
+  "replacing": {
+   "state": {
+    "parts": 221,
+    "rows": 988485,
+    "compressed_bytes": 84279092,
+    "partitions": 2
+   },
+   "queries": {
+    "no_final": {
+     "daily_volume_all_pools": {
+      "ms_median": 45,
+      "ms_all": [
+       46,
+       45,
+       47,
+       45,
+       45
+      ],
+      "read_rows": 988485,
+      "read_bytes": 36616913,
+      "memory_bytes": 9680560,
+      "read_rows_with_condition_cache": 988485,
+      "read_bytes_with_condition_cache": 36616913,
+      "granules_after_primary_key": "Granules: 221/221",
+      "parts_after_pruning": "Parts: 221/221",
+      "answer": [
+       "164",
+       "2414087554631499781"
+      ]
+     },
+     "one_pool_one_day_big": {
+      "ms_median": 6,
+      "ms_all": [
+       7,
+       7,
+       6,
+       6,
+       6
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1472636,
+      "memory_bytes": 8963559,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1472636,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "28179",
+       "65692834574152"
+      ]
+     },
+     "one_pool_one_day_small": {
+      "ms_median": 7,
+      "ms_all": [
+       7,
+       7,
+       7,
+       5,
+       5
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1472636,
+      "memory_bytes": 7479299,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1472636,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "19",
+       "7886755191689428"
+      ]
+     },
+     "all_pools_one_day": {
+      "ms_median": 5,
+      "ms_all": [
+       4,
+       4,
+       5,
+       6,
+       6
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1431216,
+      "memory_bytes": 8510804,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1431216,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "36562",
+       "5047393287027067701"
+      ]
+     }
+    },
+    "final": {
+     "daily_volume_all_pools": {
+      "ms_median": 116,
+      "ms_all": [
+       114,
+       116,
+       118,
+       117,
+       106
+      ],
+      "read_rows": 988485,
+      "read_bytes": 48478733,
+      "memory_bytes": 48042216,
+      "read_rows_with_condition_cache": 988485,
+      "read_bytes_with_condition_cache": 48478733,
+      "granules_after_primary_key": "Granules: 221/221",
+      "parts_after_pruning": "Parts: 221/221",
+      "answer": [
+       "164",
+       "2414087554631499781"
+      ]
+     },
+     "one_pool_one_day_big": {
+      "ms_median": 10,
+      "ms_all": [
+       10,
+       10,
+       10,
+       8,
+       11
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1949708,
+      "memory_bytes": 4857397,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1949708,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "23961",
+       "55983288132915"
+      ]
+     },
+     "one_pool_one_day_small": {
+      "ms_median": 7,
+      "ms_all": [
+       8,
+       7,
+       8,
+       7,
+       7
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1949708,
+      "memory_bytes": 4861565,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1949708,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "14",
+       "5873565329375750"
+      ]
+     },
+     "all_pools_one_day": {
+      "ms_median": 7,
+      "ms_all": [
+       7,
+       8,
+       7,
+       7,
+       7
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1949708,
+      "memory_bytes": 4841885,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1949708,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "31013",
+       "4161387543565447257"
+      ]
+     }
+    },
+    "final_not_across_partitions": {
+     "daily_volume_all_pools": {
+      "ms_median": 117,
+      "ms_all": [
+       117,
+       112,
+       127,
+       126,
+       100
+      ],
+      "read_rows": 988485,
+      "read_bytes": 48478733,
+      "memory_bytes": 49360481,
+      "read_rows_with_condition_cache": 988485,
+      "read_bytes_with_condition_cache": 48478733,
+      "granules_after_primary_key": "Granules: 221/221",
+      "parts_after_pruning": "Parts: 221/221",
+      "answer": [
+       "164",
+       "2414087554631499781"
+      ]
+     },
+     "one_pool_one_day_big": {
+      "ms_median": 9,
+      "ms_all": [
+       9,
+       8,
+       10,
+       9,
+       11
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1949708,
+      "memory_bytes": 6338312,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1949708,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "23961",
+       "55983288132915"
+      ]
+     },
+     "one_pool_one_day_small": {
+      "ms_median": 8,
+      "ms_all": [
+       8,
+       8,
+       7,
+       8,
+       7
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1949708,
+      "memory_bytes": 4863997,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1949708,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "14",
+       "5873565329375750"
+      ]
+     },
+     "all_pools_one_day": {
+      "ms_median": 8,
+      "ms_all": [
+       9,
+       7,
+       8,
+       7,
+       8
+      ],
+      "read_rows": 39756,
+      "read_bytes": 1949708,
+      "memory_bytes": 4844141,
+      "read_rows_with_condition_cache": 39756,
+      "read_bytes_with_condition_cache": 1949708,
+      "granules_after_primary_key": "Granules: 8/8",
+      "parts_after_pruning": "Parts: 8/8",
+      "answer": [
+       "31013",
+       "4161387543565447257"
+      ]
+     }
+    }
+   }
+  }
+ },
+ "merged": {
+  "plain": {
+   "state": {
+    "parts": 2,
+    "rows": 988485,
+    "compressed_bytes": 78519502,
+    "partitions": 2
+   },
+   "queries": {
+    "no_final": {
+     "daily_volume_all_pools": {
+      "ms_median": 38,
+      "ms_all": [
+       38,
+       38,
+       39,
+       36,
+       39
+      ],
+      "read_rows": 988485,
+      "read_bytes": 36573945,
+      "memory_bytes": 13896627,
+      "read_rows_with_condition_cache": 988485,
+      "read_bytes_with_condition_cache": 36573945,
+      "granules_after_primary_key": "Granules: 122/122",
+      "parts_after_pruning": "Parts: 2/2",
+      "answer": [
+       "164",
+       "2414087554631499781"
+      ]
+     },
+     "one_pool_one_day_big": {
+      "ms_median": 4,
+      "ms_all": [
+       4,
+       4,
+       4,
+       4,
+       4
+      ],
+      "read_rows": 40960,
+      "read_bytes": 1515520,
+      "memory_bytes": 6183569,
+      "read_rows_with_condition_cache": 40960,
+      "read_bytes_with_condition_cache": 1515520,
+      "granules_after_primary_key": "Granules: 5/48",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "28179",
+       "65692834574152"
+      ]
+     },
+     "one_pool_one_day_small": {
+      "ms_median": 3,
+      "ms_all": [
+       3,
+       3,
+       3,
+       3,
+       3
+      ],
+      "read_rows": 8192,
+      "read_bytes": 36751,
+      "memory_bytes": 5117569,
+      "read_rows_with_condition_cache": 8192,
+      "read_bytes_with_condition_cache": 36751,
+      "granules_after_primary_key": "Granules: 1/48",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "19",
+       "7886755191689428"
+      ]
+     },
+     "all_pools_one_day": {
+      "ms_median": 4,
+      "ms_all": [
+       5,
+       4,
+       4,
+       5,
+       4
+      ],
+      "read_rows": 73728,
+      "read_bytes": 2248128,
+      "memory_bytes": 5561520,
+      "read_rows_with_condition_cache": 73728,
+      "read_bytes_with_condition_cache": 2248128,
+      "granules_after_primary_key": "Granules: 9/48",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "36562",
+       "5047393287027067701"
+      ]
+     }
+    }
+   }
+  },
+  "replacing": {
+   "state": {
+    "parts": 2,
+    "rows": 898404,
+    "compressed_bytes": 76119081,
+    "partitions": 2
+   },
+   "queries": {
+    "no_final": {
+     "daily_volume_all_pools": {
+      "ms_median": 39,
+      "ms_all": [
+       35,
+       39,
+       45,
+       39,
+       37
+      ],
+      "read_rows": 898404,
+      "read_bytes": 33240948,
+      "memory_bytes": 13895562,
+      "read_rows_with_condition_cache": 898404,
+      "read_bytes_with_condition_cache": 33240948,
+      "granules_after_primary_key": "Granules: 111/111",
+      "parts_after_pruning": "Parts: 2/2",
+      "answer": [
+       "164",
+       "2414087554631499781"
+      ]
+     },
+     "one_pool_one_day_big": {
+      "ms_median": 4,
+      "ms_all": [
+       4,
+       4,
+       4,
+       5,
+       5
+      ],
+      "read_rows": 24576,
+      "read_bytes": 909312,
+      "memory_bytes": 6202530,
+      "read_rows_with_condition_cache": 24576,
+      "read_bytes_with_condition_cache": 909312,
+      "granules_after_primary_key": "Granules: 3/43",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "23961",
+       "55983288132915"
+      ]
+     },
+     "one_pool_one_day_small": {
+      "ms_median": 3,
+      "ms_all": [
+       3,
+       3,
+       3,
+       3,
+       3
+      ],
+      "read_rows": 8192,
+      "read_bytes": 36061,
+      "memory_bytes": 5191414,
+      "read_rows_with_condition_cache": 8192,
+      "read_bytes_with_condition_cache": 36061,
+      "granules_after_primary_key": "Granules: 1/43",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "14",
+       "5873565329375750"
+      ]
+     },
+     "all_pools_one_day": {
+      "ms_median": 6,
+      "ms_all": [
+       8,
+       7,
+       5,
+       6,
+       6
+      ],
+      "read_rows": 57344,
+      "read_bytes": 2064384,
+      "memory_bytes": 5207381,
+      "read_rows_with_condition_cache": 57344,
+      "read_bytes_with_condition_cache": 2064384,
+      "granules_after_primary_key": "Granules: 7/43",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "31013",
+       "4161387543565447257"
+      ]
+     }
+    },
+    "final": {
+     "daily_volume_all_pools": {
+      "ms_median": 51,
+      "ms_all": [
+       137,
+       119,
+       51,
+       43,
+       45
+      ],
+      "read_rows": 898404,
+      "read_bytes": 33240948,
+      "memory_bytes": 13896346,
+      "read_rows_with_condition_cache": 898404,
+      "read_bytes_with_condition_cache": 33240948,
+      "granules_after_primary_key": "Granules: 111/111",
+      "parts_after_pruning": "Parts: 2/2",
+      "answer": [
+       "164",
+       "2414087554631499781"
+      ]
+     },
+     "one_pool_one_day_big": {
+      "ms_median": 4,
+      "ms_all": [
+       4,
+       4,
+       4,
+       4,
+       4
+      ],
+      "read_rows": 24576,
+      "read_bytes": 909312,
+      "memory_bytes": 6196131,
+      "read_rows_with_condition_cache": 24576,
+      "read_bytes_with_condition_cache": 909312,
+      "granules_after_primary_key": "Granules: 3/43",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "23961",
+       "55983288132915"
+      ]
+     },
+     "one_pool_one_day_small": {
+      "ms_median": 4,
+      "ms_all": [
+       3,
+       4,
+       4,
+       4,
+       3
+      ],
+      "read_rows": 8192,
+      "read_bytes": 303104,
+      "memory_bytes": 5185015,
+      "read_rows_with_condition_cache": 8192,
+      "read_bytes_with_condition_cache": 303104,
+      "granules_after_primary_key": "Granules: 1/43",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "14",
+       "5873565329375750"
+      ]
+     },
+     "all_pools_one_day": {
+      "ms_median": 5,
+      "ms_all": [
+       6,
+       5,
+       5,
+       4,
+       7
+      ],
+      "read_rows": 57344,
+      "read_bytes": 2064384,
+      "memory_bytes": 5204629,
+      "read_rows_with_condition_cache": 57344,
+      "read_bytes_with_condition_cache": 2064384,
+      "granules_after_primary_key": "Granules: 7/43",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "31013",
+       "4161387543565447257"
+      ]
+     }
+    },
+    "final_not_across_partitions": {
+     "daily_volume_all_pools": {
+      "ms_median": 39,
+      "ms_all": [
+       41,
+       37,
+       35,
+       39,
+       41
+      ],
+      "read_rows": 898404,
+      "read_bytes": 33240948,
+      "memory_bytes": 13898330,
+      "read_rows_with_condition_cache": 898404,
+      "read_bytes_with_condition_cache": 33240948,
+      "granules_after_primary_key": "Granules: 111/111",
+      "parts_after_pruning": "Parts: 2/2",
+      "answer": [
+       "164",
+       "2414087554631499781"
+      ]
+     },
+     "one_pool_one_day_big": {
+      "ms_median": 4,
+      "ms_all": [
+       3,
+       3,
+       6,
+       4,
+       5
+      ],
+      "read_rows": 24576,
+      "read_bytes": 909312,
+      "memory_bytes": 6197731,
+      "read_rows_with_condition_cache": 24576,
+      "read_bytes_with_condition_cache": 909312,
+      "granules_after_primary_key": "Granules: 3/43",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "23961",
+       "55983288132915"
+      ]
+     },
+     "one_pool_one_day_small": {
+      "ms_median": 3,
+      "ms_all": [
+       3,
+       3,
+       3,
+       3,
+       2
+      ],
+      "read_rows": 8192,
+      "read_bytes": 303104,
+      "memory_bytes": 5186615,
+      "read_rows_with_condition_cache": 8192,
+      "read_bytes_with_condition_cache": 303104,
+      "granules_after_primary_key": "Granules: 1/43",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "14",
+       "5873565329375750"
+      ]
+     },
+     "all_pools_one_day": {
+      "ms_median": 5,
+      "ms_all": [
+       5,
+       4,
+       5,
+       4,
+       5
+      ],
+      "read_rows": 57344,
+      "read_bytes": 2064384,
+      "memory_bytes": 5206485,
+      "read_rows_with_condition_cache": 57344,
+      "read_bytes_with_condition_cache": 2064384,
+      "granules_after_primary_key": "Granules: 7/43",
+      "parts_after_pruning": "Parts: 1/1",
+      "answer": [
+       "31013",
+       "4161387543565447257"
+      ]
+     }
+    }
+   }
+  }
+ },
+ "database_dropped": true
+}

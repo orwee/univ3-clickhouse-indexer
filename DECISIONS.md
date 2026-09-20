@@ -327,6 +327,26 @@ INSERT retried after the server had already applied it; `make load-verify`
 Replacing moves the cost of a pipeline defect onto every query, forever, and
 makes the sorting key serve deduplication instead of queries.
 
+> **Correction, 2026-09-21 (agent draft, for Roberto to weigh).** The two sentences
+> above do not survive a measurement with the key that was finally chosen
+> (docs/SCHEMA_EXPERIMENTS.md, first section; `scripts/final_experiment.py`). That key,
+> `(pool_address, block_timestamp, block_number, log_index)`, is unique per log, so it
+> serves queries AND deduplication: a Replacing table with it lost no row. `FINAL` read
+> exactly the same rows as the query without it, pruning intact. Its cost was 2.6x time
+> and 5x memory on the whole-table aggregate while 221 parts were unmerged, 1.3x once
+> merged, and nothing measurable with `do_not_merge_across_partitions_select_final = 1`;
+> filtered queries paid 0 to 4 ms. The figures quoted above came from a key without
+> time in it.
+>
+> What is left of the case for MergeTree, stated as it now stands: (1) every reader, dbt
+> model included, would have to say `FINAL`, and one that forgets reads a total 10% too
+> high with no error (a day of the big pool read 28,179 swaps instead of 23,961); (2) the
+> materialized view is an insert trigger, so a row delivered twice is counted twice in
+> `swaps_daily_agg` whatever the engine of the source table: with the view in place the
+> load has to be idempotent anyway, and once it is, Replacing protects nothing more.
+> Against it: with MergeTree a duplicate that does get in stays forever (988,485 rows
+> before and after the merge), and the only defence is `make load-verify`.
+
 Repeated on the full 30 days (863,587 swaps) the picture is the same: 64.4%
 lost with a non-unique key, the total 10.5% too high without `FINAL`, and
 `FINAL` on unmerged parts 2.8x slower (114 ms vs 41 ms).
