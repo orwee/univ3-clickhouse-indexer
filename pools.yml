@@ -1,6 +1,14 @@
 # Uniswap v3 pools to index. Filled in by hand; every address is checked
 # against the chain before use. Nothing in this file is generated.
 #
+# Where the addresses come from: the three pools below were picked by
+# filtering in the dashboard of Orwee's discovery engine (orwee.io). Orwee is
+# multi-chain and multi-protocol, so nothing was assumed: each address was
+# verified on Ethereum mainnet with scripts/verify_pools.py (eth_getCode,
+# factory(), token0(), token1(), fee(), and symbol()/decimals() of each token).
+# A pool is listed here only if its factory() is the official UniswapV3Factory.
+# Evidence: docs/verification/pools-2026-09-18.json. Reasoning: DECISIONS.md #8.
+#
 # Schema (all fields required):
 #
 #   address    string  pool contract address, 0x + 40 hex chars, checksummed
@@ -21,4 +29,33 @@
 #     fee: 500
 #     label: "USDC/WETH 0.05%"
 
-pools: []
+pools:
+  # verified at block 26003980
+  # token0 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48, token1 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+  - address: "0xE0554a476A092703abdB3Ef35c80e0D76d32939F"
+    token0: USDC
+    token1: WETH
+    decimals0: 6
+    decimals1: 18
+    fee: 100
+    label: "USDC/WETH 0.01%"
+
+  # verified at block 26003980
+  # token0 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0, token1 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+  - address: "0x173821f6aD4c5324cd35753A9FD12D92f2eaAB29"
+    token0: wstETH
+    token1: USDC
+    decimals0: 18
+    decimals1: 6
+    fee: 3000
+    label: "wstETH/USDC 0.3%"
+
+  # verified at block 26003980
+  # token0 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0, token1 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+  - address: "0x4622Df6fB2d9Bee0DCDaCF545aCDB6a2b2f4f863"
+    token0: wstETH
+    token1: USDC
+    decimals0: 18
+    decimals1: 6
+    fee: 500
+    label: "wstETH/USDC 0.05%"
