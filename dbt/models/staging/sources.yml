@@ -9,3 +9,11 @@ sources:
         description: >
           One row per Uniswap v3 Swap log. Raw integers, hashes and addresses in binary
           (sql/001_raw_swaps.sql, DECISIONS.md #10 to #14).
+      - name: nansen_smart_money_daily
+        description: >
+          Per pool and UTC day: how many of our swaps sit in a transaction that the Nansen API
+          attributes to a smart-money trader, and their USD volume. Aggregates only; written by
+          `python -m univ3_indexer.nansen --daily` (sql/003_nansen_smart_money_daily.sql,
+          docs/NANSEN.md). ReplacingMergeTree: read it with FINAL. A pool-day without a row
+          was not fetched, which is not the same as zero. scripts/run_dbt.py creates the table
+          empty when it does not exist, so that dbt builds without an API key.
