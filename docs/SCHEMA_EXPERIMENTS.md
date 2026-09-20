@@ -1,5 +1,15 @@
 # Experimentos de esquema con datos reales (sin concluir)
 
+> **Las decisiones que salieron de estas mediciones** están en
+> [DECISIONS.md](../DECISIONS.md), entradas
+> [#10](../DECISIONS.md#10-engine-mergetree-with-deduplication-left-to-the-load) (motor),
+> [#11](../DECISIONS.md#11-order-by-pool_address-block_timestamp-block_number-log_index-primary-key-on-the-first-two)
+> (`ORDER BY`), [#12](../DECISIONS.md#12-partition-by-month-for-management-and-not-for-speed)
+> (particiones) y
+> [#13](../DECISIONS.md#13-types-lossless-integers-and-hashes-and-addresses-in-binary)
+> (tipos); la tabla real es [sql/001_raw_swaps.sql](../sql/001_raw_swaps.sql). Este documento
+> mide y no elige; se midió sobre 463.447 y 863.587 filas (hoy la tabla tiene 898.404).
+
 Mediciones para que Roberto decida el esquema. **Este documento no elige nada.**
 Complementa a `SCHEMA_OPTIONS.md` (que razona) con números medidos. Las decisiones
 van a `DECISIONS.md`, escritas por él.

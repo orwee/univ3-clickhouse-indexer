@@ -1,5 +1,16 @@
 # Opciones de esquema para la tabla de swaps (sin decidir)
 
+> **Documento histórico, anterior a la decisión.** El esquema ya está decidido: motor en
+> [DECISIONS.md #10](../DECISIONS.md#10-engine-mergetree-with-deduplication-left-to-the-load),
+> `ORDER BY` y `PRIMARY KEY` en
+> [#11](../DECISIONS.md#11-order-by-pool_address-block_timestamp-block_number-log_index-primary-key-on-the-first-two),
+> particiones en [#12](../DECISIONS.md#12-partition-by-month-for-management-and-not-for-speed),
+> tipos en [#13](../DECISIONS.md#13-types-lossless-integers-and-hashes-and-addresses-in-binary)
+> y desnormalización en
+> [#14](../DECISIONS.md#14-nothing-from-poolsyml-is-denormalised-into-the-raw-table). La tabla
+> real es [sql/001_raw_swaps.sql](../sql/001_raw_swaps.sql). Lo que sigue se conserva tal
+> como se escribió, como registro de las opciones que se barajaron.
+
 Documento de trabajo para que Roberto decida. **Aquí no se decide nada**: cada
 apartado da opciones, tradeoffs, una recomendación razonada y la pregunta de
 entrevista que esa decisión suele provocar. Las decisiones, cuando se tomen,

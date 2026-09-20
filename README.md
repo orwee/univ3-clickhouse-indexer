@@ -3,7 +3,10 @@
 Uniswap v3 `Swap` events, read from an Ethereum JSON-RPC node, landed as raw JSONL,
 loaded into ClickHouse, modelled with dbt, and reconciled twice: internally against a
 materialized view, to the unit, and externally against an independent source of daily
-volume.
+volume. A third source, the Nansen API, adds what a Swap log cannot carry: who signed the
+transaction.
+
+Short on time? [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) is a ten-minute tour.
 
 It is a learning project: I built it to work with ClickHouse hands-on (MergeTree parts and
 merges, sparse primary indexes, materialized views, the system tables) rather than read
@@ -37,6 +40,11 @@ flowchart TD
     mart["dbt/models/marts/fct_pool_daily.sql"]
     ext["src/univ3_indexer/external.py"]
     exttable["sql/002_external_daily_volume.sql<br/>external_daily_volume"]
+    exthourly["sql/004_external_hourly_volume.sql<br/>external_hourly_volume"]
+    nansen["src/univ3_indexer/nansen.py"]
+    nansentable["sql/003_nansen_smart_money_daily.sql<br/>nansen_smart_money_daily"]
+    smartmart["dbt/models/marts/fct_pool_daily_smart_money.sql"]
+    findings["docs/RECONCILIATION_FINDINGS.md"]
     recompute["sql/reconciliation/01_recompute_daily_raw.sql"]
     reconcile["src/univ3_indexer/reconcile.py"]
     sanity["src/univ3_indexer/sanity.py<br/>sql/sanity/"]
@@ -55,10 +63,17 @@ flowchart TD
     seed --> stg
     stg --> mart
     ext --> exttable
+    ext --> exthourly
     raw --> recompute
     recompute --> reconcile
     daily --> reconcile
     exttable --> reconcile
+    exthourly -- "evidence only" --> reconcile
+    reconcile --> findings
+    raw -- "cross by tx_hash" --> nansen
+    nansen --> nansentable
+    nansentable --> smartmart
+    mart --> smartmart
     raw --> sanity
 ```
 
@@ -97,8 +112,19 @@ uv downloads Python 3.12 by itself.
 | Sanity queries, report in `reports/sanity.md` | `make sanity` | no |
 | dbt: seed, staging, marts, tests | `make dbt-build` | no |
 | Daily volume from the external source | `make fetch-external` | no (public API) |
+| Hourly candles, to see in which hours a day differs (optional) | `make fetch-external-hourly` | no (public API) |
 | Reconcile, reports in `reports/` | `make reconcile` | no |
+| Smart-money trades, 1 credit per page, cached outside the repo (optional) | `PYTHONPATH=src uv run python -m univ3_indexer.nansen --fetch-tgm USDC --from … --to …` | **Nansen** |
+| Cross them with `raw_swaps`, store the aggregate (optional) | `PYTHONPATH=src uv run python -m univ3_indexer.nansen --daily USDC --from … --to …` | no |
 | Tests and lint | `make test`, `make lint` | no |
+
+`make reconcile` compares only days that are complete on our side and closed on the
+source's, and flags a pool-day beyond 1% **and** 1,000 USD; both thresholds and the day rule
+are parameters (`RECONCILE_THRESHOLD`, `RECONCILE_ABS_THRESHOLD`, `RECONCILE_DAYS=all`). Its
+exit code reflects the internal check only. `make load` reads the landing zone from the same
+data directory the backfill writes to; when the two run as different users, pass
+`LANDING=/path/to/landing`. Without a Nansen key nothing breaks: the aggregate table is
+created empty and its mart builds with no rows.
 
 `make test` needs neither the network nor a key. Tests that need ClickHouse skip with an
 explicit reason when the server is not reachable.
@@ -143,6 +169,9 @@ One or two sentences each; the reasoning is in [DECISIONS.md](DECISIONS.md), in 
 | `ORDER BY (pool_address, block_timestamp, block_number, log_index)` [#11](DECISIONS.md#11-order-by-pool_address-block_timestamp-block_number-log_index-primary-key-on-the-first-two) | Chosen for filtered queries; the whole-table aggregate is a full scan with any key. | One pool, one day: 32,768 rows read against 634,211 with a key that lacks the time |
 | Monthly partitions [#12](DECISIONS.md#12-partition-by-month-for-management-and-not-for-speed) | A management unit, not a speed feature. | No read changed with or without it |
 | Int256 / UInt256 / UInt128, hashes in binary [#13](DECISIONS.md#13-types-lossless-integers-and-hashes-and-addresses-in-binary) | Lossless, and the largest column halved. | A real 1,136 WETH swap needs 70 bits; binary hashes made the table 30% smaller (84.8 bytes per row) |
+| Only whole, closed days are compared [#15](DECISIONS.md#15-the-external-comparison-only-looks-at-days-that-are-whole-on-both-sides) | A difference that disappears by waiting a day says nothing about either source. | A candle compared while open read -2.14%; closed, -0.55% |
+| Flagged means beyond 1% and beyond 1,000 USD [#16](DECISIONS.md#16-a-pool-day-is-flagged-beyond-1-and-beyond-1000-usd) | In a thin pool a percentage alone does not discriminate. | One 617 USD swap is 44% of a day; 12 of 24 pool-days beyond 1% add up to 2,098 USD |
+| GeckoTerminal, not the subgraph, as the external check [#17](DECISIONS.md#17-the-external-check-is-geckoterminal-not-the-subgraph) | A source anyone can query without a key; it publishes no methodology. | |
 | Nothing denormalised into the raw table [#14](DECISIONS.md#14-nothing-from-poolsyml-is-denormalised-into-the-raw-table) | `pools.yml` stays the single source; the daily mart denormalises on purpose, as the counter-example. | |
 
 Two more things that were measured and are worth reading:
@@ -218,10 +247,13 @@ draft.
 
 | Path | What |
 |---|---|
+| [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) | Ten minutes: what to open, in what order, and the question each piece answers |
 | [DECISIONS.md](DECISIONS.md) | Why things are the way they are, and what each choice cost |
 | [pools.yml](pools.yml) | The only source of pool addresses, each verified on chain |
 | [sql/](sql/001_raw_swaps.sql) | Plain SQL: tables, the materialized view, sanity, reconciliation, examples |
-| [dbt/](dbt/dbt_project.yml) | Seed, `stg_swaps`, `dim_pools`, `fct_pool_daily`, tests |
+| [dbt/](dbt/dbt_project.yml) | Seed, `stg_swaps`, `dim_pools`, `fct_pool_daily`, `fct_pool_daily_smart_money`, tests |
+| [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md) | The ten findings of the reconciliation, each with its state (draft) |
+| [docs/evidence/2026-09-20/](docs/evidence/2026-09-20/reconciliation_evidence.md) | Snapshot of one run: report, evidence (12 sections of numbers) and the per-day CSV |
 | [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md) | The provider's limits and the size of the data, measured |
 | [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md) | Candidate schemas on the real data (Spanish) |
 | [docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md) | A materialized view is an insert trigger: procedure and observations |
@@ -229,3 +261,7 @@ draft.
 | [docs/NANSEN.md](docs/NANSEN.md) | What Nansen adds to a Swap log (the signer and its classification), what runs on the free tier with the credits spent, and the production design that was not run |
 | [docs/QUERY_PERFORMANCE.md](docs/QUERY_PERFORMANCE.md) | Projection, bloom filter, one insert against a thousand |
 | [docs/SQL_PRACTICE.md](docs/SQL_PRACTICE.md) | 17 ClickHouse SQL exercises on this data (Spanish), solutions apart |
+
+## License
+
+[MIT](LICENSE).
