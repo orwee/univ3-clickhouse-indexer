@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 DEMO = docker compose -f docker-compose.demo.yml
 
-.PHONY: help demo up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external mv-setup mv-check dbt-seed dbt-build dbt-test
+.PHONY: help demo up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check dbt-seed dbt-build dbt-test
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -67,6 +67,9 @@ mv-check: ## swaps_daily (through the view) against a direct GROUP BY; non-zero 
 
 fetch-external: ## daily volume per pool from the public GeckoTerminal API (no key) into ClickHouse
 	PYTHONPATH=src uv run python -m univ3_indexer.external --fetch
+
+fetch-external-hourly: ## the last 1,000 hourly candles per pool: to see in which hours a day differs
+	PYTHONPATH=src uv run python -m univ3_indexer.external --fetch-hourly
 
 # B flags a pool-day beyond BOTH: the relative difference and the absolute one, in USD.
 # Beyond the relative one only, it is listed apart. Only complete days are compared (ours

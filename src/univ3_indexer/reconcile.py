@@ -39,6 +39,8 @@ DEFAULT_ABS_THRESHOLD = 1000.0  # USD: a pool-day is flagged only beyond BOTH th
 PARTIAL = "partial on our side (first or last day of our window)"
 OPEN_CANDLE = "external candle still open when it was downloaded"
 SINGLE_SWAP_TOLERANCE = 0.05
+DISPLACEMENT_TICKS = 100  # "displaced" = more than this many ticks from the reference (1%)
+DISPLACEMENT_SENSITIVITY = [25, 50, 100, 200, 500, 1000]
 MIDNIGHT_MINUTES = 10
 SHIFTS = range(-12, 13)
 PENDING = "PENDIENTE — lo escribe Roberto"
@@ -425,6 +427,12 @@ def render_evidence(client, database: str, result: Result, pools=None) -> str:
     out += _evidence_pairs(result, pools)
     out += _evidence_source_effect(result)
     out += _evidence_single_swap(client, database, result, parameters)
+    by_key = displaced_by_pool_day(client, database, parameters)
+    out += _evidence_displaced(client, database, result, by_key)
+    out += _evidence_round_trips(client, database, result, parameters)
+    hourly = _hourly_by_pool_day(client, database, result, parameters)
+    out += _evidence_hourly(result, hourly)
+    out += _evidence_source_has_more(result, pools, by_key, hourly)
     return "\n".join(out) + "\n"
 
 
@@ -597,6 +605,247 @@ def main(argv: list[str] | None = None) -> int:
     if args.fail_on_external and (result.over_threshold or result.one_sided):
         return 2
     return 0
+
+
+def _pearson(xs: list[float], ys: list[float]) -> float | None:
+    if len(xs) < 3:
+        return None
+    mx, my = statistics.fmean(xs), statistics.fmean(ys)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    syy = sum((y - my) ** 2 for y in ys)
+    if not sxx or not syy:
+        return None
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / (sxx * syy) ** 0.5
+
+
+def displaced_by_pool_day(client, database: str, parameters: dict) -> dict:
+    stable = {k: v for k, v in parameters.items() if k.startswith("stable_")}
+    rows = _rows(client, database, "14_evidence_displaced_swaps.sql",
+                 {**stable, "thresholds": DISPLACEMENT_SENSITIVITY})  # fmt: skip
+    return {(r["pool_address"], r["day"]): r for r in rows}
+
+
+def what_if(result: Result, adjusted: dict) -> dict:
+    """Both directions, so that the test can fail: how many compared pool-days beyond the
+    relative threshold come inside it with `adjusted` in place of our volume, and how many
+    that are inside today would leave it."""
+    out = {"fixed_positive": 0, "fixed_negative": 0, "broken": 0, "positive": 0, "negative": 0,
+           "inside": 0}  # fmt: skip
+    for r in result.compared:
+        key = (r["pool_address"], r["date"])
+        if key not in adjusted or not r["external_volume_usd"]:
+            continue
+        new_rel = (adjusted[key] - r["external_volume_usd"]) / r["external_volume_usd"]
+        if abs(r["rel_diff"]) > result.threshold:
+            sign = "positive" if r["rel_diff"] > 0 else "negative"
+            out[sign] += 1
+            out[f"fixed_{sign}"] += abs(new_rel) <= result.threshold
+        else:
+            out["inside"] += 1
+            out["broken"] += abs(new_rel) > result.threshold
+    return out
+
+
+def _evidence_displaced(client, database: str, result: Result, by_key: dict) -> list[str]:
+    labels = result.labels
+    index = DISPLACEMENT_SENSITIVITY.index(DISPLACEMENT_TICKS)
+    out = ["", "## 9. Swaps executed away from the pool's own recent price", "",
+           "Two readings of the same suspicion are put to the test, neither taken as true: (H1) "
+           "the external source leaves such swaps out and this pipeline counts every log; (H2) "
+           "the source counts them but values them at a going price, while this pipeline values "
+           "every swap by its stablecoin leg.", "",
+           "**Definition.** Reference tick = median tick of the pool over the 21 consecutive "
+           "swaps centred on the swap. Displacement = the larger of |tick before the swap - "
+           "reference| and |tick after it - reference|. A swap is *displaced* beyond N when its "
+           f"displacement is more than N ticks (1 tick = 0.01% in price). N = {DISPLACEMENT_TICKS} "
+           "here, and the table says why.", "",
+           "| Pool | Swaps | p50 | p90 | p99 | p99.9 | p99.99 | max | "
+           + " | ".join(f">{n}" for n in DISPLACEMENT_SENSITIVITY) + " |",
+           "|---|---|---|---|---|---|---|---|" + "---|" * len(DISPLACEMENT_SENSITIVITY)]  # fmt: skip
+    for r in _rows(client, database, "15_evidence_displacement_distribution.sql",
+                   {"thresholds": DISPLACEMENT_SENSITIVITY}):  # fmt: skip
+        out.append(f"| {labels.get(r['pool_address'], r['pool_address'])} | {r['swaps']:,} | "
+                   + " | ".join(f"{q:,}" for q in r["quantiles"]) + f" | {r['largest']:,} | "
+                   + " | ".join(f"{n:,}" for n in r["beyond"]) + " |")  # fmt: skip
+    out += ["", f"Why {DISPLACEMENT_TICKS}: the deepest pool trades the same asset at the same "
+            "time as its sibling and hardly ever goes beyond it, so beyond it a swap is about that "
+            "pool's liquidity at that moment and not about the market. In the two quiet pools 21 "
+            "swaps span hours, real price drift enters the displacement, and the definition "
+            "separates less; their figures below are given with that caveat.", ""]  # fmt: skip
+
+    compared = [r for r in result.compared if (r["pool_address"], r["date"]) in by_key]
+    out += [f"### The {len(result.over_threshold)} flagged pool-days", "",
+            f"Displaced = beyond {DISPLACEMENT_TICKS} ticks. *Without them* is H1; *valued at the "
+            "reference* is H2 (every swap of the day, the non-stable leg at the reference tick).", "",
+            "| pool | date | rel diff | abs diff USD | displaced swaps | displaced USD | "
+            "rel diff without them (H1) | rel diff valued at the reference (H2) |",
+            "|---|---|---|---|---|---|---|---|"]  # fmt: skip
+    for r in sorted(result.over_threshold, key=lambda r: (r["pool_address"], r["date"])):
+        d = by_key.get((r["pool_address"], r["date"]))
+        if d is None:
+            continue
+        ext = r["external_volume_usd"]
+        h1 = (d["volume_usd"] - d["displaced_usd"][index] - ext) / ext
+        h2 = (d["volume_usd_at_reference"] - ext) / ext
+        out.append(f"| {labels.get(r['pool_address'], '')} | {r['date']} | {_pct(r['rel_diff'])} | "
+                   f"{_usd(r['abs_diff_usd'])} | {d['displaced_swaps'][index]} | "
+                   f"{_usd(d['displaced_usd'][index])} | {_pct(h1)} | {_pct(h2)} |")  # fmt: skip
+
+    diffs = [r["abs_diff_usd"] for r in compared]
+    displaced = [by_key[(r["pool_address"], r["date"])]["displaced_usd"][index] for r in compared]
+    revalued = [by_key[(r["pool_address"], r["date"])]["volume_usd"]
+                - by_key[(r["pool_address"], r["date"])]["volume_usd_at_reference"] for r in compared]  # fmt: skip
+    fmt = lambda v: "n/a" if v is None else f"{v:+.3f}"  # noqa: E731
+    out += ["", f"### All {len(compared)} compared pool-days", "",
+            "Pearson correlation of the daily difference (ours - external, USD) with:", "",
+            f"- the USD of displaced swaps (H1): {fmt(_pearson(diffs, displaced))}",
+            f"- ours minus ours valued at the reference (H2): {fmt(_pearson(diffs, revalued))}", "",
+            "Per pool (the two liquid pools dominate any correlation in USD):", "",
+            "| Pool | Pool-days | r with displaced USD (H1) | r with the revaluation (H2) |",
+            "|---|---|---|---|"]  # fmt: skip
+    for address, label in labels.items():
+        rows = [i for i, r in enumerate(compared) if r["pool_address"] == address]
+        out.append(f"| {label} | {len(rows)} | {fmt(_pearson([diffs[i] for i in rows], [displaced[i] for i in rows]))} | "
+                   f"{fmt(_pearson([diffs[i] for i in rows], [revalued[i] for i in rows]))} |")  # fmt: skip
+
+    out += ["", "### Would it make the days reconcile? Both directions", "",
+            f"Pool-days beyond {100 * result.threshold:g}% today that come inside it, and pool-days "
+            "inside it today that would leave it. A hypothesis that fixes days by breaking as "
+            "many explains nothing.", "",
+            "| Adjustment | Positive days beyond, fixed | Negative days beyond, fixed | "
+            "Days inside today, broken |", "|---|---|---|---|"]  # fmt: skip
+    for i, n in enumerate(DISPLACEMENT_SENSITIVITY):
+        w = what_if(result, {k: d["volume_usd"] - d["displaced_usd"][i] for k, d in by_key.items()})
+        out.append(f"| H1: leave out swaps displaced beyond {n} ticks | {w['fixed_positive']} of "
+                   f"{w['positive']} | {w['fixed_negative']} of {w['negative']} | {w['broken']} of {w['inside']} |")  # fmt: skip
+    w = what_if(result, {k: d["volume_usd_at_reference"] for k, d in by_key.items()})
+    out.append(f"| H2: value every swap at the reference tick | {w['fixed_positive']} of {w['positive']} | "
+               f"{w['fixed_negative']} of {w['negative']} | {w['broken']} of {w['inside']} |")  # fmt: skip
+    return out
+
+
+def _evidence_round_trips(client, database: str, result: Result, parameters: dict) -> list[str]:
+    stable = {k: v for k, v in parameters.items() if k.startswith("stable_")}
+    out = ["", "## 10. Round trips inside one block", "",
+           "For each flagged pool-day: pairs of swaps of the same pool, in the same block, by the "
+           "same sender, in opposite directions, the second undoing at least 90% of the first. "
+           "Up to 10 per pool-day, largest first. Addresses and block numbers are public chain "
+           "data.", "",
+           "| pool | date | time (UTC) | block | log indexes | same tx | sender | sender = recipient | "
+           "first USD | second USD | net stable paid to pool | tick before > between > after | "
+           "liquidity before > between > after | swaps of others between |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]  # fmt: skip
+    totals = []
+    for r in sorted(result.over_threshold, key=lambda r: (r["pool_address"], r["date"])):
+        pairs = _rows(client, database, "16_evidence_round_trips.sql",
+                      {**stable, "pool": r["pool_address"], "day": r["date"]})  # fmt: skip
+        totals.append((r, len(pairs), sum(p["first_usd"] + p["second_usd"] for p in pairs)))
+        for p in pairs[:4]:
+            out.append(
+                f"| {result.labels.get(r['pool_address'], '')} | {r['date']} | {p['block_time'][11:]} | "
+                f"{p['block_number']} | {p['first_log_index']}, {p['second_log_index']} | "
+                f"{'yes' if p['same_transaction'] else 'no'} | {p['sender_address'][:10]}… | "
+                f"{'yes' if p['sender_is_recipient'] else 'no'} | {p['first_usd']:,.0f} | "
+                f"{p['second_usd']:,.0f} | {p['net_stable_paid_to_pool']:+,.0f} | "
+                f"{p['first_tick_before']} > {p['first_tick_after']} > {p['second_tick_after']} | "
+                f"{p['liquidity_before']:.3g} > {p['liquidity_between']:.3g} > {p['liquidity_after']:.3g} | "
+                f"{p['swaps_of_others_between']} |")  # fmt: skip
+    out += ["", "| pool | date | abs diff USD | round trips found (max 10) | their USD, both legs |",
+            "|---|---|---|---|---|"]  # fmt: skip
+    out += [f"| {result.labels.get(r['pool_address'], '')} | {r['date']} | {_usd(r['abs_diff_usd'])} | "
+            f"{n} | {_usd(usd)} |" for r, n, usd in totals]  # fmt: skip
+    return out
+
+
+def _hourly_by_pool_day(client, database: str, result: Result, parameters: dict) -> dict | None:
+    """Hour-by-hour rows of each flagged pool-day; None when the hourly table is not there."""
+    exists = client.command(
+        "SELECT count() FROM system.tables WHERE database = {db:String} AND name = {t:String}",
+        parameters={"db": database, "t": external.HOURLY_TABLE},
+    )
+    if not exists:
+        return None
+    stable = {k: v for k, v in parameters.items() if k.startswith("stable_")}
+    return {
+        (r["pool_address"], r["date"]): _rows(
+            client, database, "17_evidence_hourly.sql",
+            {**stable, "pool": r["pool_address"], "day": r["date"], "source": external.SOURCE},
+        )
+        for r in result.over_threshold
+    }  # fmt: skip
+
+
+def _evidence_hourly(result: Result, hourly: dict | None) -> list[str]:
+    out = ["", "## 11. The flagged pool-days, hour by hour", "",
+           "Ours against the external HOURLY candles (`make fetch-external-hourly`; the source "
+           "serves the last 1,000 hours). For each flagged pool-day: how the day's difference is "
+           "spread over its hours. Hours the source omits count as 0 on its side.", ""]  # fmt: skip
+    if hourly is None:
+        return out + ["The hourly table does not exist in this database: section skipped."]
+    out += ["| pool | date | day diff USD (daily candle) | sum of hourly diffs | hours beyond 1% | "
+            "largest three hourly diffs (hour: USD) | share of the day diff in those three |",
+            "|---|---|---|---|---|---|---|"]  # fmt: skip
+    for r in sorted(result.over_threshold, key=lambda r: (r["pool_address"], r["date"])):
+        hours = hourly[(r["pool_address"], r["date"])]
+        label = result.labels.get(r["pool_address"], "")
+        if not any(h["external_usd"] for h in hours):
+            out.append(
+                f"| {label} | {r['date']} | {_usd(r['abs_diff_usd'])} | no hourly candles | | | |"
+            )
+            continue
+        total = sum(h["diff_usd"] for h in hours)
+        beyond = sum(1 for h in hours if h["external_usd"]
+                     and abs(h["diff_usd"]) / h["external_usd"] > result.threshold)  # fmt: skip
+        top = sorted(hours, key=lambda h: -abs(h["diff_usd"]))[:3]
+        share = sum(h["diff_usd"] for h in top) / total if total else None
+        out.append(f"| {label} | {r['date']} | {_usd(r['abs_diff_usd'])} | {_usd(total)} | "
+                   f"{beyond} of {len(hours)} | "
+                   + ", ".join(f"{h['hour_of_day']:02d}h: {h['diff_usd']:+,.0f}" for h in top)
+                   + f" | {_pct(share) if share is not None else ''} |")  # fmt: skip
+    return out
+
+
+def _evidence_source_has_more(
+    result: Result, pools, by_key: dict, hourly: dict | None
+) -> list[str]:
+    """The flagged days on which the source reports MORE than the chain: leaving swaps out can
+    only lower our figure, so H1 cannot account for them whatever the threshold."""
+    index = DISPLACEMENT_SENSITIVITY.index(DISPLACEMENT_TICKS)
+    siblings: dict[str, list[str]] = {}
+    for pool in pools:
+        same = [str(q.key) for q in pools if (q.token0, q.token1) == (pool.token0, pool.token1)]
+        siblings[str(pool.key)] = [k for k in same if k != str(pool.key)]
+    rel = {(r["pool_address"], r["date"]): r["rel_diff"] for r in result.compared}
+    out = ["", "## 12. Flagged days on which the source has MORE than the chain", "",
+           "Leaving swaps out (H1) can only lower our figure, so it cannot account for these. What "
+           "can be measured is put side by side; whatever a row does not account for stays "
+           "unexplained.", "",
+           "| pool | date | rel diff | abs diff USD | displaced swaps | displaced USD | rel diff "
+           "valued at the reference (H2) | largest hourly diff | sibling pool, same day |",
+           "|---|---|---|---|---|---|---|---|---|"]  # fmt: skip
+    rows = [r for r in result.over_threshold if r["abs_diff_usd"] < 0]
+    for r in sorted(rows, key=lambda r: (r["pool_address"], r["date"])):
+        key = (r["pool_address"], r["date"])
+        d = by_key.get(key)
+        h2 = (
+            _pct(
+                (d["volume_usd_at_reference"] - r["external_volume_usd"]) / r["external_volume_usd"]
+            )
+            if d
+            else ""
+        )
+        hour = ""
+        if hourly and any(h["external_usd"] for h in hourly.get(key, [])):
+            top = max(hourly[key], key=lambda h: abs(h["diff_usd"]))
+            hour = f"{top['hour_of_day']:02d}h: {top['diff_usd']:+,.0f}"
+        sibling = ", ".join(_pct(rel[(s, r["date"])]) for s in siblings[r["pool_address"]]
+                            if (s, r["date"]) in rel)  # fmt: skip
+        out.append(f"| {result.labels.get(r['pool_address'], '')} | {r['date']} | {_pct(r['rel_diff'])} | "
+                   f"{_usd(r['abs_diff_usd'])} | {d['displaced_swaps'][index] if d else ''} | "
+                   f"{_usd(d['displaced_usd'][index]) if d else ''} | {h2} | {hour} | {sibling} |")  # fmt: skip
+    if not rows:
+        out.append("| none | | | | | | | | |")
+    return out
 
 
 if __name__ == "__main__":
