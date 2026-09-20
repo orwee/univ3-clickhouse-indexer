@@ -68,8 +68,15 @@ mv-check: ## swaps_daily (through the view) against a direct GROUP BY; non-zero 
 fetch-external: ## daily volume per pool from the public GeckoTerminal API (no key) into ClickHouse
 	PYTHONPATH=src uv run python -m univ3_indexer.external --fetch
 
-# Relative difference beyond which a pool-day of the external comparison is listed.
+# B flags a pool-day beyond BOTH: the relative difference and the absolute one, in USD.
+# Beyond the relative one only, it is listed apart. Only complete days are compared (ours
+# complete, external candle closed when downloaded); the rest are listed with the reason.
+# RECONCILE_DAYS=all compares them too.
 RECONCILE_THRESHOLD ?= 0.01
+RECONCILE_ABS_THRESHOLD ?= 1000
+RECONCILE_DAYS ?= complete
 
 reconcile: ## A internal (must be exactly zero) + B external -> reports/reconciliation.{csv,md} + evidence
-	PYTHONPATH=src uv run python -m univ3_indexer.reconcile --threshold $(RECONCILE_THRESHOLD) --evidence
+	PYTHONPATH=src uv run python -m univ3_indexer.reconcile --threshold $(RECONCILE_THRESHOLD) \
+		--abs-threshold $(RECONCILE_ABS_THRESHOLD) \
+		$(if $(filter all,$(RECONCILE_DAYS)),--include-incomplete-days,) --evidence

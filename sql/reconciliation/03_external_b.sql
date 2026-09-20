@@ -12,7 +12,9 @@
 --
 -- The external table is a ReplacingMergeTree: FINAL, always.
 -- Output: one row per (pool, day) present on EITHER side, with `presence` saying which.
--- The threshold is not applied here: the caller does, so that it stays a visible parameter.
+-- `external_fetched_at` is when that candle was downloaded: a candle of the day of the download,
+-- or later, was still open and is not a whole day. Neither that rule nor the thresholds are
+-- applied here: the caller does, so that they stay visible parameters.
 
 WITH
     ours AS
@@ -36,7 +38,7 @@ WITH
     ),
     theirs AS
     (
-        SELECT pool_address, date, volume_usd
+        SELECT pool_address, date, volume_usd, fetched_at
         FROM external_daily_volume FINAL
         WHERE source = {source:String}
           AND date BETWEEN (SELECT first_day FROM window) AND (SELECT last_day FROM window)
@@ -50,6 +52,7 @@ SELECT
     o.swaps                                                       AS our_swaps,
     o.volume_usd                                                  AS our_volume_usd,
     t.volume_usd                                                  AS external_volume_usd,
+    t.fetched_at                                                  AS external_fetched_at,
     o.volume_usd - t.volume_usd                                   AS abs_diff_usd,
     if(presence = 'both' AND t.volume_usd != 0,
        (o.volume_usd - t.volume_usd) / t.volume_usd, NULL)        AS rel_diff
