@@ -2,6 +2,8 @@
 
 import re
 
+import pytest
+
 from univ3_indexer.config import REPO_ROOT
 
 README = (REPO_ROOT / "README.md").read_text()
@@ -120,3 +122,34 @@ def test_the_limitations_cover_what_was_known_before_the_draft():
 def test_how_it_was_built_does_not_mention_what_was_not_used():
     lowered = VISIBLE.lower()
     assert "kanban" not in lowered and "orca" not in lowered
+
+
+ALL_DOCS = sorted((REPO_ROOT / "docs").glob("*.md")) + [REPO_ROOT / "DECISIONS.md"]
+
+
+@pytest.mark.parametrize("doc", ALL_DOCS, ids=lambda p: p.name)
+def test_every_relative_link_in_the_docs_resolves_anchors_included(doc):
+    broken = []
+    text = re.sub(r"```.*?```", "", doc.read_text(), flags=re.DOTALL)
+    for target in re.findall(r"\]\(([^)\s]+)\)", text):
+        if target.startswith(("http://", "https://", "mailto:")):
+            continue
+        path, _, anchor = target.partition("#")
+        file = (doc.parent / path).resolve() if path else doc
+        if not file.exists():
+            broken.append(f"{target}: no such file")
+        elif anchor and file.suffix == ".md" and anchor not in anchors_of(file):
+            broken.append(f"{target}: no such heading")
+    assert not broken, "\n".join(broken)
+
+
+def test_the_walkthrough_and_the_licence_exist_and_the_readme_points_at_them():
+    assert "(docs/WALKTHROUGH.md)" in README and "(LICENSE)" in README
+    licence = (REPO_ROOT / "LICENSE").read_text()
+    assert licence.startswith("MIT License") and "Roberto Fajardo Duro" in licence
+
+
+def test_the_readme_figures_are_the_ones_of_the_findings():
+    findings = FINDINGS.read_text()
+    for figure in ("898,404 swaps", "128 pool-days", "120 compared"):
+        assert figure in README and figure in findings, figure
