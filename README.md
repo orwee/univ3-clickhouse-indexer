@@ -160,21 +160,52 @@ arrived as a pull request that a person reviewed and merged; the agents have no 
 
 ## Reconciliation findings
 
-PENDING — written by Roberto
+**DRAFT — to be reviewed and rewritten by Roberto**
+
+Run of 2026-09-20: 898,404 swaps, 4 pools, 128 pool-days on both sides, 120 compared, 12
+flagged beyond 1% and 1,000 USD. The full draft, each figure with the section of the evidence
+behind it, is [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md); the snapshot of that run is in
+[docs/evidence/2026-09-20/](docs/evidence/2026-09-20/reconciliation.md).
+
+| # | Finding | State |
+|---|---|---|
+| [1](docs/RECONCILIATION_FINDINGS.md#1-the-pipeline-agrees-with-itself-exactly--explained) | `raw_swaps` and the materialized view agree exactly: 0 differences on 128 pool-days | EXPLAINED |
+| [2](docs/RECONCILIATION_FINDINGS.md#2-partial-days-and-open-candles--explained) | Partial days (-22% to -35% on 2026-08-20) and a candle compared while still open (-2.14%, then -0.55%). Only whole, closed days are compared; the 8 excluded are listed | EXPLAINED |
+| [3](docs/RECONCILIATION_FINDINGS.md#3-the-day-boundary-is-not-the-cause--explained-a-negative-result) | The day boundary is not the cause: the distance is smallest at a shift of 0 h in all four pools; one hour either way gives 1.8% to 13% in three of them | EXPLAINED |
+| [4](docs/RECONCILIATION_FINDINGS.md#4-which-leg-is-valued-does-not-matter-in-the-liquid-pools--explained) | Which leg is valued changes the liquid pools by -0.004% and +0.02%. It does not test whether USDC was worth 1 USD | EXPLAINED |
+| [5](docs/RECONCILIATION_FINDINGS.md#5-in-the-liquid-pools-the-30-day-totals-agree-and-the-daily-noise-is-centred--explained) | Liquid pools: 30-day totals at +0.10% and +0.24%; daily noise 15 up / 15 down in one, 19 / 11 in the other | EXPLAINED |
+| [6](docs/RECONCILIATION_FINDINGS.md#6-2026-08-27-two-pools-of-the-same-pair-off-in-opposite-directions--partly-explained) | 2026-08-27: the two USDC/WETH pools at -1.65% and +1.35%, the pair at +0.16%. Not a misattribution: the two differences sit in different hours, and one of them is unexplained | PARTLY EXPLAINED |
+| [7](docs/RECONCILIATION_FINDINGS.md#7-round-trips-inside-one-block-valued-differently--partly-explained) | The large differences coincide with round trips inside one block. "The source filters them" is refuted (fixes 0 of 24 days, breaks 64 of 96). "The source values them at a going price" fixes 15 of 24 and breaks 6 of 96 | PARTLY EXPLAINED |
+| [8](docs/RECONCILIATION_FINDINGS.md#8-2026-08-29-three-pools-high-on-a-quiet-saturday--partly-explained) | 2026-08-29: three pools high on a quiet Saturday. Not one effect: one pool is covered by finding 7, one is 18 USD, one stays at +1.44% | PARTLY EXPLAINED |
+| [9](docs/RECONCILIATION_FINDINGS.md#9-days-on-which-the-source-reports-more-than-the-chain--partly-explained) | Days on which the source reports more than the chain (-2.04%, -1.27%): +0.02% and -0.02% under the valuation reading, 85% of each in one hour. The source publishes no methodology | PARTLY EXPLAINED |
+| [10](docs/RECONCILIATION_FINDINGS.md#10-in-thin-pools-a-percentage-alone-does-not-discriminate--explained) | In thin pools a percentage does not discriminate: one 617 USD swap is 44% of a day. Flagging needs 1% and 1,000 USD | EXPLAINED |
+
+Still open: four pool-days, each located to one to three hours, listed at the end of the
+draft.
 
 ## Limitations
 
-PENDING — written by Roberto
+**DRAFT — to be reviewed and rewritten by Roberto**
 
-<!--
-Candidates for this section, for Roberto to choose from and word. Not part of the README.
-- No reorg handling: the backfill stays 64 blocks behind the tip and never revisits a block.
-- raw_swaps has no block_hash and no tx_index (the landing zone does).
-- A stablecoin is taken at exactly 1 USD; pools without a stablecoin get volume_usd = NULL.
-- "onchain is read-only" is a rule without a barrier: the only ClickHouse user can drop anything.
-- One protocol (Uniswap v3) and one chain (Ethereum mainnet).
-- No tx.from: a Swap log carries sender and recipient, which are mostly routers.
--->
+- **One protocol, one chain.** Uniswap v3 on Ethereum mainnet, four pools.
+- **No reorg handling.** The backfill stays 64 blocks behind the tip and never revisits a
+  block. `raw_swaps` has no `block_hash` and no `tx_index`; the landing zone keeps the whole
+  raw log, so both can be recovered without calling the provider again.
+- **No `tx.from`.** A Swap log carries `sender` and `recipient`, which are mostly routers. The
+  signer is known only for the fraction of transactions that came back from Nansen
+  ([docs/NANSEN.md](docs/NANSEN.md)).
+- **A stablecoin is taken at exactly 1 USD**, and a pool without one gets `volume_usd = NULL`.
+  Nothing in the pipeline checks the first assumption.
+- **One external source, with no published methodology.** Finding 7 is a reading that fits the
+  numbers, not a fact about GeckoTerminal.
+- **Batch backfill.** No continuous ingestion, no orchestration, no alerting: `make` targets
+  run by hand.
+- **"`onchain` is read-only for agents" is a rule without a barrier**: there is one ClickHouse
+  user and it can drop anything.
+- **Weekend scale.** About 900,000 rows. What [DECISIONS.md](DECISIONS.md) and
+  [docs/QUERY_PERFORMANCE.md](docs/QUERY_PERFORMANCE.md) conclude about `ORDER BY`,
+  partitions, projections and indexes was measured at that size.
+- **Nansen on the free tier.** Labels for the main counterparties exist only as a design.
 
 ## Where things are
 
