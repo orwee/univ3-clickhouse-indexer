@@ -473,6 +473,77 @@ dictionary, or denormalising at load time.
 
 ---
 
+## 15. The external comparison only looks at days that are whole on both sides
+
+> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+
+- Date: 2026-09-20
+- Status: Accepted
+
+**Context.** Two kinds of pool-day are not a day. On our side the backfill starts
+and ends inside a day: 2026-08-20 begins at 07:10:59 UTC and showed -35.16%,
+-23.84%, -22.40% and -7.60% against a source that reports the whole day. On the
+source's side the newest candle is the day still in progress. The first load of
+GeckoTerminal ran on 2026-09-19 at 23:12 UTC, so the 2026-09-19 candle was still
+open; our data for that day ended at 22:53. USDC/WETH 0.01% showed **-2.14%**
+and was listed beyond the threshold. Downloaded again on 2026-09-20, with the
+day closed on both sides, the same pool-day is at **-0.55%**, inside 1%.
+
+**Decision.** `make reconcile` compares a pool-day only if it is complete on our
+side (not the first or last day of our window) and its external candle was closed
+when downloaded (`date < UTC date of fetched_at`). The others are listed in their
+own section with both values and the reason. `RECONCILE_DAYS=all`
+(`--include-incomplete-days`) compares them too.
+
+**Why.** A difference that disappears by waiting a day says nothing about either
+source. Listing the excluded days, instead of dropping them, keeps the rule
+auditable: 8 pool-days are excluded today and all 8 are in the report.
+
+**Tradeoff.** The most recent day is never reconciled the day it happens. The
+rule relies on `fetched_at` being stored per candle, and on the source's day
+being the UTC day, which is observed and not documented (docs/EXTERNAL_SOURCE.md).
+
+**Revisit when.** The pipeline runs continuously: then "complete on our side"
+should come from the checkpoint, not from "first and last day of the window".
+
+---
+
+## 16. A pool-day is flagged beyond 1% AND beyond 1,000 USD
+
+> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+
+- Date: 2026-09-20
+- Status: Accepted
+
+**Context.** A relative threshold alone treats a 9 USD difference like a 900,000
+USD one. wstETH/USDC 0.3% has 625 swaps in the whole window (610 when first reconciled) and days of
+123 USD, where -9 USD is -6.75%. On 2026-09-19 one swap of 617.28 USD is 44% of
+that pool's volume for the day (1,413 USD): at that size any rounding or
+valuation detail of a single trade moves the day by more than 1%. Of the 24
+compared pool-days beyond 1%, 12 differ by less than 1,000 USD, and all 12 are
+in the two wstETH pools.
+
+**Decision.** A pool-day is flagged when it is beyond `RECONCILE_THRESHOLD`
+(0.01) **and** beyond `RECONCILE_ABS_THRESHOLD` (1,000 USD). Beyond the relative
+threshold only, it is listed under "below the absolute threshold" and not
+flagged. Both are parameters of `make reconcile`, with those defaults. The
+absolute threshold alone flags nothing.
+
+**Why.** Attention is the scarce thing: 12 flagged pool-days that carry money
+are investigated; the other 12, which add up to 2,098 USD, stay in sight in their
+own section. Nothing is removed from the report or the CSV.
+
+**Tradeoff.** 1,000 USD is a judgement, not a measurement, and it is the same
+for a pool that trades 80 million a day and for one that trades 2,000. A small
+pool can be wrong by 17% for a month and never be flagged if each day stays
+under 1,000 USD; the per-pool total difference in the summary is what would show
+it.
+
+**Revisit when.** Pools of very different size are added: then the absolute
+threshold should scale with the pool (for example a fraction of its median day).
+
+---
+
 ## Agent corrections
 
 Things the coding agent got wrong or that I had to redirect, one line each.

@@ -34,7 +34,12 @@ from univ3_indexer.pools import Pool, load_pools
 
 SQL = ch.SQL_DIR / "reconciliation"
 REPORTS = config.REPO_ROOT / "reports"
-DEFAULT_THRESHOLD = 0.01
+DEFAULT_THRESHOLD = 0.01  # relative: |ours - external| / external
+DEFAULT_ABS_THRESHOLD = 1000.0  # USD: a pool-day is flagged only beyond BOTH thresholds
+PARTIAL = "partial on our side (first or last day of our window)"
+OPEN_CANDLE = "external candle still open when it was downloaded"
+SINGLE_SWAP_TOLERANCE = 0.05
+MIDNIGHT_MINUTES = 10
 SHIFTS = range(-12, 13)
 PENDING = "PENDIENTE — lo escribe Roberto"
 
@@ -67,18 +72,51 @@ class Result:
     external: list[dict] = field(default_factory=list)  # B: every pool-day on either side
     threshold: float = DEFAULT_THRESHOLD
     labels: dict[str, str] = field(default_factory=dict)
+    abs_threshold: float = DEFAULT_ABS_THRESHOLD
+    complete_days_only: bool = True
 
     @property
     def both(self) -> list[dict]:
         return [r for r in self.external if r["presence"] == "both"]
 
+    def exclusion(self, row: dict) -> list[str]:
+        """Why a pool-day present on both sides is not compared. Empty: it is compared."""
+        if not self.complete_days_only:
+            return []
+        reasons = [PARTIAL] if row["partial_day"] else []
+        fetched = row.get("external_fetched_at")
+        if fetched is not None:
+            if fetched.tzinfo is not None:
+                fetched = fetched.astimezone(datetime.UTC)
+            if row["date"] >= fetched.date():  # the candle of the day of the download, or later
+                reasons.append(OPEN_CANDLE)
+        return reasons
+
     @property
-    def over_threshold(self) -> list[dict]:
+    def compared(self) -> list[dict]:
+        return [r for r in self.both if not self.exclusion(r)]
+
+    @property
+    def excluded(self) -> list[dict]:
+        return [r for r in self.both if self.exclusion(r)]
+
+    @property
+    def over_relative(self) -> list[dict]:
         return [
             r
-            for r in self.both
+            for r in self.compared
             if r["rel_diff"] is not None and abs(r["rel_diff"]) > self.threshold
-        ]  # noqa: E501
+        ]
+
+    @property
+    def over_threshold(self) -> list[dict]:
+        """Flagged: beyond the relative threshold AND beyond the absolute one."""
+        return [r for r in self.over_relative if abs(r["abs_diff_usd"]) > self.abs_threshold]
+
+    @property
+    def below_absolute(self) -> list[dict]:
+        """Beyond the relative threshold only: listed apart, not flagged."""
+        return [r for r in self.over_relative if abs(r["abs_diff_usd"]) <= self.abs_threshold]
 
     @property
     def one_sided(self) -> list[dict]:
@@ -100,6 +138,8 @@ def run(
     threshold: float = DEFAULT_THRESHOLD,
     pools=None,
     internal_only: bool = False,
+    abs_threshold: float = DEFAULT_ABS_THRESHOLD,
+    complete_days_only: bool = True,
 ) -> Result:
     """``internal_only`` runs A alone: for a database that has no external table at all."""
     ch.qualified(database)
@@ -110,6 +150,8 @@ def run(
         external=[] if internal_only else _rows(client, database, "03_external_b.sql", parameters),
         threshold=threshold,
         labels={str(p.key): p.label for p in pools},
+        abs_threshold=abs_threshold,
+        complete_days_only=complete_days_only,
     )
 
 
@@ -117,7 +159,7 @@ def run(
 
 CSV_COLUMNS = ["pool", "pool_address", "date", "presence", "partial_day", "our_swaps",
                "our_volume_usd", "external_volume_usd", "abs_diff_usd", "rel_diff",
-               "over_threshold"]  # fmt: skip
+               "over_threshold", "over_relative_only", "excluded_reason"]  # fmt: skip
 
 
 def write_csv(result: Result, path: Path) -> None:
@@ -125,12 +167,16 @@ def write_csv(result: Result, path: Path) -> None:
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh, lineterminator="\n")
         writer.writerow(CSV_COLUMNS)
+        flagged = {id(r) for r in result.over_threshold}
+        relative_only = {id(r) for r in result.below_absolute}
         for r in result.external:
-            over = r["rel_diff"] is not None and abs(r["rel_diff"]) > result.threshold
+            over = id(r) in flagged
+            reasons = result.exclusion(r) if r["presence"] == "both" else []
             writer.writerow([
                 result.labels.get(r["pool_address"], ""), r["pool_address"], r["date"], r["presence"],
                 int(r["partial_day"]), r["our_swaps"], r["our_volume_usd"], r["external_volume_usd"],
                 r["abs_diff_usd"], "" if r["rel_diff"] is None else r["rel_diff"], int(over),
+                int(id(r) in relative_only), "; ".join(reasons),
             ])  # fmt: skip
 
 
@@ -142,11 +188,12 @@ def _usd(value: float) -> str:
     return f"{value:,.0f}"
 
 
-def per_pool_summary(result: Result, include_partial: bool) -> list[dict]:
+def per_pool_summary(result: Result, compared_only: bool) -> list[dict]:
     summary = []
+    source = result.compared if compared_only else result.both
+    flagged = {id(r) for r in result.over_threshold}
     for address, label in result.labels.items():
-        rows = [r for r in result.both if r["pool_address"] == address
-                and (include_partial or not r["partial_day"])]  # fmt: skip
+        rows = [r for r in source if r["pool_address"] == address]
         if not rows:
             continue
         ours = sum(r["our_volume_usd"] for r in rows)
@@ -158,36 +205,68 @@ def per_pool_summary(result: Result, include_partial: bool) -> list[dict]:
             "median_rel_diff": statistics.median(rel) if rel else None,
             "max_abs_rel_diff": max((abs(x) for x in rel), default=None),
             "days_over": sum(1 for x in rel if abs(x) > result.threshold),
+            "days_flagged": sum(1 for r in rows if id(r) in flagged),
         })  # fmt: skip
     return summary
+
+
+def _rules(result: Result) -> str:
+    days = (
+        "only days complete on our side whose external candle was closed when downloaded"
+        if result.complete_days_only
+        else "every day present on both sides, incomplete ones included (`--include-incomplete-days`)"
+    )
+    return (
+        f"Compared: {days}. Flagged: beyond **{100 * result.threshold:g}%** (`--threshold`) AND "
+        f"beyond **{result.abs_threshold:,.0f} USD** (`--abs-threshold`)."
+    )
+
+
+def _day_table(result: Result, rows: list[dict], with_reason: bool = False) -> list[str]:
+    head = "| pool | date | our USD | external USD | abs diff USD | rel diff |"
+    lines = [
+        head + (" why |" if with_reason else ""),
+        "|---|---|---|---|---|---|" + ("---|" if with_reason else ""),
+    ]
+    for r in rows:
+        line = (
+            f"| {result.labels.get(r['pool_address'], '')} | {r['date']} | "
+            f"{_usd(r['our_volume_usd'])} | {_usd(r['external_volume_usd'])} | "
+            f"{_usd(r['abs_diff_usd'])} | {_pct(r['rel_diff'])} |"
+        )
+        lines.append(line + (f" {'; '.join(result.exclusion(r))} |" if with_reason else ""))
+    return lines
 
 
 def render(result: Result, database: str) -> str:
     now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
         "# Reconciliation report", "",
-        f"Database `{database}`, generated {now} by `make reconcile`. "
-        f"Threshold for B: **{100 * result.threshold:g}%** (`--threshold`).", "",
+        f"Database `{database}`, generated {now} by `make reconcile`. {_rules(result)}", "",
         "## Summary", "",
         f"- **A, internal** (recomputation from `raw_swaps` vs `swaps_daily`, raw units): "
         f"**{'exact, 0 differences' if result.internal_ok else f'FAILED, {len(result.internal)} pool-day(s) differ'}**.",  # noqa: E501
         f"- **B, external** (our `volume_usd` vs {external.SOURCE}): {len(result.both)} pool-days "
-        f"present on both sides, **{len(result.over_threshold)} beyond the threshold**, "
+        f"present on both sides, {len(result.compared)} compared, "
+        f"**{len(result.over_threshold)} beyond both thresholds**, "
+        f"{len(result.below_absolute)} beyond the relative threshold only, "
+        f"{len(result.excluded)} excluded (listed below with the reason), "
         f"{len(result.one_sided)} present on one side only.",
         "- The exit code reflects A only. What the differences in B mean is not decided here.", "",
     ]  # fmt: skip
-    for include_partial, title in (
-        (True, "all days"),
-        (False, "excluding the first and last day of the window, which are partial on our side"),
+    for compared_only, title in (
+        (True, "compared days"),
+        (False, "every day present on both sides, for reference"),
     ):  # noqa: E501
         lines += [f"### B per pool, {title}", "",
-                  "| Pool | Days | Ours USD | External USD | Total diff | Median daily diff | Largest daily diff (absolute) | Days beyond threshold |",  # noqa: E501
-                  "|---|---|---|---|---|---|---|---|"]  # fmt: skip
-        for s in per_pool_summary(result, include_partial):
+                  "| Pool | Days | Ours USD | External USD | Total diff | Median daily diff | Largest daily diff (absolute) | Days beyond the relative threshold | Days beyond both |",  # noqa: E501
+                  "|---|---|---|---|---|---|---|---|---|"]  # fmt: skip
+        for s in per_pool_summary(result, compared_only):
             lines.append(
                 f"| {s['pool']} | {s['days']} | {_usd(s['ours'])} | {_usd(s['external'])} | "
                 f"{_pct(s['total_rel_diff'])} | {_pct(s['median_rel_diff'])} | "
-                f"{100 * s['max_abs_rel_diff']:.2f}% | {s['days_over']} |"
+                f"{100 * s['max_abs_rel_diff']:.2f}% | {s['days_over']} | "
+                f"{s['days_flagged'] if compared_only else ''} |"
             )
         lines.append("")
     lines += ["## A: differences (expected: none)", ""]
@@ -209,15 +288,25 @@ def render(result: Result, database: str) -> str:
         lines += [f"| {result.labels.get(r['pool_address'], r['pool_address'])} | {r['date']} | "
                   f"{r['presence']} | {_usd(r['our_volume_usd'])} | {_usd(r['external_volume_usd'])} |"
                   for r in result.one_sided]  # fmt: skip
-    lines += ["", f"## B: pool-days beyond {100 * result.threshold:g}%", "",
-              "| pool | date | partial day | our USD | external USD | abs diff USD | rel diff |",
-              "|---|---|---|---|---|---|---|"]  # fmt: skip
-    for r in sorted(result.over_threshold, key=lambda r: -abs(r["rel_diff"])):
-        lines.append(
-            f"| {result.labels.get(r['pool_address'], '')} | {r['date']} | "
-            f"{'yes' if r['partial_day'] else ''} | {_usd(r['our_volume_usd'])} | "
-            f"{_usd(r['external_volume_usd'])} | {_usd(r['abs_diff_usd'])} | {_pct(r['rel_diff'])} |"
-        )
+    by_size = lambda r: -abs(r["rel_diff"])  # noqa: E731
+    lines += ["", f"## B: pool-days beyond {100 * result.threshold:g}% and "
+              f"{result.abs_threshold:,.0f} USD", ""]  # fmt: skip
+    lines += (
+        _day_table(result, sorted(result.over_threshold, key=by_size))
+        if result.over_threshold
+        else ["None."]
+    )
+    lines += ["", f"## B: beyond {100 * result.threshold:g}%, but below the absolute threshold of "
+              f"{result.abs_threshold:,.0f} USD", "",
+              "Listed, not flagged.", ""]  # fmt: skip
+    lines += (
+        _day_table(result, sorted(result.below_absolute, key=by_size))
+        if result.below_absolute
+        else ["None."]
+    )
+    lines += ["", "## B: pool-days excluded from the comparison", "",
+              "Present on both sides, shown with both values, and not compared.", ""]  # fmt: skip
+    lines += _day_table(result, result.excluded, with_reason=True) if result.excluded else ["None."]
     lines += ["", "Every pool-day, with both values, is in `reconciliation.csv`.", ""]
     return "\n".join(lines)
 
@@ -288,9 +377,9 @@ def render_evidence(client, database: str, result: Result, pools=None) -> str:
                    f"{100 * r['p99_per_swap']:+.4f}% |")  # fmt: skip
 
     out += ["", "## 3. Distribution of the daily relative difference (ours - external) / external", "",
-            "Full days only (first and last day of the window excluded).", "",
+            "Compared days only (see the rules at the top of `reconciliation.md`).", "",
             "| Pool | Days | min | p25 | median | p75 | max |", "|---|---|---|---|---|---|---|"]  # fmt: skip
-    full = [r for r in result.both if not r["partial_day"] and r["rel_diff"] is not None]
+    full = [r for r in result.compared if r["rel_diff"] is not None]
     for address, label in labels.items():
         values = [r["rel_diff"] for r in full if r["pool_address"] == address]
         out.append(f"| {label} | {len(values)} | {_quantiles(values)} |")
@@ -333,7 +422,121 @@ def render_evidence(client, database: str, result: Result, pools=None) -> str:
     out += [
         f"- {labels.get(r['pool_address'], '')} {r['date']}: {r['presence']}" for r in one_sided
     ]
+    out += _evidence_pairs(result, pools)
+    out += _evidence_source_effect(result)
+    out += _evidence_single_swap(client, database, result, parameters)
     return "\n".join(out) + "\n"
+
+
+def _evidence_pairs(result: Result, pools) -> list[str]:
+    """Pools that trade the same two tokens, added up per day."""
+    out = ["", "## 6. Pools of the same pair, added up", "",
+           "For every compared day: ours and the external figure summed over the pools that trade "
+           "the same two tokens. Listed: the days on which at least one pool of the pair is beyond "
+           f"{100 * result.threshold:g}% while the sum is within it.", ""]  # fmt: skip
+    groups: dict[tuple[str, str], list] = {}
+    for pool in pools:
+        groups.setdefault((pool.token0, pool.token1), []).append(pool)
+    by_key = {(r["pool_address"], r["date"]): r for r in result.compared}
+    for (token0, token1), members in groups.items():
+        if len(members) < 2:
+            continue
+        keys = [str(m.key) for m in members]
+        days = sorted({d for (a, d) in by_key if a in keys})
+        days = [d for d in days if all((k, d) in by_key for k in keys)]
+        out += [f"### {token0}/{token1}: " + " + ".join(m.label for m in members), "",
+                f"Days with every pool of the pair compared: {len(days)}.", "",
+                "| date | " + " | ".join(f"{m.label} rel diff" for m in members)
+                + " | pair ours USD | pair external USD | pair abs diff USD | pair rel diff |",
+                "|---|" + "---|" * (len(members) + 4)]  # fmt: skip
+        pair_rel, listed = [], 0
+        for day in days:
+            rows = [by_key[(k, day)] for k in keys]
+            ours = sum(r["our_volume_usd"] for r in rows)
+            theirs = sum(r["external_volume_usd"] for r in rows)
+            rel = (ours - theirs) / theirs if theirs else None
+            if rel is None:
+                continue
+            pair_rel.append(rel)
+            if (
+                any(abs(r["rel_diff"]) > result.threshold for r in rows)
+                and abs(rel) <= result.threshold
+            ):
+                listed += 1
+                out.append(f"| {day} | " + " | ".join(_pct(r["rel_diff"]) for r in rows)
+                           + f" | {_usd(ours)} | {_usd(theirs)} | {_usd(ours - theirs)} | {_pct(rel)} |")  # fmt: skip
+        if not listed:
+            out.append("| none | " + " | " * (len(members) + 4))
+        over = sum(1 for x in pair_rel if abs(x) > result.threshold)
+        out += ["", f"Pair-days beyond {100 * result.threshold:g}%: {over} of {len(pair_rel)}. "
+                f"Pair daily rel diff: min, p25, median, p75, max = {_quantiles(pair_rel)}.", ""]  # fmt: skip
+    return out
+
+
+def _evidence_source_effect(result: Result) -> list[str]:
+    """Days on which several pools move away from the source in the same direction."""
+    labels = result.labels
+    out = ["", "## 7. The same day across the pools", "",
+           "Compared days. Volume vs median: our USD volume of the day, all pools, over the median "
+           f"of that figure. Marked `<<`: three or more pools beyond {100 * result.threshold:g}% "
+           "with the same sign.", "",
+           "| date | weekday | volume vs median | " + " | ".join(labels.values()) + " | |",
+           "|---|---|---|" + "---|" * (len(labels) + 1)]  # fmt: skip
+    by_day: dict = {}
+    for r in result.compared:
+        by_day.setdefault(r["date"], {})[r["pool_address"]] = r
+    totals = {d: sum(r["our_volume_usd"] for r in rows.values()) for d, rows in by_day.items()}
+    median = statistics.median(totals.values()) if totals else 0
+    marked = []
+    for day in sorted(by_day):
+        rels = [by_day[day][a]["rel_diff"] if a in by_day[day] else None for a in labels]
+        up = sum(1 for x in rels if x is not None and x > result.threshold)
+        down = sum(1 for x in rels if x is not None and x < -result.threshold)
+        mark = "<<" if max(up, down) >= 3 else ""
+        if mark:
+            marked.append(str(day))
+        ratio = f"{totals[day] / median:.2f}x" if median else ""
+        out.append(
+            f"| {day} | {day:%a} | {ratio} | " + " | ".join(_pct(x) for x in rels) + f" | {mark} |"
+        )
+    out += ["", f"Days marked: {', '.join(marked) if marked else 'none'}."]
+    return out
+
+
+def _evidence_single_swap(client, database: str, result: Result, parameters: dict) -> list[str]:
+    """For each compared pool-day beyond the relative threshold: one swap about that size?"""
+    out = ["", "## 8. One swap the size of the difference", "",
+           f"For each compared pool-day beyond {100 * result.threshold:g}%: our swaps of that pool "
+           f"whose USD value is within {100 * SINGLE_SWAP_TOLERANCE:g}% of the absolute difference, "
+           f"looking at the UTC day plus {MIDNIGHT_MINUTES} minutes before its first midnight and "
+           "after its last. The day's median tick and liquidity are given to compare each swap "
+           "with; nothing is called anomalous here.", "",
+           "| pool | date | rel diff | abs diff USD | swaps that size | of them, within "
+           f"{MIDNIGHT_MINUTES} min of a midnight |", "|---|---|---|---|---|---|"]  # fmt: skip
+    found = []
+    for r in sorted(result.over_relative, key=lambda r: (r["pool_address"], r["date"])):
+        rows = _rows(client, database, "13_evidence_single_swap.sql", {
+            **{k: v for k, v in parameters.items() if k.startswith("stable_")},
+            "pool": r["pool_address"], "day": r["date"], "target_usd": abs(r["abs_diff_usd"]),
+            "tolerance": SINGLE_SWAP_TOLERANCE, "minutes": MIDNIGHT_MINUTES})  # fmt: skip
+        near = [x for x in rows if x["where_in_day"]]
+        out.append(f"| {result.labels.get(r['pool_address'], '')} | {r['date']} | {_pct(r['rel_diff'])} | "
+                   f"{_usd(r['abs_diff_usd'])} | {len(rows)} | {len(near)} |")  # fmt: skip
+        found += [(r, x) for x in rows]
+    out += ["", "The swaps counted above:", "",
+            "| pool | date | swap time (UTC) | swap USD | swap / abs diff - 1 | where in the day | "
+            "tick | day median tick | liquidity | day median liquidity | swaps that day | "
+            "swap / day USD |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]  # fmt: skip
+    for r, x in found:
+        share = f"{100 * x['swap_usd'] / x['day_usd']:.1f}%" if x["day_usd"] else ""
+        out.append(f"| {result.labels.get(r['pool_address'], '')} | {r['date']} | {x['swap_time']} | "
+                   f"{x['swap_usd']:,.2f} | {_pct(x['swap_over_target_minus_1'])} | "
+                   f"{x['where_in_day']} | {x['swap_tick']} | {x['day_median_tick']} | "
+                   f"{x['swap_liquidity']:.4g} | {x['day_median_liquidity']:.4g} | "
+                   f"{x['day_swaps']:,} | {share} |")  # fmt: skip
+    if not found:
+        out.append("| none | | | | | | | | | | | |")
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -344,6 +547,19 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_THRESHOLD,
         help="relative difference beyond which a pool-day of B is listed (0.01 = 1%%)",
     )  # noqa: E501
+    parser.add_argument(
+        "--abs-threshold",
+        type=float,
+        default=DEFAULT_ABS_THRESHOLD,
+        help="USD difference a pool-day must ALSO exceed to be flagged; those beyond the "
+        "relative threshold only are listed apart",
+    )
+    parser.add_argument(
+        "--include-incomplete-days",
+        action="store_true",
+        help="also compare days partial on our side and external candles that were still open "
+        "when downloaded (default: list them apart with the reason)",
+    )
     parser.add_argument("--database", help="default: CLICKHOUSE_DB")
     parser.add_argument("--out", type=Path, default=REPORTS)
     parser.add_argument(
@@ -354,7 +570,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     database = args.database or config.load_clickhouse_config().database
     client = ch.connect(database=database)
-    result = run(client, database, args.threshold)
+    result = run(
+        client,
+        database,
+        args.threshold,
+        abs_threshold=args.abs_threshold,
+        complete_days_only=not args.include_incomplete_days,
+    )
 
     write_csv(result, args.out / "reconciliation.csv")
     (args.out / "reconciliation.md").write_text(render(result, database), encoding="utf-8")
@@ -365,8 +587,10 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"A internal : {'exact, 0 differences' if result.internal_ok else f'FAILED: {len(result.internal)} pool-day(s) differ'}"
     )  # noqa: E501
-    print(f"B external : {len(result.both)} pool-days on both sides, {len(result.over_threshold)} beyond "
-          f"{100 * args.threshold:g}%, {len(result.one_sided)} on one side only")  # fmt: skip
+    print(f"B external : {len(result.both)} pool-days on both sides, {len(result.compared)} compared, "
+          f"{len(result.over_threshold)} beyond {100 * args.threshold:g}% and "
+          f"{args.abs_threshold:,.0f} USD, {len(result.below_absolute)} beyond {100 * args.threshold:g}% only, "
+          f"{len(result.excluded)} excluded, {len(result.one_sided)} on one side only")  # fmt: skip
     print(f"reports    : {args.out}")
     if not result.internal_ok:
         return 1
