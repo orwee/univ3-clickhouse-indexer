@@ -268,7 +268,6 @@ draft.
 | [docs/EXTERNAL_SOURCE.md](docs/EXTERNAL_SOURCE.md) | The external source: documented, observed, unknown |
 | [docs/NANSEN.md](docs/NANSEN.md) | What Nansen adds to a Swap log (the signer and its classification), what runs on the free tier with the credits spent, and the production design that was not run |
 | [docs/QUERY_PERFORMANCE.md](docs/QUERY_PERFORMANCE.md) | Projection, bloom filter, one insert against a thousand |
-| [docs/SQL_PRACTICE.md](docs/SQL_PRACTICE.md) | 17 ClickHouse SQL exercises on this data (Spanish), solutions apart |
 
 ## License
 
