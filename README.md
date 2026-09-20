@@ -227,7 +227,10 @@ draft.
   node reports as finalised (`eth_getBlockByNumber("finalized")`); if the provider does not
   know that tag it falls back to 64 blocks behind the tip and says in the log and in
   `plan.json` that the window is not finalised. It never revisits a block. The data loaded
-  before 2026-09-21 was fetched with the 64-block rule. `raw_swaps` has no `block_hash` and no
+  before 2026-09-21 was fetched with the 64-block rule; on that day
+  `scripts/verify_landing_is_canonical.py` compared the block hash kept in the landing zone
+  with the chain for 680 blocks (the end of every file and the last 100 blocks of every
+  window) and all of them matched. `raw_swaps` has no `block_hash` and no
   `tx_index`; the landing zone keeps the whole raw log, so both can be recovered without
   calling the provider again.
 - **No `tx.from`.** A Swap log carries `sender` and `recipient`, which are mostly routers. The
