@@ -79,8 +79,8 @@ CREDIT_HEADERS = {
 
 
 def test_the_documented_cost_is_the_one_read_in_the_official_table():
-    assert nansen.DOCUMENTED_COST == {"smart-money/dex-trades": 5}
-    assert nansen.DEFAULT_BUDGET == 8, "the ceiling Roberto set"
+    assert nansen.DOCUMENTED_COST == {"smart-money/dex-trades": 5, "tgm/dex-trades": 1}
+    assert nansen.DEFAULT_BUDGET == 40, "the ceiling Roberto set for the tgm/dex-trades campaign"
 
 
 def test_one_call_fits_in_eight_credits_and_a_second_is_refused_before_it_is_sent():
@@ -326,3 +326,203 @@ def test_the_report_carries_no_hash_address_or_label(clickhouse, loaded):
     )
     assert named[2:12] not in text and "ab" * 20 not in text and "Synthetic Fund" not in text
     assert not re.search(r"0x[0-9a-fA-F]{40}", text), "not even a pool address"
+
+
+# --- tgm/dex-trades: token from pools.yml, pages cached, a ledger that outlives the process ----
+
+WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+DAY = datetime.date(2026, 9, 1)
+ONE_CREDIT = {"X-Nansen-Credits-Cost": "1", "X-Nansen-Credits-Used": "1",
+              "X-Nansen-Credits-Remaining": "94"}  # fmt: skip
+
+
+def tgm_trade(tx_hash, when="2026-09-01T10:00:00", value=500.0):
+    return {"block_timestamp": when, "transaction_hash": tx_hash,
+            "trader_address": "0x" + "cd" * 20,
+            "trader_address_label": "Synthetic Smart Trader", "action": "BUY",
+            "token_address": WETH, "token_name": "WETH", "token_amount": 1.0,
+            "traded_token_address": "0x" + "03" * 20, "traded_token_name": "USDC",
+            "traded_token_amount": 500.0, "estimated_swap_price_usd": 500.0,
+            "estimated_value_usd": value}  # fmt: skip
+
+
+def test_token_addresses_come_from_pools_yml_and_match_the_on_chain_evidence():
+    tokens = nansen.known_token_addresses()
+    assert set(tokens) == {"USDC", "WETH", "wstETH"}
+    text = (nansen.POOLS_YML).read_text()
+    assert all(address in text for address in tokens.values())
+
+
+def test_a_token_that_is_not_in_pools_yml_is_never_queried():
+    session = FakeSession()
+    with pytest.raises(nansen.NansenError, match="not a token of pools.yml"):
+        client(session)[0].tgm_dex_trades_raw("0x" + "99" * 20, DAY, DAY)
+    assert session.calls == []
+
+
+def test_tgm_request_shape_smart_money_only_whole_utc_days_oldest_first():
+    session = FakeSession(FakeResponse(200, body([]), ONE_CREDIT))
+    api, budget = client(session)
+    api.tgm_dex_trades_raw(WETH, DAY, DAY + datetime.timedelta(days=6), page=3)
+    (call,) = session.calls
+    assert call["url"] == "https://api.nansen.ai/api/v1/tgm/dex-trades"
+    assert call["json"] == {
+        "chain": "ethereum", "token_address": WETH, "only_smart_money": True,
+        "date": {"from": "2026-09-01T00:00:00Z", "to": "2026-09-07T23:59:59Z"},
+        "pagination": {"page": 3, "per_page": 1000},
+        "order_by": [{"field": "block_timestamp", "direction": "ASC"}],
+    }  # fmt: skip
+    assert budget.spent == 1
+
+
+def test_an_inverted_window_is_refused_before_spending():
+    session = FakeSession()
+    with pytest.raises(ValueError, match="before"):
+        client(session)[0].tgm_dex_trades_raw(WETH, DAY, DAY - datetime.timedelta(days=1))
+    assert session.calls == []
+
+
+def test_pages_are_read_until_the_last_and_a_cached_page_is_never_asked_for_again(tmp_path):
+    first = FakeSession(FakeResponse(200, body([tgm_trade(HASH_A)], False), ONE_CREDIT),
+                        FakeResponse(200, body([tgm_trade(HASH_B)], True), ONE_CREDIT))  # fmt: skip
+    summary = nansen.fetch_tgm(client(first)[0], tmp_path, "WETH", DAY, DAY, max_pages=5)
+    assert (summary["pages"], summary["called"], summary["trades"], summary["complete"]) == (
+        2,
+        2,
+        2,
+        True,
+    )
+    again = FakeSession()
+    summary = nansen.fetch_tgm(client(again)[0], tmp_path, "WETH", DAY, DAY, max_pages=5)
+    assert again.calls == [] and summary["called"] == 0 and summary["trades"] == 2
+    trades, complete, pages = nansen.cached_tgm(tmp_path, "WETH", DAY, DAY)
+    assert [t.tx_hash for t in trades] == ["aa" * 32, "bb" * 32] and complete and pages == 2
+    for path in tmp_path.glob("*.json"):
+        assert KEY not in path.read_text() and path.stat().st_mode & 0o077 == 0
+
+
+def test_max_pages_stops_the_reading_and_says_it_is_not_complete(tmp_path):
+    session = FakeSession(FakeResponse(200, body([tgm_trade(HASH_A)], False), ONE_CREDIT))
+    summary = nansen.fetch_tgm(client(session)[0], tmp_path, "WETH", DAY, DAY, max_pages=1)
+    assert summary["complete"] is False and len(session.calls) == 1
+
+
+def test_the_ledger_makes_the_ceiling_outlive_the_process(tmp_path):
+    ledger = tmp_path / "ledger.jsonl"
+    responses = [FakeResponse(200, body([], False), ONE_CREDIT) for _ in range(3)]
+    budget = nansen.CreditBudget(3, ledger, nansen.TGM_ENDPOINT)
+    api = nansen.NansenClient(KEY, budget, session=FakeSession(*responses[:2]))
+    api.tgm_dex_trades_raw(WETH, DAY, DAY, page=1)
+    api.tgm_dex_trades_raw(WETH, DAY, DAY, page=2)
+    # a new process: the two credits are still spent
+    reborn = nansen.CreditBudget(3, ledger, nansen.TGM_ENDPOINT)
+    assert reborn.spent == 2
+    session = FakeSession(responses[2])
+    later = nansen.NansenClient(KEY, reborn, session=session)
+    later.tgm_dex_trades_raw(WETH, DAY, DAY, page=3)
+    with pytest.raises(nansen.BudgetExceeded):
+        later.tgm_dex_trades_raw(WETH, DAY, DAY, page=4)
+    assert len(session.calls) == 1 and KEY not in ledger.read_text()
+    other = nansen.CreditBudget(8, ledger, nansen.ENDPOINT)
+    assert other.spent == 0, "each endpoint has its own ceiling"
+
+
+def test_a_tgm_error_is_not_retried_and_lands_in_the_ledger(tmp_path):
+    ledger = tmp_path / "ledger.jsonl"
+    session = FakeSession(FakeResponse(422, json.dumps({"code": "invalid_date_range"}),
+                                       {"X-Nansen-Credits-Used": "0"}))  # fmt: skip
+    api = nansen.NansenClient(
+        KEY, nansen.CreditBudget(40, ledger, nansen.TGM_ENDPOINT), session=session
+    )
+    with pytest.raises(nansen.NansenError, match="HTTP 422 invalid_date_range"):
+        nansen.fetch_tgm(api, tmp_path, "WETH", DAY, DAY, max_pages=3)
+    assert len(session.calls) == 1 and list(tmp_path.glob("tgm_*.json")) == []
+    assert json.loads(ledger.read_text())["used"] == 0
+
+
+BAD_TGM = [
+    body([{"block_timestamp": "2026-09-01T10:00:00"}]),
+    body([tgm_trade("0xzz")]),
+    body([tgm_trade(HASH_A, when="noon")]),
+]
+
+
+@pytest.mark.parametrize("bad", BAD_TGM)
+def test_malformed_tgm_responses_are_refused(bad):
+    with pytest.raises(nansen.NansenError):
+        nansen.parse_tgm_trades(bad)
+
+
+# --- the daily aggregate, against a throw-away database ----------------------------------------
+
+
+def fixture_by_tx():
+    by_tx = {}
+    for entry in RAW:
+        by_tx.setdefault(entry["transactionHash"], []).append(entry)
+    return by_tx
+
+
+def test_the_daily_aggregate_stores_zeros_and_only_the_pools_of_the_token(clickhouse, loaded):
+    first, last = fixture_times()
+    weth_pools = {
+        "0xe0554a476a092703abdb3ef35c80e0d76d32939f",
+        "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+    }
+    named = next(h for h, logs in fixture_by_tx().items() if logs[0]["address"] in weth_pools)
+    trades = [nansen.Trade(named[2:], first, 1.0), nansen.Trade("aa" * 32, first, 1.0)]
+    summary = nansen.store_daily(
+        clickhouse, loaded, "WETH", trades, True, first.date(), last.date()
+    )
+    rows = clickhouse.query(
+        f"SELECT pool_address, date, named_swaps, named_volume_usd, token_symbol FROM "
+        f"{ch.qualified(loaded, nansen.DAILY_TABLE)} FINAL"
+    ).result_rows
+    assert {r[0] for r in rows} == weth_pools, "a WETH list says nothing about the wstETH pools"
+    assert sum(r[2] for r in rows) == len(fixture_by_tx()[named]) == summary["named_swaps"]
+    assert any(r[2] == 0 for r in rows), "a fetched day with no match is a row with a zero"
+    assert {r[4] for r in rows} == {"WETH"}
+    swaps = clickhouse.command(
+        f"SELECT count() FROM {ch.qualified(loaded)} WHERE pool_address IN {tuple(weth_pools)}"
+    )
+    assert summary["pool_days"] == len(rows) and swaps > 0
+
+
+def test_incomplete_pages_only_speak_for_the_whole_days_before_the_newest_trade(clickhouse, loaded):
+    first, last = fixture_times()
+    assert first.date() < last.date(), "the fixture spans two UTC days"
+    newest = datetime.datetime.combine(last.date(), datetime.time(0, 5), tzinfo=UTC)
+    nansen.store_daily(clickhouse, loaded, "WETH", [nansen.Trade("aa" * 32, newest, 1.0)], False,
+                       first.date(), last.date())  # fmt: skip
+    table = ch.qualified(loaded, nansen.DAILY_TABLE)
+    days = {r[0] for r in clickhouse.query(f"SELECT date FROM {table} FINAL").result_rows}
+    assert days == {first.date()}, "the day the pages stopped in is cut short: it gets no row"
+
+
+def test_recomputing_supersedes_under_final(clickhouse, loaded):
+    first, last = fixture_times()
+    for _ in range(2):
+        nansen.store_daily(clickhouse, loaded, "WETH", [], True, first.date(), last.date())
+    table = ch.qualified(loaded, nansen.DAILY_TABLE)
+    assert clickhouse.command(f"SELECT count() FROM {table} FINAL") <= clickhouse.command(
+        f"SELECT count() FROM {table}"
+    )
+    keys = clickhouse.command(f"SELECT uniqExact(pool_address, date) FROM {table}")
+    assert clickhouse.command(f"SELECT count() FROM {table} FINAL") == keys
+
+
+# --- what is committed about Nansen names nobody -------------------------------------------------
+
+
+@pytest.mark.parametrize("name", ["NANSEN.md", "NANSEN_CROSS.md"])
+def test_the_committed_nansen_documents_carry_no_hash_and_no_address(name):
+    text = (nansen.config.REPO_ROOT / "docs" / name).read_text()
+    assert not re.search(r"0x[0-9a-fA-F]{40}", text), "neither a wallet nor a transaction hash"
+    assert not re.search(r"\b[0-9a-fA-F]{64}\b", text)
+
+
+def test_the_aggregate_table_has_no_column_that_could_hold_a_wallet_or_a_hash():
+    ddl = nansen.DAILY_DDL.read_text()
+    columns = re.findall(r"^\s{4}(\w+)\s+", ddl.split("(", 1)[1], flags=re.M)
+    assert set(columns) == set(nansen.DAILY_COLUMNS)
+    assert not {"tx_hash", "trader_address", "label", "trader_address_label"} & set(columns)

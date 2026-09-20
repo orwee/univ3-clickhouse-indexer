@@ -43,6 +43,7 @@ import requests
 
 from univ3_indexer import clickhouse as ch
 from univ3_indexer import config
+from univ3_indexer.addresses import normalize
 from univ3_indexer.pools import load_pools
 from univ3_indexer.reconcile import stable_leg_parameters, stablecoin_symbols
 
@@ -50,8 +51,17 @@ log = logging.getLogger("univ3_indexer.nansen")
 
 BASE_URL = "https://api.nansen.ai/api/v1"
 ENDPOINT = "smart-money/dex-trades"
-DOCUMENTED_COST = {ENDPOINT: 5}  # credits per call, from the official cost table
-DEFAULT_BUDGET = 8
+TGM_ENDPOINT = "tgm/dex-trades"
+DOCUMENTED_COST = {ENDPOINT: 5, TGM_ENDPOINT: 1}  # credits per call, official cost table
+DEFAULT_BUDGET = 40  # for the tgm/dex-trades campaign; spent credits persist in the ledger
+LEDGER = "ledger.jsonl"
+DAILY_TABLE = "nansen_smart_money_daily"
+DAILY_DDL = ch.SQL_DIR / "003_nansen_smart_money_daily.sql"
+DAILY_SQL = ch.SQL_DIR / "nansen" / "03_daily_by_tx_hash.sql"
+DAILY_COLUMNS = ["pool_address", "date", "named_swaps", "named_transactions", "named_volume_usd",
+                 "token_symbol", "window_from", "window_to", "computed_at"]  # fmt: skip
+POOLS_YML = config.REPO_ROOT / "pools.yml"
+VERIFICATION_DIR = config.REPO_ROOT / "docs" / "verification"
 CHAIN = "ethereum"
 MAX_PER_PAGE = 1000
 CROSS_SQL = ch.SQL_DIR / "nansen" / "01_cross_by_tx_hash.sql"
@@ -69,10 +79,29 @@ class BudgetExceeded(NansenError):
 
 
 class CreditBudget:
-    """Refuses a call whose documented cost does not fit in what is left."""
+    """Refuses a call whose documented cost does not fit in what is left.
 
-    def __init__(self, max_credits: int):
+    With a ledger file the budget outlives the process: what earlier runs spent on the same
+    endpoint counts against the same ceiling, so a probe and the run after it share it.
+    """
+
+    def __init__(self, max_credits: int, ledger: Path | None = None, endpoint: str | None = None):
         self.max_credits, self.spent = max_credits, 0
+        self._ledger = ledger
+        if ledger is not None and ledger.exists():
+            for line in ledger.read_text(encoding="utf-8").splitlines():
+                entry = json.loads(line)
+                if endpoint is None or entry["endpoint"] == endpoint:
+                    self.spent += int(entry["used"])
+
+    def write(self, endpoint: str, used: int, note: str) -> None:
+        if self._ledger is None:
+            return
+        self._ledger.parent.mkdir(parents=True, exist_ok=True)
+        now = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+        entry = {"at": now, "endpoint": endpoint, "used": used, "note": note}
+        with self._ledger.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
 
     def check(self, cost: int) -> None:
         if self.spent + cost > self.max_credits:
@@ -128,19 +157,52 @@ class NansenClient:
         self, per_page: int = MAX_PER_PAGE, page: int = 1
     ) -> RawResponse:
         """One page of the trailing 24 hours on Ethereum, newest first. One attempt, no retry."""
-        if not 1 <= per_page <= MAX_PER_PAGE or page < 1:
-            raise ValueError(f"per_page must be between 1 and {MAX_PER_PAGE}, page at least 1")
-        cost = DOCUMENTED_COST[ENDPOINT]
-        self._budget.check(cost)
+        self._check_pagination(per_page, page)
         request = {
             "chains": [CHAIN],
             "pagination": {"page": page, "per_page": per_page},
             "order_by": [{"field": "block_timestamp", "direction": "DESC"}],
         }
+        return self._post(ENDPOINT, request)
+
+    def tgm_dex_trades_raw(
+        self,
+        token_address: str,
+        date_from: datetime.date,
+        date_to: datetime.date,
+        per_page: int = MAX_PER_PAGE,
+        page: int = 1,
+    ) -> RawResponse:
+        """One page of the smart-money DEX trades of one token over the whole UTC days
+        `date_from`..`date_to`, oldest first. Oldest first over a closed window: the pages
+        do not shift between calls. One attempt, no retry."""
+        self._check_pagination(per_page, page)
+        if date_to < date_from:
+            raise ValueError("date_to is before date_from")
+        if token_address not in known_token_addresses().values():
+            raise NansenError(f"{token_address} is not a token of pools.yml: refusing to query it")
+        request = {
+            "chain": CHAIN,
+            "token_address": token_address,
+            "only_smart_money": True,
+            "date": {"from": f"{date_from}T00:00:00Z", "to": f"{date_to}T23:59:59Z"},
+            "pagination": {"page": page, "per_page": per_page},
+            "order_by": [{"field": "block_timestamp", "direction": "ASC"}],
+        }
+        return self._post(TGM_ENDPOINT, request)
+
+    @staticmethod
+    def _check_pagination(per_page: int, page: int) -> None:
+        if not 1 <= per_page <= MAX_PER_PAGE or page < 1:
+            raise ValueError(f"per_page must be between 1 and {MAX_PER_PAGE}, page at least 1")
+
+    def _post(self, endpoint: str, request: dict) -> RawResponse:
+        cost = DOCUMENTED_COST[endpoint]
+        self._budget.check(cost)
         self.requests_sent += 1
         try:
             response = self._session.post(
-                f"{BASE_URL}/{ENDPOINT}",
+                f"{BASE_URL}/{endpoint}",
                 json=request,
                 headers={"apikey": self._api_key, "Content-Type": "application/json"},
                 timeout=self._timeout,
@@ -148,6 +210,7 @@ class NansenClient:
         except requests.RequestException as exc:
             # It may have reached the server and been billed: count it, and never retry.
             self._budget.record(cost)
+            self._budget.write(endpoint, cost, f"{type(exc).__name__}: booked as if billed")
             raise NansenError(
                 f"Nansen request failed ({type(exc).__name__}); not retried"
             ) from None
@@ -157,6 +220,7 @@ class NansenClient:
         if used is None:
             used = cost if response.status_code == 200 else (quoted or 0)
         self._budget.record(used)
+        self._budget.write(endpoint, used, f"HTTP {response.status_code}")
         if response.status_code != 200:
             code = ""
             try:
@@ -211,6 +275,183 @@ def parse_trades(body: str) -> tuple[list[Trade], bool]:
             )
         )
     return trades, bool(pagination.get("is_last_page", True))
+
+
+_TOKEN_COMMENT = re.compile(r"#\s*token0\s+(0x[0-9a-fA-F]{40}),\s*token1\s+(0x[0-9a-fA-F]{40})")
+_SYMBOLS = re.compile(r"^\s*token([01]):\s*(\S+)")
+
+
+def known_token_addresses() -> dict[str, str]:
+    """symbol -> token address, read from pools.yml and from nowhere else.
+
+    pools.yml records both token addresses of every pool in the comment written when the
+    pool was verified on-chain. Each address is accepted only if the committed verification
+    evidence (docs/verification/*.json, what the pool contract itself answered) holds the
+    same 20 bytes; a symbol that maps to two addresses is refused."""
+    evidence = "".join(
+        p.read_text(encoding="utf-8") for p in sorted(VERIFICATION_DIR.glob("*.json"))
+    )
+    found: dict[str, str] = {}
+    pending: tuple[str, str] | None = None
+    symbols: dict[str, str] = {}
+    for line in POOLS_YML.read_text(encoding="utf-8").splitlines():
+        if match := _TOKEN_COMMENT.search(line):
+            pending, symbols = (match.group(1), match.group(2)), {}
+        elif pending and (match := _SYMBOLS.match(line)):
+            symbols[match.group(1)] = match.group(2).strip("\"'")
+            if len(symbols) == 2:
+                for index, address in enumerate(pending):
+                    symbol = symbols[str(index)]
+                    if str(normalize(address))[2:] not in evidence:  # raw words are lower-case
+                        raise NansenError(
+                            f"{symbol}: the address in pools.yml is not in the evidence"
+                        )
+                    if found.setdefault(symbol, address) != address:
+                        raise NansenError(f"{symbol} has two different addresses in pools.yml")
+                pending = None
+    return found
+
+
+def parse_tgm_trades(body: str) -> tuple[list[Trade], bool]:
+    """Trades of a tgm/dex-trades page, and whether the API says it was the last page."""
+    try:
+        payload = json.loads(body)
+        data, pagination = payload["data"], payload.get("pagination") or {}
+    except (ValueError, KeyError, TypeError) as exc:
+        raise NansenError("unexpected Nansen response") from exc
+    if not isinstance(data, list):
+        raise NansenError("unexpected Nansen response: data is not a list")
+    trades = []
+    for item in data:
+        try:
+            raw_hash, raw_time = item["transaction_hash"], item["block_timestamp"]
+        except (KeyError, TypeError) as exc:
+            raise NansenError("a Nansen trade lacks transaction_hash or block_timestamp") from exc
+        if not isinstance(raw_hash, str) or not _TX_HASH.match(raw_hash):
+            raise NansenError("a Nansen trade has a malformed transaction hash")
+        trades.append(
+            Trade(
+                bytes.fromhex(raw_hash[2:]).hex(), _utc(raw_time), item.get("estimated_value_usd")
+            )
+        )
+    return trades, bool(pagination.get("is_last_page", True))
+
+
+def _utc(raw_time) -> datetime.datetime:
+    try:
+        when = datetime.datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise NansenError("a Nansen trade has an unreadable block_timestamp") from exc
+    return (
+        when.replace(tzinfo=datetime.UTC) if when.tzinfo is None else when.astimezone(datetime.UTC)
+    )
+
+
+def tgm_page_path(directory: Path, symbol: str, date_from, date_to, page: int) -> Path:
+    return directory / f"tgm_dex_trades_{symbol}_{date_from}_{date_to}_p{page:03d}.json"
+
+
+def fetch_tgm(
+    client: NansenClient,
+    directory: Path,
+    symbol: str,
+    date_from: datetime.date,
+    date_to: datetime.date,
+    max_pages: int = 1,
+) -> dict:
+    """Pages 1..max_pages of one token and one window. A page already cached is read, never
+    asked for again; it stops at the page the API calls the last one, or when the budget
+    refuses the next call."""
+    address = known_token_addresses().get(symbol)
+    if address is None:
+        raise NansenError(f"{symbol} is not a token of pools.yml")
+    directory.mkdir(parents=True, exist_ok=True)
+    directory.chmod(0o700)
+    summary = {"symbol": symbol, "pages": 0, "called": 0, "trades": 0, "complete": False}
+    for page in range(1, max_pages + 1):
+        path = tgm_page_path(directory, symbol, date_from, date_to, page)
+        if path.exists():
+            envelope = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            raw = client.tgm_dex_trades_raw(address, date_from, date_to, page=page)
+            summary["called"] += 1
+            envelope = {
+                "fetched_at": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+                "endpoint": TGM_ENDPOINT, "symbol": symbol, "request": raw.request,
+                "credits": {"documented": DOCUMENTED_COST[TGM_ENDPOINT], "quoted": raw.credits_cost,
+                            "used": raw.credits_used, "remaining": raw.credits_remaining},
+                "response": json.loads(raw.body),
+            }  # fmt: skip
+            path.write_text(json.dumps(envelope, indent=1), encoding="utf-8")
+            path.chmod(0o600)
+        trades, is_last = parse_tgm_trades(json.dumps(envelope["response"]))
+        summary["pages"] += 1
+        summary["trades"] += len(trades)
+        summary["last_credits"] = envelope["credits"]
+        if trades:
+            summary["newest"] = max(t.timestamp for t in trades).isoformat()
+            summary.setdefault("oldest", min(t.timestamp for t in trades).isoformat())
+        if is_last:
+            summary["complete"] = True
+            break
+    return summary
+
+
+def cached_tgm(directory: Path, symbol: str, date_from, date_to) -> tuple[list[Trade], bool, int]:
+    """Every cached page of one token and window, in order: trades, complete?, pages."""
+    trades, complete, page = [], False, 0
+    while (path := tgm_page_path(directory, symbol, date_from, date_to, page + 1)).exists():
+        page += 1
+        more, is_last = parse_tgm_trades(
+            json.dumps(json.loads(path.read_text(encoding="utf-8"))["response"])
+        )
+        trades += more
+        if is_last:
+            complete = True
+            break
+    return trades, complete, page
+
+
+def store_daily(
+    client, database: str, symbol: str, trades: list[Trade], complete: bool,
+    date_from: datetime.date, date_to: datetime.date, pools=None,
+) -> dict:  # fmt: skip
+    """Cross by transaction hash and store the per-pool, per-day aggregate. When the pages are
+    not complete the window ends at the newest trade fetched: the days after it were not
+    looked at, and get no row."""
+    pools = pools if pools is not None else load_pools()
+    mine = [str(p.key) for p in pools if symbol in (p.token0, p.token1)]
+    window_from = datetime.datetime.combine(date_from, datetime.time.min)
+    window_to = datetime.datetime.combine(date_to, datetime.time.max).replace(microsecond=0)
+    if not complete:
+        if not trades:
+            raise NansenError("no complete page and no trade: nothing can be said about any day")
+        # only whole days: the day of the newest trade fetched is cut short, so it is dropped
+        newest = max(t.timestamp for t in trades).replace(tzinfo=None)
+        window_to = datetime.datetime.combine(
+            newest.date(), datetime.time.min
+        ) - datetime.timedelta(seconds=1)
+    our_last = client.query("SELECT max(block_timestamp) FROM raw_swaps",
+                            settings={"database": database}).result_rows[0][0]  # fmt: skip
+    window_to = min(window_to, our_last.replace(tzinfo=None))
+    ch.apply_ddl(client, database, DAILY_DDL)
+    parameters = {
+        **stable_leg_parameters(pools, stablecoin_symbols()),
+        "hashes": sorted({t.tx_hash for t in trades}), "pools": mine,
+        "window_from": window_from, "window_to": window_to,
+    }  # fmt: skip
+    result = client.query(_sql(DAILY_SQL), parameters=parameters, settings={"database": database})
+    now = datetime.datetime.now(datetime.UTC).replace(microsecond=0, tzinfo=None)
+    rows = [dict(zip(result.column_names, row, strict=True)) for row in result.result_rows]
+    data = [[r["pool_address"], r["day"], r["named_swaps"], r["named_transactions"],
+             r["named_volume_usd"], symbol, window_from, window_to, now] for r in rows]  # fmt: skip
+    if data:
+        client.insert(ch.qualified(database, DAILY_TABLE), data, column_names=DAILY_COLUMNS)
+    return {"symbol": symbol, "pools": len(mine), "pool_days": len(data),
+            "window_from": str(window_from), "window_to": str(window_to),
+            "named_swaps": sum(r["named_swaps"] for r in rows),
+            "named_volume_usd": sum(r["named_volume_usd"] for r in rows),
+            "volume_usd": sum(r["volume_usd"] for r in rows)}  # fmt: skip
 
 
 def cache_dir() -> Path:
@@ -423,38 +664,113 @@ def render(result: Cross) -> str:
     return "\n".join(out)
 
 
+def _date(text: str) -> datetime.date:
+    return datetime.date.fromisoformat(text)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m univ3_indexer.nansen")
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument(
-        "--fetch", action="store_true", help="ONE paid call, cached outside the repo"
+        "--fetch",
+        action="store_true",
+        help="smart-money/dex-trades: ONE paid call (5 credits), cached",
     )
-    action.add_argument("--report", action="store_true", help="cross the cached response; no call")
-    parser.add_argument("--max-credits", type=int, default=DEFAULT_BUDGET)
+    action.add_argument(
+        "--report",
+        action="store_true",
+        help="cross the cached smart-money/dex-trades response; no call",
+    )
+    action.add_argument(
+        "--fetch-tgm",
+        metavar="SYMBOL",
+        help="tgm/dex-trades of one token of pools.yml, smart money only: "
+        "1 credit per page NOT yet cached; needs --from, --to, --max-pages",
+    )
+    action.add_argument(
+        "--daily",
+        metavar="SYMBOL",
+        help="cross the cached tgm pages and store the per-day aggregate; no call",
+    )
+    parser.add_argument("--from", dest="date_from", type=_date, help="first UTC day, YYYY-MM-DD")
+    parser.add_argument("--to", dest="date_to", type=_date, help="last UTC day, inclusive")
+    parser.add_argument(
+        "--max-pages", type=int, default=1, help="pages to read at most (default 1)"
+    )
+    parser.add_argument(
+        "--max-credits",
+        type=int,
+        default=DEFAULT_BUDGET,
+        help="ceiling for the endpoint, INCLUDING what the ledger says earlier runs spent on it",
+    )
     parser.add_argument("--database", help="default: CLICKHOUSE_DB")
     parser.add_argument("--out", type=Path, default=REPORT)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        if args.fetch:
-            budget = CreditBudget(args.max_credits)
+        if (args.fetch_tgm or args.daily) and not (args.date_from and args.date_to):
+            raise NansenError("--from and --to are required")
+        if args.fetch or args.fetch_tgm:
+            endpoint = ENDPOINT if args.fetch else TGM_ENDPOINT
+            budget = CreditBudget(args.max_credits, cache_dir() / LEDGER, endpoint)
+            log.info(
+                "%s: %d of %d credits already spent according to the ledger",
+                endpoint,
+                budget.spent,
+                budget.max_credits,
+            )
             client = NansenClient(config.require_api_key("NANSEN_API_KEY"), budget)
             try:
-                path = fetch(client, cache_dir())
+                if args.fetch:
+                    log.info("cached in %s", fetch(client, cache_dir()))
+                else:
+                    summary = fetch_tgm(
+                        client,
+                        cache_dir(),
+                        args.fetch_tgm,
+                        args.date_from,
+                        args.date_to,
+                        args.max_pages,
+                    )
+                    print(json.dumps(summary, indent=1))
             finally:
                 log.info(
-                    "requests sent: %d, credits spent: %d of %d",
+                    "requests sent: %d, credits spent on %s so far: %d of %d",
                     client.requests_sent,
+                    endpoint,
                     budget.spent,
                     budget.max_credits,
                 )
-            log.info("cached in %s", path)
+            return 0
+        database = args.database or config.load_clickhouse_config().database
+        if args.daily:
+            trades, complete, pages = cached_tgm(
+                cache_dir(), args.daily, args.date_from, args.date_to
+            )
+            if not pages:
+                raise NansenError(
+                    f"no cached page for {args.daily} {args.date_from}..{args.date_to}"
+                )
+            summary = store_daily(
+                ch.connect(database="default"),
+                database,
+                args.daily,
+                trades,
+                complete,
+                args.date_from,
+                args.date_to,
+            )
+            print(
+                json.dumps(
+                    {**summary, "pages": pages, "trades": len(trades), "complete": complete},
+                    indent=1,
+                )
+            )
             return 0
         files = cached_files(cache_dir())
         if not files:
             raise NansenError(f"nothing cached in {cache_dir()}: run --fetch first")
         envelope = json.loads(files[-1].read_text(encoding="utf-8"))
-        database = args.database or config.load_clickhouse_config().database
         result = cross(ch.connect(database="default"), database, envelope)
         args.out.write_text(render(result), encoding="utf-8")
         log.info("wrote %s", args.out)
