@@ -57,6 +57,7 @@ select = ["E", "F", "I", "B", "UP", "S"]
 "src/univ3_indexer/mv.py" = ["S608"]
 # Long lines are Markdown table rows; the only interpolated name is validated.
 "src/univ3_indexer/reconcile.py" = ["E501", "S608"]
+"src/univ3_indexer/h2_check.py" = ["E501"]
 # Long lines are Markdown table rows.
 "src/univ3_indexer/sanity.py" = ["E501"]
 "scripts/check_sql_practice.py" = ["S608", "E501"]

@@ -8,6 +8,11 @@ the snapshot of that run: the [report](evidence/2026-09-20/reconciliation.md), t
 [per-day CSV](evidence/2026-09-20/reconciliation.csv). `make reconcile` regenerates all three
 under `reports/`.
 
+On 2026-09-21 ten earlier days were added (1,110,676 swaps, 2026-08-09 to 2026-09-20; 163
+pool-days compared, 17 flagged) for one purpose: to test finding 7 on days it had not been
+fitted on. That run is in its own [snapshot](evidence/2026-09-21/README.md). Everything else
+below still quotes the run of 2026-09-20, on which it was found.
+
 Each finding carries one of three states. **EXPLAINED**: the cause was measured and the
 difference goes away when it is removed. **PARTLY EXPLAINED**: a cause fits the numbers but
 either does not cover all of the difference or rests on something the source does not
@@ -72,7 +77,8 @@ within 0.1% ([evidence §11](evidence/2026-09-20/reconciliation_evidence.md#11-t
 
 ### 7. Round trips inside one block, valued differently — PARTLY EXPLAINED
 
-On the flagged days of USDC/WETH 0.01% the large swaps come in pairs: same block, same sender
+On the flagged days of USDC/WETH 0.01% the large swaps are same-block round trips consistent
+with a sandwich pattern. They come in pairs: same block, same sender
 (which is also the recipient), opposite directions, different transactions, one swap of
 somebody else between them, the tick leaving and coming back (by thousands of ticks on the
 largest ones), the liquidity in range falling by 9 to 1,000 times between the two legs of
@@ -94,6 +100,36 @@ Two readings were tested so that either could fail ([evidence §9](evidence/2026
 
 It stays PARTLY EXPLAINED for two reasons: the source does not say how it values a swap, and
 2026-09-11 only comes down to +1.35%, 2026-09-03 not at all (+1.59% to +1.62%).
+
+**Out of sample, and against a placebo (2026-09-21).** The reference window, the 100 ticks and
+both thresholds had been chosen while looking at the same 120 pool-days the figures above are
+computed on. So the protocol was [written down and committed](H2_PREREGISTRATION.md) before ten
+earlier days (2026-08-10 to 2026-08-19) were fetched, and then run unchanged
+([results](evidence/2026-09-21/h2_out_of_sample.md)). What came out, for and against:
+
+- *For.* On the 39 hold-out pool-days, 10 are beyond 1% and the revaluation brings 6 of them
+  inside (5 of 8 where we are higher, 1 of 2 where the source is): 60%, against 62% in sample.
+  Flagged pool-days go from 4 to 2. And the placebo is flat: revaluing the same number of
+  swaps per pool-day, but non-displaced ones picked at random, brings **0 of 24** in-sample
+  days inside 1% in every one of 20 seeds, where revaluing the displaced ones brings 16. It is
+  the displaced swaps that carry the effect, not revaluation as such.
+- *Against.* By a criterion fixed beforehand, this weakens it: Pearson's r between the daily
+  difference and the adjustment is **+0.05** on the hold-out, against +0.72 in sample. It also
+  breaks a larger share of the days that reconciled (3 of 29, 10%, against 6 of 96, 6%), and
+  it makes two hold-out days worse (USDC/WETH 0.01% 2026-08-11, +1.31% to +1.93%; wstETH/USDC
+  0.05% 2026-08-11, -9.01% to +2.50%).
+- *What the hold-out adds that H2 does not touch.* USDC/WETH 0.05% on 2026-08-19: +7,766,114
+  USD (+2.63%), by far the largest single difference in the project (the next is +1,615,421), 82% of it in
+  one hour (15h), and unchanged by the revaluation (+2.65%). With 2026-08-27 and 2026-08-29 in
+  the same pool, that is three days where the source has less than the chain in a pool that
+  has almost no displaced swaps: a second mechanism that this project has not identified.
+  2026-08-20, never evaluated before because it was a partial day, goes the same way (+1.07%,
+  no displaced swap, not fixed).
+
+Read together: valuation of same-block round trips explains a real part of the differences in
+USDC/WETH 0.01% and wstETH/USDC 0.05%, it is not an artefact of revaluing, and it is not the
+whole story. PARTLY EXPLAINED stands, with less confidence in the correlation than the
+in-sample figure suggested.
 
 ### 8. 2026-08-29: three pools high on a quiet Saturday — PARTLY EXPLAINED
 
@@ -133,3 +169,7 @@ apart ([DECISIONS.md #16](../DECISIONS.md#16-a-pool-day-is-flagged-beyond-1-and-
 | USDC/WETH 0.05%, 2026-08-29 | +1.44%, +368,871 USD | Two hours (14h, 15h); no displaced swap; UNEXPLAINED |
 | USDC/WETH 0.01%, 2026-09-03 | +1.59%, +710,478 USD | One hour (17h, +631,096 USD); unchanged by the valuation reading; UNEXPLAINED |
 | USDC/WETH 0.01%, 2026-09-11 | +3.14%, +1,615,421 USD | Comes to +1.35% under the valuation reading; the rest UNEXPLAINED |
+| USDC/WETH 0.05%, 2026-08-19 (hold-out) | +2.63%, +7,766,114 USD | 82% in one hour (15h); 7 displaced swaps; unchanged by revaluation; UNEXPLAINED |
+| USDC/WETH 0.05%, 2026-08-20 (hold-out, secondary) | +1.07%, +1,273,956 USD | No displaced swap; UNEXPLAINED |
+| USDC/WETH 0.01%, 2026-08-11 (hold-out) | +1.31%, +396,150 USD | Made worse by revaluation (+1.93%); UNEXPLAINED |
+| wstETH/USDC 0.05%, 2026-08-17 (hold-out) | +121.53%, +812 USD | Below the absolute threshold; unchanged by revaluation; UNEXPLAINED |
