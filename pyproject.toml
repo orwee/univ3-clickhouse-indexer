@@ -49,6 +49,8 @@ select = ["E", "F", "I", "B", "UP", "S"]
 # as parameters. Everything interpolated is a module constant or a value read back
 # from the database itself, never outside input. Long lines are SQL text.
 "scripts/schema_experiments.py" = ["S608", "E501"]
+# Long lines are the SQL that breaks the throw-away data, kept on one line each to be readable.
+"scripts/prove_dbt_tests_can_fail.py" = ["E501"]
 # The only interpolated value is the table name, validated by clickhouse.qualified().
 "src/univ3_indexer/loader.py" = ["S608"]
 "src/univ3_indexer/mv.py" = ["S608"]

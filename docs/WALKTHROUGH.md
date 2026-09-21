@@ -63,7 +63,10 @@ the code is [src/univ3_indexer/reconcile.py](../src/univ3_indexer/reconcile.py) 
 answered: how does a raw Int256 become an exact decimal amount, and where is the single place
 that says what counts as a dollar?* (`stablecoin_symbols` in
 [dbt/dbt_project.yml](../dbt/dbt_project.yml).) The singular tests in
-[dbt/tests/](../dbt/tests/assert_mart_reconciles_with_staging.sql) are worth a glance.
+[dbt/tests/](../dbt/tests/assert_mart_accounts_for_every_raw_swap.sql) are worth a glance, and
+so is `make dbt-prove`: it breaks the data on purpose in throw-away databases and shows every
+one of the 24 dbt tests failing, because a test that cannot fail checks nothing
+([scripts/prove_dbt_tests_can_fail.py](../scripts/prove_dbt_tests_can_fail.py)).
 
 ## 7. If there is time left
 

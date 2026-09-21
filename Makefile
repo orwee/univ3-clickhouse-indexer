@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 DEMO = docker compose -f docker-compose.demo.yml
 
-.PHONY: help demo up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check dbt-seed dbt-build dbt-test
+.PHONY: help demo up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check dbt-seed dbt-build dbt-test dbt-prove
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -62,6 +62,9 @@ dbt-build: dbt-seed ## seed, run and test every dbt model against the real data
 
 dbt-test: ## run only the dbt tests
 	$(DBT) test
+
+dbt-prove: ## break the data on purpose in throw-away databases: every dbt test must fail at least once
+	PYTHONPATH=src uv run --group dbt python scripts/prove_dbt_tests_can_fail.py
 
 mv-setup: ## create the daily materialized view in the raw database and backfill it, once
 	PYTHONPATH=src uv run python -m univ3_indexer.mv --setup
