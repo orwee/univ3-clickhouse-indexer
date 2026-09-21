@@ -59,7 +59,11 @@ def test_every_make_target_mentioned_exists():
     assert mentioned and mentioned <= targets, mentioned - targets
 
 
-DRAFT = "**DRAFT — to be reviewed and rewritten by Roberto**"
+AUTHORSHIP = (
+    "Drafted with AI assistance from the measurements in this repo and checked by an "
+    "independent review pass. Design decisions were proposed with AI assistance, tested by "
+    "measurement and approved by Roberto."
+)
 STATES = {"EXPLAINED", "PARTLY EXPLAINED", "UNEXPLAINED"}
 FINDINGS = REPO_ROOT / "docs" / "RECONCILIATION_FINDINGS.md"
 
@@ -68,12 +72,13 @@ def section(title: str) -> str:
     return VISIBLE.split(f"## {title}\n", 1)[1].split("\n## ", 1)[0].strip()
 
 
-def test_the_owner_sections_are_marked_as_drafts_until_roberto_rewrites_them():
-    # Until 2026-09-20 these two sections held only "PENDING — written by Roberto". Roberto
-    # asked for a draft in their place; what must not happen is a draft that does not say so.
+def test_the_owner_sections_say_who_wrote_them_and_who_approved_them():
+    # "PENDING — written by Roberto" until 2026-09-20, then a draft banner, and from
+    # 2026-09-21 the authorship note Roberto settled on. What must not happen, in any of the
+    # three regimes, is that these sections claim an authorship they do not have.
     for title in ("Reconciliation findings", "Limitations"):
-        assert section(title).startswith(DRAFT), title
-    assert FINDINGS.read_text().split("\n", 3)[2] == DRAFT
+        assert section(title).startswith(f"> {AUTHORSHIP}"), title
+    assert FINDINGS.read_text().split("\n", 3)[2] == f"> {AUTHORSHIP}"
 
 
 def test_every_finding_has_one_of_the_three_states_and_points_at_evidence():

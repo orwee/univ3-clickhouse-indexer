@@ -28,7 +28,9 @@ any trades are filtered. The first two were observed; the last two are unknown.
   that is an exact multiple of 86,400. A test asserts it on the recorded
   responses. This project's `block_date` is also the UTC day.
 - **History: 184 candles per pool**, reaching back to 2026-03-20 (about six
-  months), although 1,000 were asked for. The 30-day window is covered.
+  months), although 1,000 were asked for. The 30-day window is covered. (Fetched again on
+  2026-09-20 and 2026-09-21: 184 to 185 candles per pool, 739 rows in all, still reaching
+  back to March, and the 43-day window is covered too.)
 - **Days without trades are omitted**, not reported as zero: the quiet pool
   (wstETH/USDC 0.3%) has fewer candles than days in its span. A missing day is
   not a zero.

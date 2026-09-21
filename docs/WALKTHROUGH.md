@@ -22,7 +22,7 @@ answered: what does this pipeline do, and where does each stage live?*
 
 ## 2. Why the table looks the way it does (2 minutes)
 
-[sql/001_raw_swaps.sql](../sql/001_raw_swaps.sql), 40 lines, then
+[sql/001_raw_swaps.sql](../sql/001_raw_swaps.sql), 31 lines, then
 [DECISIONS.md](../DECISIONS.md) entries 10 to 13. *Questions answered: why MergeTree and not
 ReplacingMergeTree; why `ORDER BY (pool_address, block_timestamp, …)`; why partitions are for
 management and not for speed; why 256-bit integers and binary hashes.* Every one of those has

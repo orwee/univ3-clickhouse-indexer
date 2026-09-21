@@ -1,16 +1,21 @@
 # univ3-clickhouse-indexer
 
-Uniswap v3 `Swap` events, read from an Ethereum JSON-RPC node, landed as raw JSONL,
-loaded into ClickHouse, modelled with dbt, and reconciled twice: internally against a
-materialized view, to the unit, and externally against an independent source of daily
-volume. A third source, the Nansen API, adds what a Swap log cannot carry: who signed the
+Uniswap v3 `Swap` events from an Ethereum JSON-RPC node, landed as raw JSONL, loaded into
+ClickHouse, modelled with dbt, and reconciled twice. **1,110,676 swaps, 4 pools, 43 days**
+(2026-08-09 to 2026-09-20). **Internally it is exact:** a recomputation from `raw_swaps` and
+the materialized view agree on all 170 pool-days, in raw integer units. **Externally it is
+not:** against an independent source of daily volume, 163 of those pool-days are compared,
+**17 differ by more than 1% and 1,000 USD**, 18 more by over 1% but less than 1,000 USD,
+7 are excluded as incomplete and 1 exists on one side only. The main limitation is that the
+external source publishes no methodology, so a difference can be located but not settled.
+**Ten guided minutes: [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).**
+
+A third source, the Nansen API, adds what a Swap log cannot carry: who signed the
 transaction.
 
-Short on time? [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) is a ten-minute tour.
-
-It is a learning project: I built it to work with ClickHouse hands-on (MergeTree parts and
-merges, sparse primary indexes, materialized views, the system tables) rather than read
-about it. The design choices are written down in [DECISIONS.md](DECISIONS.md), with the
+It is a learning project: the point was to work with ClickHouse hands-on (MergeTree parts and
+merges, sparse primary indexes, materialized views, the system tables) rather than read about
+it. The design choices are written down in [DECISIONS.md](DECISIONS.md), with the
 number that was measured wherever one was, and what went wrong along the way is kept where
 it happened instead of being cleaned up (for example the double count in
 [docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md) and the measurements spoiled by a
@@ -166,12 +171,12 @@ One or two sentences each; the reasoning is in [DECISIONS.md](DECISIONS.md), in 
 | Hard 3 GiB memory limit, no swap [#6](DECISIONS.md#6-a-hard-3-gib-memory-limit-with-no-swap-and-what-clickhouse-does-with-it) | A database that swaps gets slow in a way that is hard to attribute. | ClickHouse derives 2.70 GiB from the cgroup |
 | `dbt-adapters==1.24.5` [#7](DECISIONS.md#7-dbt-adapters-must-be-pinned-to-1245-when-dbt-is-added) | The only version dbt-core 1.12 and dbt-clickhouse 1.10.3 both accept. | |
 | Pool addresses verified on chain [#8](DECISIONS.md#8-pool-addresses-come-from-orwee-and-are-trusted-only-after-on-chain-checks), fourth pool derived from the factory [#9](DECISIONS.md#9-a-fourth-pool-derived-from-the-factory-instead-of-typed) | An address is trusted after `factory()` and `getPool()` agree, never typed from memory. | 4 of 4 pools valid |
-| MergeTree; deduplication belongs to the load [#10](DECISIONS.md#10-engine-mergetree-with-deduplication-left-to-the-load) | Finalised logs never change, so duplicates can only come from the pipeline. | Without `FINAL` an unmerged Replacing table read a total 10% high; with the real key `FINAL` kept pruning intact and cost 2.6x on the full aggregate while unmerged, 1.3x merged (an earlier, stronger claim was measured with another key and is corrected in #10). The view counts a redelivered row twice whatever the engine. [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md) |
+| MergeTree; deduplication belongs to the load [#10](DECISIONS.md#10-engine-mergetree-with-deduplication-left-to-the-load) | Not for the cost of `FINAL`: with the real key it kept pruning intact. Because every reader would have to remember it, and because the materialized view counts a redelivered row twice whatever the engine, so the load has to be idempotent anyway. | Unmerged and without `FINAL`, a Replacing table read a total 10.0% high and one pool-day 28,179 swaps instead of 23,961; `FINAL` read the same rows either way and cost 116 ms against 45 unmerged, 51 against 39 merged. Accepted cost: a duplicate in a MergeTree stays (988,485 rows before and after the merge). [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md) |
 | `ORDER BY (pool_address, block_timestamp, block_number, log_index)` [#11](DECISIONS.md#11-order-by-pool_address-block_timestamp-block_number-log_index-primary-key-on-the-first-two) | Chosen for filtered queries; the whole-table aggregate is a full scan with any key. | One pool, one day: 32,768 rows read against 634,211 with a key that lacks the time |
 | Monthly partitions [#12](DECISIONS.md#12-partition-by-month-for-management-and-not-for-speed) | A management unit, not a speed feature. | No read changed with or without it |
 | Int256 / UInt256 / UInt128, hashes in binary [#13](DECISIONS.md#13-types-lossless-integers-and-hashes-and-addresses-in-binary) | Lossless, and the largest column halved. | A real 1,136 WETH swap needs 70 bits; binary hashes made the table 30% smaller (84.8 bytes per row) |
 | Only whole, closed days are compared [#15](DECISIONS.md#15-the-external-comparison-only-looks-at-days-that-are-whole-on-both-sides) | A difference that disappears by waiting a day says nothing about either source. | A candle compared while open read -2.14%; closed, -0.55% |
-| Flagged means beyond 1% and beyond 1,000 USD [#16](DECISIONS.md#16-a-pool-day-is-flagged-beyond-1-and-beyond-1000-usd) | In a thin pool a percentage alone does not discriminate. | One 617 USD swap is 44% of a day; 12 of 24 pool-days beyond 1% add up to 2,098 USD |
+| Flagged means beyond 1% and beyond 1,000 USD [#16](DECISIONS.md#16-a-pool-day-is-flagged-beyond-1-and-beyond-1000-usd) | In a thin pool a percentage alone does not discriminate. | One 617 USD swap is 44% of a day; on the day it was decided, 12 of the 24 pool-days beyond 1% added up to 2,098 USD (today 18 of 35, 3,682 USD) |
 | GeckoTerminal, not the subgraph, as the external check [#17](DECISIONS.md#17-the-external-check-is-geckoterminal-not-the-subgraph) | A source anyone can query without a key; it publishes no methodology. | |
 | Nothing denormalised into the raw table [#14](DECISIONS.md#14-nothing-from-poolsyml-is-denormalised-into-the-raw-table) | `pools.yml` stays the single source; the daily mart denormalises on purpose, as the counter-example. | |
 
@@ -184,18 +189,19 @@ times).
 
 ## How this was built
 
-The design decisions are mine. In [DECISIONS.md](DECISIONS.md), entries 1 to 9 are in my
-words; entries 10 to 17 were drafted by a coding agent from my notes and carry a banner that
-says so until I rewrite them, and the same goes for the findings and the limitations below.
-The implementation was done in unattended coding-agent sessions working from written
-specifications. Every change arrived as a pull request that I merged myself; the agents work
-on branches and do not push to `main` ([AGENTS.md](AGENTS.md) ends with a table of which of
-its rules a barrier enforces and which depend on the agent following them). Where I had to
-redirect an agent there is a line under [Agent corrections](DECISIONS.md#agent-corrections).
+The design decisions were proposed with AI assistance, tested by measurement and approved by
+me: what is in [DECISIONS.md](DECISIONS.md) is there because a number came out of this
+repository, not because it sounded right. The implementation was done by Claude Code agents in
+unattended sessions working from written specifications. Everything arrived as a pull request,
+and nothing reached `main` without me merging it ([AGENTS.md](AGENTS.md) ends with a table of
+which of its rules a barrier enforces and which depend on the agent following them). The
+prose, including this README, was drafted the same way and then checked against the repo by an
+independent review pass, which found a dozen objective errors; what it found is fixed, and
+[Agent corrections](DECISIONS.md#agent-corrections) keeps the record.
 
 ## Reconciliation findings
 
-**DRAFT — to be reviewed and rewritten by Roberto**
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 Run of 2026-09-20: 898,404 swaps, 4 pools, 128 pool-days on both sides, 120 compared, 12
 flagged beyond 1% and 1,000 USD. The full draft, each figure with the section of the evidence
@@ -206,7 +212,7 @@ were added on 2026-09-21 to test finding 7 on days it had not been fitted on (1,
 
 | # | Finding | State |
 |---|---|---|
-| [1](docs/RECONCILIATION_FINDINGS.md#1-the-pipeline-agrees-with-itself-exactly--explained) | `raw_swaps` and the materialized view agree exactly: 0 differences on 128 pool-days | EXPLAINED |
+| [1](docs/RECONCILIATION_FINDINGS.md#1-the-pipeline-agrees-with-itself-exactly--explained) | `raw_swaps` and the materialized view agree exactly: 0 differences on the 128 pool-days of that run, and on the 170 of the current one | EXPLAINED |
 | [2](docs/RECONCILIATION_FINDINGS.md#2-partial-days-and-open-candles--explained) | Partial days (-22% to -35% on 2026-08-20) and a candle compared while still open (-2.14%, then -0.55%). Only whole, closed days are compared; the 8 excluded are listed | EXPLAINED |
 | [3](docs/RECONCILIATION_FINDINGS.md#3-the-day-boundary-is-not-the-cause--explained-a-negative-result) | The day boundary is not the cause: the distance is smallest at a shift of 0 h in all four pools; one hour either way gives 1.8% to 13% in three of them | EXPLAINED |
 | [4](docs/RECONCILIATION_FINDINGS.md#4-which-leg-is-valued-does-not-matter-in-the-liquid-pools--explained) | Which leg is valued changes the liquid pools by -0.004% and +0.02%. It does not test whether USDC was worth 1 USD | EXPLAINED |
@@ -222,7 +228,7 @@ located to one to three hours, listed at the end of the draft.
 
 ## Limitations
 
-**DRAFT — to be reviewed and rewritten by Roberto**
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - **One protocol, one chain.** Uniswap v3 on Ethereum mainnet, four pools.
 - **No reorg handling, by staying out of their reach.** A backfill ends at the block the
