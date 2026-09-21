@@ -99,7 +99,10 @@ the total is good to perhaps ±15%, the two wstETH figures are order of
 magnitude only. Note that yesterday's sample put wstETH/USDC 0.05% at ~3,100
 rows and today's at ~7,400: with counts this small the estimate moves a lot.
 
-The skew went from 99.5% in one pool to 73% / 26% / 1%.
+The skew went from 99.5% in one pool to 73% / 26% / 1%. What was finally loaded, over the
+43 days in the table on 2026-09-21: **74.5% / 24.9% / 0.5% / 0.06%** (827,856 / 276,475 /
+5,672 / 673 swaps). The estimate was close for the two big pools and generous with the
+small ones.
 
 **Disk.** Raw JSON is 891 bytes per log: ~785 MB for 30 days. The JSONL landing
 zone stores the raw log plus its decoded form on each line: about 1.5 KB per line,

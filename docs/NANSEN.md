@@ -5,7 +5,7 @@ addresses: `sender` and `recipient`. It does **not** say who signed the transact
 `sender` is the caller of the pool's `swap()`, and Uniswap v3 collects the input token through
 a callback on that caller, so a sender is always a contract (a router, an aggregator, a bot's
 own contract) and never the wallet behind it. In this dataset the eight largest senders carry
-69% of the USD volume and the largest one 32%
+70% of the USD volume and the largest one 33%
 ([sql/examples/03_sender_concentration.sql](../sql/examples/03_sender_concentration.sql)).
 
 Nansen brings the two things the log lacks:
@@ -122,8 +122,8 @@ or a label.
 
 `profiler/address/labels` costs **100 credits per call**, one address per call
 (<https://docs.nansen.ai/api/profiler/address-labels.md>). The eight largest senders and
-recipients are nine distinct addresses and 69% of the volume: 900 credits to know who moves
-two thirds of the money. On a Pro plan (2,000 credits a month) that is affordable once, not
+recipients are nine distinct addresses and about 70% of the volume on either side: 900
+credits to know who moves two thirds of the money. On a Pro plan (2,000 credits a month) that is affordable once, not
 per run, which shapes the design:
 
 - **Refresh in batches, not per query.** A scheduled job picks the addresses worth labelling
@@ -149,7 +149,7 @@ per run, which shapes the design:
 
 `profiler/address/premium-labels` costs **500 credits per call**; several Token God Mode
 endpoints go from 5 to 150 credits with `premium_labels=true`. They would be bought for a
-named question (for example: is the one address behind 32% of the volume a market maker, a
+named question (for example: is the one address behind 33% of the volume a market maker, a
 solver or an exchange?), never as a default column. The batch job takes the endpoint as a
 parameter and has a separate, smaller budget for it.
 

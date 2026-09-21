@@ -291,18 +291,19 @@ set has to be final before the backfill starts.
 
 ## 10. Engine: MergeTree, with deduplication left to the load
 
-> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
-- Date: 2026-09-19
+- Date: 2026-09-19. Reasoning replaced on 2026-09-21, after measuring `FINAL` with the
+  sorting key that was actually chosen; the decision itself did not change
 - Status: Accepted
 
 **Context.** The backfill ends at the block the node reports as finalised
 (`eth_getBlockByNumber("finalized")`, since 2026-09-21; until then it ended 64
 blocks behind the tip, which is deep but is not finality: the provider's finalised
 block was 93 blocks behind its tip when this was checked). Finalised logs do not
-change, so duplicates can only come from my own pipeline: the backfill runner delivers at least once. The choice
-was between letting the engine clean up (ReplacingMergeTree) or making the load
-idempotent and keeping a plain MergeTree.
+change, so duplicates can only come from the pipeline itself: the backfill runner
+delivers at least once. The choice was between letting the engine clean up
+(ReplacingMergeTree) or making the load idempotent and keeping a plain MergeTree.
 
 **Decision.** `ENGINE = MergeTree`. Deduplication is not the engine's job. The
 landing zone is idempotent (a batch delivered twice rewrites the same file) and
@@ -312,57 +313,61 @@ that block range, then skips, inserts or repairs. What this does not cover is an
 INSERT retried after the server had already applied it; `make load-verify`
 (duplicates, counts, coverage) is what would catch that.
 
-**Why.** Measured on 463,447 real swaps (docs/SCHEMA_EXPERIMENTS.md):
+**Why (measured 2026-09-21 with the real key; `scripts/final_experiment.py`,
+`docs/experiments/final-real-key-2026-09-21.json`).** The cost of `FINAL` is **not**
+the argument. With `ORDER BY (pool_address, block_timestamp, block_number, log_index)`,
+which is unique per log, a ReplacingMergeTree lost no row, and `FINAL` read exactly the
+same rows as the query without it: pruning intact, 39,756 rows either way with 221
+unmerged parts, 24,576 either way once merged. It cost 116 ms against 45 and 48 MB
+against 9 on the whole-table aggregate while unmerged, 51 ms against 39 once merged,
+and nothing measurable with `do_not_merge_across_partitions_select_final = 1`; the
+filtered queries paid 0 to 4 ms. MergeTree stands on three other things:
 
-- A ReplacingMergeTree whose sorting key is not unique per swap **lost 65.7% of
-  the rows** (463,447 loaded, 159,151 kept), with no error, already at insert
-  time and before any merge.
-- With a correct key, and 10% of the files redelivered, the table total read
-  **11.2% too high** (515,330 instead of 463,447) for as long as the merge had
-  not happened and the query did not say `FINAL`. Nothing warns about it.
-- `FINAL` on unmerged parts cost **3x** on the main query (69 ms vs 23 ms). (An
-  earlier version of this entry added that it "removed index pruning". The raw
-  results do not show that: the one-day query read the whole table with and
-  without `FINAL`, because the key tested there had no time in it.)
-
-Replacing moves the cost of a pipeline defect onto every query, forever, and
-makes the sorting key serve deduplication instead of queries.
-
-> **Correction, 2026-09-21 (agent draft, for Roberto to weigh).** The two sentences
-> above do not survive a measurement with the key that was finally chosen
-> (docs/SCHEMA_EXPERIMENTS.md, first section; `scripts/final_experiment.py`). That key,
-> `(pool_address, block_timestamp, block_number, log_index)`, is unique per log, so it
-> serves queries AND deduplication: a Replacing table with it lost no row. `FINAL` read
-> exactly the same rows as the query without it, pruning intact. Its cost was 2.6x time
-> and 5x memory on the whole-table aggregate while 221 parts were unmerged, 1.3x once
-> merged, and nothing measurable with `do_not_merge_across_partitions_select_final = 1`;
-> filtered queries paid 0 to 4 ms. The figures quoted above came from a key without
-> time in it.
->
-> What is left of the case for MergeTree, stated as it now stands: (1) every reader, dbt
-> model included, would have to say `FINAL`, and one that forgets reads a total 10% too
-> high with no error (a day of the big pool read 28,179 swaps instead of 23,961); (2) the
-> materialized view is an insert trigger, so a row delivered twice is counted twice in
-> `swaps_daily_agg` whatever the engine of the source table: with the view in place the
-> load has to be idempotent anyway, and once it is, Replacing protects nothing more.
-> Against it: with MergeTree a duplicate that does get in stays forever (988,485 rows
-> before and after the merge), and the only defence is `make load-verify`.
-
-Repeated on the full 30 days (863,587 swaps) the picture is the same: 64.4%
-lost with a non-unique key, the total 10.5% too high without `FINAL`, and
-`FINAL` on unmerged parts 2.8x slower (114 ms vs 41 ms).
+- **(a) Every reader would have to remember `FINAL`.** With 10% of the files
+  redelivered and the parts not yet merged, a Replacing table read a total **10.0%
+  too high** and one day of the big pool read **28,179 swaps instead of 23,961** —
+  no error, no warning. That discipline would have to hold in every ad-hoc query and
+  every dbt model, forever, and the day it fails the number is quietly wrong.
+- **(b) The materialized view counts a redelivered row twice whatever the engine.**
+  `swaps_daily_agg` is fed by an insert trigger, which sees rows as they are inserted
+  and knows nothing about later deduplication. So the load has to be idempotent for the
+  view to be right, and once it is, Replacing protects nothing that is not already
+  protected.
+- **(c) The cost accepted.** In a MergeTree a duplicate that does get in stays: the
+  same experiment ends with **988,485 rows before and after the merge** against 898,404
+  real ones. Nothing inside the table will ever remove it. That is why
+  `sql/sanity/02_duplicates.sql` (`make sanity`) looks for any `(block_number, log_index)`
+  stored more than once and fails on a single row, and why `make load`, `make load-full`
+  and `make load-verify` all end by comparing the table with the landing zone.
 
 **Tradeoff.** Nothing inside the table protects me. If the load ever inserts a
 file twice, the duplicates stay until I reload. So the load verifies itself
 (row count against the landing zone, zero duplicates by `(block_number,
 log_index)`) and fails loudly.
 
+**History: what this entry argued until 2026-09-21.** The original reasoning was
+that "Replacing moves the cost of a pipeline defect onto every query, forever, and
+makes the sorting key serve deduplication instead of queries", resting on an
+experiment on 463,447 and then 863,587 real swaps
+(`docs/SCHEMA_EXPERIMENTS.md`): a Replacing table whose sorting key was **not**
+unique per swap lost 65.7% and then 64.4% of the rows, silently and at insert
+time; without `FINAL` an unmerged table read 11.2% and then 10.5% too high; and
+`FINAL` on unmerged parts cost 3x and then 2.8x on the main query. An earlier
+version also said `FINAL` "removed index pruning". Two of those claims did not
+survive scrutiny. The pruning one was never in the raw results: that query read
+the whole table with and without `FINAL`, because the key tested there had no
+time in it. And the lost-rows figure measures a key nobody proposed, so it is
+evidence for "know your deduplication key", not for MergeTree over Replacing. The
+key that was chosen is unique, so the second half of the original sentence — that
+the key would have to serve deduplication instead of queries — is simply not true
+here. The decision survives on (a), (b) and (c) above.
+
 **Revisit when.** The data stops being append-only (for example ingesting
 blocks that can still be reorganised), or the landing zone goes away.
 
 ## 11. ORDER BY (pool_address, block_timestamp, block_number, log_index), PRIMARY KEY on the first two
 
-> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-19
 - Status: Accepted
@@ -406,7 +411,7 @@ query stops filtering by pool.
 
 ## 12. PARTITION BY month, for management and not for speed
 
-> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-19
 - Status: Accepted
@@ -422,9 +427,9 @@ and the measurement agrees: with the same sorting key, monthly partitioning
 it; the partition was pruned, but the primary index had already skipped those
 granules). What it gives is the ability to drop, detach or replace one month
 as a unit, and it is the answer that does not have to be corrected if the
-window grows from 30 days to a year (12 partitions). Daily would be 30
-partitions of 3 granules each today and 365 in a year, with one part per
-partition touched by every insert.
+window grows from 30 days to a year (12 partitions). Daily would be one
+partition per day — 43 of about 3 granules each with the data loaded today,
+365 in a year — with one part per partition touched by every insert.
 
 **Tradeoff.** One more part per month, and an insert that crosses a month
 boundary creates two parts instead of one (seen in the experiment: 114 parts
@@ -434,7 +439,7 @@ instead of 113).
 
 ## 13. Types: lossless integers, and hashes and addresses in binary
 
-> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-19
 - Status: Accepted
@@ -452,7 +457,8 @@ Raw integers, never scaled by decimals in this table.
 **Why.**
 
 - A real swap of 1,136 WETH needs **70 bits**: `Int64` overflows on real data,
-  by a factor of 123. `tick` reaches ±206,590, which does not fit `Int16`. The
+  by a factor of 123. (The largest `|amount1|` in the table today is 2,191 WETH,
+  71 bits, a factor of 238.) `tick` reaches ±206,590, which does not fit `Int16`. The
   256-bit and 128-bit types round-trip through clickhouse-connect exactly, bit
   for bit, over their whole range; through `Float64` the same value loses
   55,221 wei without any error. Reconciliation needs exact equality.
@@ -461,7 +467,8 @@ Raw integers, never scaled by decimals in this table.
   single largest column. The three 256-bit columns together were 28%, and
   compress 2.0x to 4.3x. Measured afterwards on the real table, 863,587 rows:
   73.2 MB against 105.2 MB with text hashes (**-30%**, 84.8 bytes per row
-  instead of 122). `tx_hash` is still the largest column at 35.7%.
+  instead of 122). `tx_hash` is still the largest column: 36.8% of the 94.2 MB the table
+  occupies today.
 - `pool_address` stays readable text because `LowCardinality` with 4 values
   costs 2.4 KB in total.
 
@@ -476,7 +483,7 @@ queries: then a readable alias column, not a change of storage type.
 
 ## 14. Nothing from pools.yml is denormalised into the raw table
 
-> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-19
 - Status: Accepted
@@ -505,7 +512,7 @@ dictionary, or denormalising at load time.
 
 ## 15. The external comparison only looks at days that are whole on both sides
 
-> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-20
 - Status: Accepted
@@ -527,7 +534,8 @@ own section with both values and the reason. `RECONCILE_DAYS=all`
 
 **Why.** A difference that disappears by waiting a day says nothing about either
 source. Listing the excluded days, instead of dropping them, keeps the rule
-auditable: 8 pool-days are excluded today and all 8 are in the report.
+auditable: 8 pool-days were excluded the day this was decided and 7 in the
+current run; every one of them is in the report, with both values.
 
 **Tradeoff.** The most recent day is never reconciled the day it happens. The
 rule relies on `fetched_at` being stored per candle, and on the source's day
@@ -540,17 +548,19 @@ should come from the checkpoint, not from "first and last day of the window".
 
 ## 16. A pool-day is flagged beyond 1% AND beyond 1,000 USD
 
-> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-20
 - Status: Accepted
 
 **Context.** A relative threshold alone treats a 9 USD difference like a 900,000
-USD one. wstETH/USDC 0.3% has 625 swaps in the whole window (610 when first reconciled) and days of
+USD one. wstETH/USDC 0.3% has 673 swaps in the whole window (610 when this was
+first reconciled, 625 the next day) and days of
 123 USD, where -9 USD is -6.75%. On 2026-09-19 one swap of 617.28 USD is 44% of
 that pool's volume for the day (1,413 USD): at that size any rounding or
 valuation detail of a single trade moves the day by more than 1%. Of the 24
-compared pool-days beyond 1%, 12 differ by less than 1,000 USD, and all 12 are
+compared pool-days beyond 1% on the day this was decided, 12 differ by less than
+1,000 USD, and all 12 are
 in the two wstETH pools.
 
 **Decision.** A pool-day is flagged when it is beyond `RECONCILE_THRESHOLD`
@@ -561,7 +571,10 @@ absolute threshold alone flags nothing.
 
 **Why.** Attention is the scarce thing: 12 flagged pool-days that carry money
 are investigated; the other 12, which add up to 2,098 USD, stay in sight in their
-own section. Nothing is removed from the report or the CSV.
+own section. Nothing is removed from the report or the CSV. The split holds as the
+window grows: over the 43 days loaded today, 35 compared pool-days are beyond 1%
+and 18 of them, 3,682 USD in total, are below the absolute threshold, all in the two
+wstETH pools.
 
 **Tradeoff.** 1,000 USD is a judgement, not a measurement, and it is the same
 for a pool that trades 80 million a day and for one that trades 2,000. A small
@@ -576,7 +589,7 @@ threshold should scale with the pool (for example a fraction of its median day).
 
 ## 17. The external check is GeckoTerminal, not the subgraph
 
-> **BORRADOR — pendiente de que Roberto la reescriba con sus palabras**
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-20
 - Status: Accepted. Supersedes the external-check half of #2
