@@ -193,6 +193,58 @@ def test_the_page_scales_on_a_phone(page):
     assert "svg{width:100%;height:auto" in page.replace(" ", "")
 
 
+def test_the_sections_are_numbered_from_one_and_the_header_is_not_one(page):
+    ids = [int(n) for n in re.findall(r'<section id="s(\d+)">', page)]
+    chips = [int(n) for n in re.findall(r'<span class="sn">(\d+)</span>', page)]
+    assert ids == list(range(1, len(ids) + 1)), f"sections are numbered {ids}"
+    assert chips == ids, "the number printed on a section is not the number of its anchor"
+    assert "<header" in page and '<span class="sn">' not in page.split("</header>")[0]
+
+
+def test_no_table_can_grow_past_its_card(page):
+    """Every table states its column widths and the page never lets one scroll sideways: that
+    is what keeps a table inside its card at 390 px, where a phone reads it."""
+    tables = re.findall(r"<table.*?</table>", page, re.S)
+    assert tables, "the page has no table at all, which cannot be right"
+    for t in tables:
+        widths = re.findall(r'<col style="width:(\d+)%">', t)
+        columns = len(re.findall(r"<th[ >]", t))
+        assert len(widths) == columns, f"a table declares {len(widths)} widths for {columns}"
+        assert 97 <= sum(int(w) for w in widths) <= 100, "the widths do not add up to the table"
+    flat = page.replace(" ", "").replace("\n", "")
+    assert "table{border-collapse:collapse;width:100%;table-layout:fixed" in flat
+    assert "overflow-x:auto" not in flat, "a card that scrolls sideways hides what it holds"
+
+
+def test_the_summary_and_the_closing_block_say_what_they_promise(page):
+    """Four takeaways under the header, before the numbers, and a closing block with the three
+    ways in and the attribution line."""
+    head, _, rest = page.partition("</header>")
+    assert head, "no header"
+    take = re.search(r'<div class="take">.*?</ul></div>', rest, re.S)
+    assert take, "the key takeaways are missing"
+    assert rest.index(take.group(0)) < rest.index('<section id="s1">'), "takeaways after the KPIs"
+    assert len(re.findall(r"<li>", take.group(0))) == 4, "four takeaways, one line each"
+
+    start = re.search(r'<div class="start">.*?</ol></div>', page, re.S)
+    assert start, "the closing block is missing"
+    assert page.index(start.group(0)) > page.index('<section id="s1">'), "closing block too early"
+    for link in ("docs/WALKTHROUGH.md", "DECISIONS.md", "orwee/univ3-clickhouse-indexer"):
+        assert link in start.group(0), f"the closing block does not point at {link}"
+    assert (
+        "Independent weekend project. Smart-money data: Powered by Nansen API. "
+        "Not affiliated with any company mentioned." in page
+    )
+
+
+def test_the_spread_between_the_pools_is_one_figure_in_both_places(page):
+    """The note under the chart and the summary of the section are generated from the same
+    measurement, so the page cannot quote two different spreads for the same pools."""
+    said = re.findall(r"about (\d+\.\d+) orders of magnitude", page)
+    assert len(said) == 2, f"expected the figure twice, found {said}"
+    assert said[0] == said[1], f"two different spreads on the page: {said}"
+
+
 def test_every_chart_is_described_for_a_reader_who_cannot_see_it(page):
     for chart in re.findall(r"<svg .*?</svg>", page, re.S):
         assert 'role="img"' in chart
