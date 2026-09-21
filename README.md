@@ -217,17 +217,18 @@ independent review pass, which found a dozen objective errors; what it found is 
 
 > Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
-Run of 2026-09-20: 898,404 swaps, 4 pools, 128 pool-days on both sides, 120 compared, 12
-flagged beyond 1% and 1,000 USD. The full draft, each figure with the section of the evidence
-behind it, is [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md); the snapshot of that run is in
-[docs/evidence/2026-09-20/](docs/evidence/2026-09-20/reconciliation.md). Ten earlier days
-were added on 2026-09-21 to test finding 7 on days it had not been fitted on (1,110,676 swaps,
-163 pool-days compared, 17 flagged): [docs/evidence/2026-09-21/](docs/evidence/2026-09-21/README.md).
+Current run, 2026-09-21: 1,110,676 swaps, 43 days, 163 pool-days compared, 17 flagged beyond
+1% and 1,000 USD ([snapshot](docs/evidence/2026-09-21/README.md)). Each finding below was made
+on the run of 2026-09-20 (898,404 swaps, 120 compared, 12 flagged,
+[snapshot](docs/evidence/2026-09-20/reconciliation.md)) and quotes that run's figures, so that
+the number in the text is the number that produced the conclusion; where the current run
+changes the picture, the finding says so. The full text, each figure linked to the evidence
+behind it, is [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md).
 
 | # | Finding | State |
 |---|---|---|
 | [1](docs/RECONCILIATION_FINDINGS.md#1-the-pipeline-agrees-with-itself-exactly--explained) | `raw_swaps` and the materialized view agree exactly: 0 differences on the 128 pool-days of that run, and on the 170 of the current one | EXPLAINED |
-| [2](docs/RECONCILIATION_FINDINGS.md#2-partial-days-and-open-candles--explained) | Partial days (-22% to -35% on 2026-08-20) and a candle compared while still open (-2.14%, then -0.55%). Only whole, closed days are compared; the 8 excluded are listed | EXPLAINED |
+| [2](docs/RECONCILIATION_FINDINGS.md#2-partial-days-and-open-candles--explained) | Partial days (-22% to -35% on 2026-08-20) and a candle compared while still open (-2.14%, then -0.55%). Only whole, closed days are compared, and the excluded ones are listed with their reason | EXPLAINED |
 | [3](docs/RECONCILIATION_FINDINGS.md#3-the-day-boundary-is-not-the-cause--explained-a-negative-result) | The day boundary is not the cause: the distance is smallest at a shift of 0 h in all four pools; one hour either way gives 1.8% to 13% in three of them | EXPLAINED |
 | [4](docs/RECONCILIATION_FINDINGS.md#4-which-leg-is-valued-does-not-matter-in-the-liquid-pools--explained) | Which leg is valued changes the liquid pools by -0.004% and +0.02%. It does not test whether USDC was worth 1 USD | EXPLAINED |
 | [5](docs/RECONCILIATION_FINDINGS.md#5-in-the-liquid-pools-the-30-day-totals-agree-and-the-daily-noise-is-centred--explained) | Liquid pools: 30-day totals at +0.10% and +0.24%; daily noise 15 up / 15 down in one, 19 / 11 in the other | EXPLAINED |
