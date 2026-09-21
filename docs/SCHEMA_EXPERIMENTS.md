@@ -89,7 +89,7 @@ wstETH/USDC 0.05% 4,688 (0.5%) · wstETH/USDC 0.3% 610 (0.07%).
 | Replacing with a non-unique key: rows lost | 65.7% | **64.4%** (307,720 left) |
 | Replacing without `FINAL` or merge: total too high | 11.2% | **10.5%** (954,496 instead of 863,587) |
 | `FINAL` unmerged, main query | 69 ms against 23 (3.0x) | **114 ms against 41 (2.8x)**, 45 MB of memory against 9 |
-| `FINAL` unmerged, one day of one pool | whole table, **the same as without `FINAL`** | whole table with and without `FINAL` (954,496 rows); 116 ms against 21. The key tested here has no time in it, so there was none to lose |
+| `FINAL` unmerged, one day of one pool | whole table, **the same as without `FINAL`** | whole table with and without `FINAL` (954,496 rows); 116 ms against 21. The key tested here has no time in it, so nothing was being pruned that `FINAL` could have cost |
 | One day of the big pool, `(pool, timestamp)` | 32,768 rows · 4/57 granules | **32,768 rows · 4/106 granules** |
 | One day of the big pool, `(pool, block_number, log_index)` | 348,759 rows · 43/57 | **634,211 rows · 78/106** (19 times more) |
 | …the same one, with the condition cache on | 49,152 | 49,152 |
