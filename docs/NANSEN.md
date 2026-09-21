@@ -59,6 +59,11 @@ transaction hash and stores one row per pool and UTC day in `nansen_smart_money_
 (`sql/003_nansen_smart_money_daily.sql`); the dbt model `fct_pool_daily_smart_money` divides
 by `fct_pool_daily`. 30 complete days, 120 pool-days, 2026-08-21 to 2026-09-19:
 
+> **Smart-money data: Powered by Nansen API.** The aggregates below are derived from Nansen's
+> proprietary smart-money classification. Only aggregates per pool and day are published here;
+> no address, label or transaction hash from their responses is redistributed, following their
+> redistribution guidelines (<https://docs.nansen.ai/mcp/redistribution-guidelines.md>).
+
 | Pool | Our swaps | In smart-money transactions | Our USD | Smart-money USD | Share of swaps | Share of USD | Days with any | Highest daily share of USD |
 |---|---|---|---|---|---|---|---|---|
 | USDC/WETH 0.05% | 227,562 | 153 | 2,438,587,799 | 1,698,906 | 0.067% | 0.070% | 27 of 30 | 0.39% |

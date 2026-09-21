@@ -1,5 +1,7 @@
 # Decisions
 
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
+
 Why things are the way they are, written when the decision was made, including
 what I gave up. Newest entries go at the bottom. An entry is never rewritten:
 if I change my mind, I add a new entry and mark the old one `Superseded by #N`.
@@ -14,7 +16,7 @@ if I change my mind, I add a new entry and mark the old one `Superseded by #N`.
 
 **Context.** What forced a choice.
 **Decision.** What I chose.
-**Why.** The reasoning, in my own words.
+**Why.** The reasoning, and the measurement behind it.
 **Tradeoff.** What this costs me or leaves out.
 **Revisit when.** The signal that would make me reopen it.
 ```
@@ -618,7 +620,8 @@ with per-swap rows (the subgraph, or a second indexer) is the next step.
 
 ## Agent corrections
 
-Things the coding agent got wrong or that I had to redirect, one line each.
+Things an agent got wrong and I had to redirect, one line each, with where it was fixed.
+The list is kept because the mistakes are part of the record, not in spite of it.
 
 - 2026-09-18: The repo and the clone directory carried a company's brand name.
   Renamed to `univ3-clickhouse-indexer`; using a company's brand on a public
@@ -629,3 +632,55 @@ Things the coding agent got wrong or that I had to redirect, one line each.
   after checking which versions dbt-core and dbt-clickhouse support.
 - 2026-09-18: The single secrets file let the unprivileged agent user read the
   API keys. Split in two before any code depended on it (entry 4).
+- 2026-09-19: A `| tail` pipe in a check swallowed the exit code, so a lint
+  failure passed as green and a commit went out on top of it. Fixed by an
+  amend before pushing; from then on every commit was gated on `$?` from
+  `make lint` and `make test` with no pipe in between.
+- 2026-09-19: A pull request body claimed 247 tests when the suite had 238.
+  Corrected with `gh pr edit` on PR #22, and test counts are now read from the
+  run rather than written from memory.
+- 2026-09-19 onwards, four times: an alias that shadows a column
+  (`sum(volume_usd) AS volume_usd`, `max(fetched_at) AS fetched_at`) made
+  ClickHouse substitute the alias inside another aggregate and raise
+  `ILLEGAL_AGGREGATION`, and once inside a `WHERE` it silently selected no
+  rows. Each occurrence was fixed where it happened; the last one is commented
+  in `scripts/prove_dbt_tests_can_fail.py`, which needs
+  `prefer_column_name_to_alias = 1` to work at all.
+- 2026-09-20: Entry 10 and the README said `FINAL` "removed index pruning".
+  The raw results never showed that: the one-day query read the whole table
+  with and without `FINAL`, because the key tested there had no time in it.
+  Retracted in PR #29 and measured properly with the real key in PR #32, which
+  also records what is left of the argument for MergeTree.
+- 2026-09-20: The reconciliation's only pass/fail query compared an unmatched
+  join side with `''` and `0`, which is a comparison with NULL under
+  `join_use_nulls = 1`: a day missing from the materialized view would have
+  been reported as "0 differences". Fixed in PR #29 by pinning
+  `SETTINGS join_use_nulls = 0` in the four outer-join queries, with a test
+  that runs the check in a hostile session.
+- 2026-09-20: `raw_swaps` had no reorg story beyond staying 64 blocks behind
+  the tip, which the text called "finalised". It is not: the provider's
+  finalised block was 93 blocks behind its tip when measured. PR #34 moved the
+  window to `eth_getBlockByNumber("finalized")` with a documented fallback,
+  and checked the 680 block hashes already landed against the chain.
+- 2026-09-21: About 30 of the 55 dbt tests could not fail on ClickHouse
+  (`not_null` on columns that are not `Nullable`, `relationships` to a table
+  the model already inner-joins, `non_negative` on unsigned integers). PR #31
+  replaced them with 24 that can, and added `make dbt-prove`, which breaks the
+  data on purpose in throw-away databases and fails unless every test fails at
+  least once.
+- 2026-09-21: A findings draft called one difference "larger than every other
+  difference in the project put together". It was not. Corrected to "by far the
+  largest single difference" before PR #33 was opened.
+
+## Owner mistakes
+
+Mine, for symmetry.
+
+- 2026-09-20: I merged 21 stacked pull requests from the web in numerical
+  order, each into its own parent branch instead of into `main`. Nothing was
+  lost, but `main` ended up with only 3 of them and was missing 67 commits.
+  Fixed with PR #23, a single consolidation pull request from the tip of the
+  stack into `main`, after checking with `git merge-tree` that it applied
+  cleanly. The lesson is in the lists above: merge a stack bottom-up and delete
+  each branch so the next pull request is retargeted, or open every pull
+  request against `main` from the start.

@@ -1,29 +1,43 @@
 # univ3-clickhouse-indexer
 
+<!-- CI badge: uncomment once .github/workflows/ci.yml exists (the file is ready, it just
+     needs a token with the `workflow` scope to be committed).
+[![ci](https://github.com/orwee/univ3-clickhouse-indexer/actions/workflows/ci.yml/badge.svg)](https://github.com/orwee/univ3-clickhouse-indexer/actions/workflows/ci.yml)
+-->
+
 Uniswap v3 `Swap` events from an Ethereum JSON-RPC node, landed as raw JSONL, loaded into
-ClickHouse, modelled with dbt, and reconciled twice. **1,110,676 swaps, 4 pools, 43 days**
-(2026-08-09 to 2026-09-20). **Internally it is exact:** a recomputation from `raw_swaps` and
-the materialized view agree on all 170 pool-days, in raw integer units. **Externally it is
-not:** against an independent source of daily volume, 163 of those pool-days are compared,
-**17 differ by more than 1% and 1,000 USD**, 18 more by over 1% but less than 1,000 USD,
-7 are excluded as incomplete and 1 exists on one side only. The main limitation is that the
-external source publishes no methodology, so a difference can be located but not settled.
-**Ten guided minutes: [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).**
+ClickHouse, modelled with dbt, and reconciled against an independent source. 1,110,676 swaps,
+4 pools, 43 days (2026-08-09 to 2026-09-20).
+
+- **The pipeline agrees with itself exactly.** A recomputation from `raw_swaps` and the
+  materialized view match on all 170 pool-days, in raw integer units: 0 differences.
+- **It does not agree with the outside, and the gap is measured.** Of those 170 pool-days,
+  163 are compared, 17 differ by more than 1% *and* 1,000 USD, 18 more by over 1% but less
+  than 1,000 USD, 7 are excluded as incomplete and 1 exists on one side only. Each difference
+  is located to a pool, a day and usually an hour; [the findings](docs/RECONCILIATION_FINDINGS.md)
+  say which are explained and which are not.
+- **Main limitation:** the external source publishes no methodology, so a difference can be
+  located but not settled. Closing that needs a second source with per-swap rows.
+
+**Run it in one minute: `make demo`** — Docker only, no API key, no network data. Then
+[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) is a ten-minute guided read.
 
 A third source, the Nansen API, adds what a Swap log cannot carry: who signed the
-transaction.
+transaction. **Smart-money data: Powered by Nansen API** — the repository publishes only
+aggregates per pool and day derived from their classification, never an address, a label or a
+transaction hash from their responses, following their
+[redistribution guidelines](https://docs.nansen.ai/mcp/redistribution-guidelines.md). See
+[docs/NANSEN.md](docs/NANSEN.md).
 
-It is a learning project: the point was to work with ClickHouse hands-on (MergeTree parts and
-merges, sparse primary indexes, materialized views, the system tables) rather than read about
-it. The design choices are written down in [DECISIONS.md](DECISIONS.md), with the
-number that was measured wherever one was, and what went wrong along the way is kept where
-it happened instead of being cleaned up (for example the double count in
-[docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md) and the measurements spoiled by a
-cache in [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md)).
-
-Data in the working database on 2026-09-21: 1,110,676 swaps of 4 pools over 43 days
-(2026-08-09 to 2026-09-20). Some documents were measured on earlier states of the same
-table (863,587, 881,187 and 898,404 rows) and say so.
+It is a learning project, built to work with ClickHouse hands-on — MergeTree parts and merges,
+sparse primary indexes, materialized views, the system tables — rather than read about it. Every
+design choice is in [DECISIONS.md](DECISIONS.md) with the number that was measured for it, and
+what went wrong is kept where it happened instead of being cleaned up: the double count in
+[docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md), the measurements spoiled by a cache in
+[docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md), and a dated list of every correction
+in [Agent corrections](DECISIONS.md#agent-corrections). Figures above are of 2026-09-21; some
+documents were measured on earlier states of the same table (863,587, 881,187 and 898,404 rows)
+and say which.
 
 ## Architecture
 
@@ -159,7 +173,7 @@ request (not retried), `4` network, `5` too many retries (aborted to protect the
 
 ## Design decisions
 
-One or two sentences each; the reasoning is in [DECISIONS.md](DECISIONS.md), in my words.
+One or two sentences each; the reasoning is in [DECISIONS.md](DECISIONS.md).
 
 | Decision | In short | Measured |
 |---|---|---|
@@ -203,17 +217,18 @@ independent review pass, which found a dozen objective errors; what it found is 
 
 > Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
-Run of 2026-09-20: 898,404 swaps, 4 pools, 128 pool-days on both sides, 120 compared, 12
-flagged beyond 1% and 1,000 USD. The full draft, each figure with the section of the evidence
-behind it, is [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md); the snapshot of that run is in
-[docs/evidence/2026-09-20/](docs/evidence/2026-09-20/reconciliation.md). Ten earlier days
-were added on 2026-09-21 to test finding 7 on days it had not been fitted on (1,110,676 swaps,
-163 pool-days compared, 17 flagged): [docs/evidence/2026-09-21/](docs/evidence/2026-09-21/README.md).
+Current run, 2026-09-21: 1,110,676 swaps, 43 days, 163 pool-days compared, 17 flagged beyond
+1% and 1,000 USD ([snapshot](docs/evidence/2026-09-21/README.md)). Each finding below was made
+on the run of 2026-09-20 (898,404 swaps, 120 compared, 12 flagged,
+[snapshot](docs/evidence/2026-09-20/reconciliation.md)) and quotes that run's figures, so that
+the number in the text is the number that produced the conclusion; where the current run
+changes the picture, the finding says so. The full text, each figure linked to the evidence
+behind it, is [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md).
 
 | # | Finding | State |
 |---|---|---|
 | [1](docs/RECONCILIATION_FINDINGS.md#1-the-pipeline-agrees-with-itself-exactly--explained) | `raw_swaps` and the materialized view agree exactly: 0 differences on the 128 pool-days of that run, and on the 170 of the current one | EXPLAINED |
-| [2](docs/RECONCILIATION_FINDINGS.md#2-partial-days-and-open-candles--explained) | Partial days (-22% to -35% on 2026-08-20) and a candle compared while still open (-2.14%, then -0.55%). Only whole, closed days are compared; the 8 excluded are listed | EXPLAINED |
+| [2](docs/RECONCILIATION_FINDINGS.md#2-partial-days-and-open-candles--explained) | Partial days (-22% to -35% on 2026-08-20) and a candle compared while still open (-2.14%, then -0.55%). Only whole, closed days are compared, and the excluded ones are listed with their reason | EXPLAINED |
 | [3](docs/RECONCILIATION_FINDINGS.md#3-the-day-boundary-is-not-the-cause--explained-a-negative-result) | The day boundary is not the cause: the distance is smallest at a shift of 0 h in all four pools; one hour either way gives 1.8% to 13% in three of them | EXPLAINED |
 | [4](docs/RECONCILIATION_FINDINGS.md#4-which-leg-is-valued-does-not-matter-in-the-liquid-pools--explained) | Which leg is valued changes the liquid pools by -0.004% and +0.02%. It does not test whether USDC was worth 1 USD | EXPLAINED |
 | [5](docs/RECONCILIATION_FINDINGS.md#5-in-the-liquid-pools-the-30-day-totals-agree-and-the-daily-noise-is-centred--explained) | Liquid pools: 30-day totals at +0.10% and +0.24%; daily noise 15 up / 15 down in one, 19 / 11 in the other | EXPLAINED |
@@ -254,10 +269,51 @@ located to one to three hours, listed at the end of the draft.
   run by hand.
 - **"`onchain` is read-only for agents" is a rule without a barrier**: there is one ClickHouse
   user and it can drop anything.
-- **Weekend scale.** About 900,000 rows. What [DECISIONS.md](DECISIONS.md) and
+- **Weekend scale.** 1,110,676 rows. What [DECISIONS.md](DECISIONS.md) and
   [docs/QUERY_PERFORMANCE.md](docs/QUERY_PERFORMANCE.md) conclude about `ORDER BY`,
   partitions, projections and indexes was measured at that size.
 - **Nansen on the free tier.** Labels for the main counterparties exist only as a design.
+
+## What I would build next
+
+This is a batch pipeline on one chain, at weekend scale. What it is missing, in the order I
+would build it.
+
+1. **Streaming ingestion.** A tailing ingester at the finalized head
+   ([`safe_head`](src/univ3_indexer/cli.py) already resolves it) writing to Kafka or
+   Redpanda, consumed by ClickHouse through the Kafka engine and a materialized view, with
+   the raw landing kept in object storage for replay. The natural key
+   `(block_number, log_index)` already makes a reload idempotent, so a replay is safe.
+2. **Reorgs at the tip.** Keep `block_hash` in the raw table (the landing zone already
+   carries it, which is how the 680 landed hashes were checked against the chain), hold
+   unfinalized blocks in a provisional zone, and rewrite a block range when a parent hash
+   stops matching.
+3. **Multi-chain and more protocols.** `chain` first in the sorting key, and a decoder
+   registry keyed by event signature instead of the single `Swap` decoder in
+   [`swap.py`](src/univ3_indexer/swap.py).
+4. **Postgres as the system of record** for pools, tokens and labels, served to ClickHouse
+   through a dictionary with a PostgreSQL source, replacing the hand-kept
+   [`pools.yml`](pools.yml) and its generated seed.
+5. **Labels.** Counterparty labels from the Nansen API behind a dictionary, refreshed in
+   batches ([docs/NANSEN.md](docs/NANSEN.md) has the design and the credit arithmetic), and
+   the point-in-time question stated explicitly: a label is current, a swap is historical,
+   and joining them silently answers "who is this wallet today", not "what was it then".
+6. **Data quality as a running service.** The reconciliation scheduled daily instead of run
+   by hand, freshness and volume checks against their own history rather than fixed
+   thresholds, alerting on the result, and a second external source with per-swap rows to
+   close the [open findings](docs/RECONCILIATION_FINDINGS.md#what-is-still-open).
+7. **Orchestration and CI.** An orchestrator with asset checks (Dagster or Airflow) in place
+   of `make` targets run by hand, and CI running lint, tests and `make demo` on every pull
+   request.
+8. **Access.** A read-only ClickHouse user for readers and agents; today there is one user
+   and it can drop anything, which [AGENTS.md](AGENTS.md) admits is a rule without a barrier.
+9. **Scale.** Redo the measurements at production size, where the answers may change, and
+   move cold partitions to object storage with a TTL.
+
+**What I would do first at production scale:** streaming ingestion, because a daily batch
+cannot answer "what happened in the last five minutes"; reorg handling, because streaming at
+the tip without it silently serves wrong numbers; and multi-chain, because the sorting key is
+the one decision that is expensive to change once the table is large.
 
 ## Where things are
 
@@ -273,7 +329,7 @@ located to one to three hours, listed at the end of the draft.
 | [docs/H2_PREREGISTRATION.md](docs/H2_PREREGISTRATION.md) | What was going to be tested out of sample, committed before the data was fetched |
 | [docs/evidence/2026-09-21/](docs/evidence/2026-09-21/README.md) | Snapshot of the run with ten more days: the out-of-sample test and placebo, and the reconciliation over 43 days |
 | [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md) | The provider's limits and the size of the data, measured |
-| [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md) | Candidate schemas on the real data (Spanish) |
+| [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md) | Candidate schemas measured on the real data, before the decision |
 | [docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md) | A materialized view is an insert trigger: procedure and observations |
 | [docs/EXTERNAL_SOURCE.md](docs/EXTERNAL_SOURCE.md) | The external source: documented, observed, unknown |
 | [docs/NANSEN.md](docs/NANSEN.md) | What Nansen adds to a Swap log (the signer and its classification), what runs on the free tier with the credits spent, and the production design that was not run |

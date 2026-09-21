@@ -1,421 +1,421 @@
-# Experimentos de esquema con datos reales (sin concluir)
+# Schema experiments on real data (not concluded)
 
-> **Las decisiones que salieron de estas mediciones** están en
-> [DECISIONS.md](../DECISIONS.md), entradas
-> [#10](../DECISIONS.md#10-engine-mergetree-with-deduplication-left-to-the-load) (motor),
+> **The decisions that came out of these measurements** are in
+> [DECISIONS.md](../DECISIONS.md), entries
+> [#10](../DECISIONS.md#10-engine-mergetree-with-deduplication-left-to-the-load) (engine),
 > [#11](../DECISIONS.md#11-order-by-pool_address-block_timestamp-block_number-log_index-primary-key-on-the-first-two)
 > (`ORDER BY`), [#12](../DECISIONS.md#12-partition-by-month-for-management-and-not-for-speed)
-> (particiones) y
+> (partitioning) and
 > [#13](../DECISIONS.md#13-types-lossless-integers-and-hashes-and-addresses-in-binary)
-> (tipos); la tabla real es [sql/001_raw_swaps.sql](../sql/001_raw_swaps.sql). Este documento
-> mide y no elige; se midió sobre 463.447 y 863.587 filas (hoy la tabla tiene 898.404).
+> (types); the real table is [sql/001_raw_swaps.sql](../sql/001_raw_swaps.sql). This document
+> measures and does not choose; it was measured on 463,447 and 863,587 rows (today the table holds 898,404).
 
-Mediciones para que Roberto decida el esquema. **Este documento no elige nada.**
-Complementa a `SCHEMA_OPTIONS.md` (que razona) con números medidos. Las decisiones
-van a `DECISIONS.md`, escritas por él.
+Measurements for Roberto to decide the schema. **This document chooses nothing.**
+It complements `SCHEMA_OPTIONS.md` (which reasons) with measured numbers. The decisions
+go to `DECISIONS.md`, written by him.
 
-## Actualización 2026-09-21: `FINAL` medido con la clave REAL
+## Update 2026-09-21: `FINAL` measured with the REAL key
 
-Lo que este documento midió sobre `FINAL` (más abajo) usaba una Replacing ordenada por
-`(pool, block_number, log_index)`, una clave **sin tiempo**: con ella una consulta de un día
-no podía podar ni con `FINAL` ni sin él. Una revisión independiente lo señaló. Aquí se repite
-con el `ORDER BY` de la tabla real, `(pool_address, block_timestamp, block_number, log_index)`,
-que además es único por log y por tanto sirve también de clave de deduplicación.
+What this document measured about `FINAL` (further down) used a Replacing table sorted by
+`(pool, block_number, log_index)`, a key **with no time in it**: with it a one-day query
+could not prune either with `FINAL` or without it. An independent review pointed it out. Here
+it is repeated with the `ORDER BY` of the real table, `(pool_address, block_timestamp, block_number, log_index)`,
+which is also unique per log and therefore serves as the deduplication key as well.
 
-`scripts/final_experiment.py`, resultados crudos en
-`docs/experiments/final-real-key-2026-09-21.json`. Dos tablas con las mismas columnas y la
-misma clave, MergeTree y ReplacingMergeTree, llenadas desde la tabla real (898.404 filas) con
-los mismos 200 inserts, merges parados, y una de cada diez porciones entregada dos veces
-(90.081 filas repetidas: 988.485 filas almacenadas). Se mide sin mezclar (221 partes) y tras
-`OPTIMIZE FINAL` (2 partes, una por partición mensual). Un MergeTree normal rechaza `FINAL`
-(`ILLEGAL_FINAL`), así que ahí solo hay medida sin él.
+`scripts/final_experiment.py`, raw results in
+`docs/experiments/final-real-key-2026-09-21.json`. Two tables with the same columns and the
+same key, MergeTree and ReplacingMergeTree, filled from the real table (898,404 rows) with
+the same 200 inserts, merges stopped, and one batch in ten delivered twice
+(90,081 repeated rows: 988,485 rows stored). It is measured unmerged (221 parts) and after
+`OPTIMIZE FINAL` (2 parts, one per monthly partition). A plain MergeTree rejects `FINAL`
+(`ILLEGAL_FINAL`), so there the measurement is only without it.
 
-**Replacing, 221 partes sin mezclar**
+**Replacing, 221 unmerged parts**
 
-| Consulta | Sin `FINAL`: filas · bytes · ms · memoria | Con `FINAL` | Respuesta sin / con |
+| Query | Without `FINAL`: rows · bytes · ms · memory | With `FINAL` | Answer without / with |
 |---|---|---|---|
-| Volumen diario, todos los pools | 988.485 · 36,6 MB · 45 ms · 9 MB | 988.485 · 48,5 MB · **116 ms (2,6×)** · **48 MB** | total inflado un 10,0 % / correcto |
-| Un día del pool grande | 39.756 · 1,47 MB · 6 ms | **39.756** · 1,95 MB · 10 ms | 28.179 swaps (**+17,6 %**) / 23.961 |
-| Un día del pool pequeño | 39.756 · 1,47 MB · 7 ms | 39.756 · 1,95 MB · 7 ms | 19 / 14 |
-| Un día, todos los pools | 39.756 · 1,43 MB · 5 ms | 39.756 · 1,95 MB · 7 ms | 36.562 / 31.013 |
+| Daily volume, all pools | 988,485 · 36.6 MB · 45 ms · 9 MB | 988,485 · 48.5 MB · **116 ms (2.6x)** · **48 MB** | total 10.0% too high / correct |
+| One day of the big pool | 39,756 · 1.47 MB · 6 ms | **39,756** · 1.95 MB · 10 ms | 28,179 swaps (**+17.6%**) / 23,961 |
+| One day of the small pool | 39,756 · 1.47 MB · 7 ms | 39,756 · 1.95 MB · 7 ms | 19 / 14 |
+| One day, all pools | 39,756 · 1.43 MB · 5 ms | 39,756 · 1.95 MB · 7 ms | 36,562 / 31,013 |
 
-**Replacing, tras mezclar (2 partes; los duplicados ya no existen: 898.404 filas, ni una perdida)**
+**Replacing, after merging (2 parts; the duplicates no longer exist: 898,404 rows, not one lost)**
 
-| Consulta | Sin `FINAL` | Con `FINAL` | Con `FINAL` y `do_not_merge_across_partitions_select_final = 1` |
+| Query | Without `FINAL` | With `FINAL` | With `FINAL` and `do_not_merge_across_partitions_select_final = 1` |
 |---|---|---|---|
-| Volumen diario, todos los pools | 898.404 · 33,2 MB · 39 ms | 898.404 · 33,2 MB · 51 ms (1,3×) | 898.404 · 33,2 MB · **39 ms** |
-| Un día del pool grande | 24.576 · 0,91 MB · 4 ms | 24.576 · 0,91 MB · 4 ms | igual |
-| Un día del pool pequeño | 8.192 · 0,04 MB · 3 ms | 8.192 · 0,30 MB · 4 ms | igual que con `FINAL` |
-| Un día, todos los pools | 57.344 · 2,06 MB · 5 ms | 57.344 · 2,06 MB · 5 ms | igual |
+| Daily volume, all pools | 898,404 · 33.2 MB · 39 ms | 898,404 · 33.2 MB · 51 ms (1.3x) | 898,404 · 33.2 MB · **39 ms** |
+| One day of the big pool | 24,576 · 0.91 MB · 4 ms | 24,576 · 0.91 MB · 4 ms | same |
+| One day of the small pool | 8,192 · 0.04 MB · 3 ms | 8,192 · 0.30 MB · 4 ms | same as with `FINAL` |
+| One day, all pools | 57,344 · 2.06 MB · 5 ms | 57,344 · 2.06 MB · 5 ms | same |
 
-**MergeTree con los mismos duplicados:** 988.485 filas sin mezclar y **988.485 tras mezclar**.
-Nada los quita nunca; el día del pool grande sigue diciendo 28.179 swaps.
+**MergeTree with the same duplicates:** 988,485 rows unmerged and **988,485 after merging**.
+Nothing ever removes them; the day of the big pool still says 28,179 swaps.
 
-La caché de condiciones, apagada o encendida, no cambió ninguna cifra de filas ni de bytes:
-todas estas consultas podan por la clave y no le dejan nada que recordar.
+The condition cache, off or on, changed no row or byte figure: all these queries prune by
+the key and leave it nothing to remember.
 
-Lo que dicen estos números, sin decidir nada:
+What these numbers say, without deciding anything:
 
-- **Con la clave real, `FINAL` no quita la poda.** Lee exactamente las mismas filas que la
-  consulta sin `FINAL`, mezclada o sin mezclar. Lee más bytes sin mezclar (+32 %: necesita las
-  columnas de la clave) y prácticamente los mismos una vez mezclada.
-- **El coste de `FINAL` está en la consulta que lo lee todo y solo mientras hay muchas
-  partes:** 2,6× en tiempo y 5× en memoria. Mezclada, 1,3×, y con
-  `do_not_merge_across_partitions_select_final = 1`, nada medible. Las consultas filtradas
-  pagan entre 0 y 4 ms.
-- **La clave real es única por log:** la Replacing no perdió ninguna fila (el 64,4 % perdido
-  de más abajo es de una clave NO única, un mal uso, no de esta).
-- **Sin `FINAL`, la Replacing sin mezclar da la misma cifra equivocada que el MergeTree.** La
-  diferencia es que en la Replacing el error desaparece al mezclar o al decir `FINAL`, y en el
-  MergeTree no desaparece nunca: ahí toda la defensa es que la carga no duplique.
-- Un hecho que no depende del motor: la materialized view es un disparador de INSERT, así que
-  una fila entregada dos veces **entra dos veces en `swaps_daily_agg`** aunque la tabla origen
-  fuera Replacing. Con la vista puesta, la carga tiene que ser idempotente de todos modos.
+- **With the real key, `FINAL` does not remove the pruning.** It reads exactly the same rows
+  as the query without `FINAL`, merged or unmerged. It reads more bytes when unmerged (+32%:
+  it needs the key columns) and practically the same once merged.
+- **The cost of `FINAL` is in the query that reads everything, and only while there are many
+  parts:** 2.6x in time and 5x in memory. Merged, 1.3x, and with
+  `do_not_merge_across_partitions_select_final = 1`, nothing measurable. The filtered queries
+  pay between 0 and 4 ms.
+- **The real key is unique per log:** the Replacing table lost no row (the 64.4% lost
+  further down is from a NON-unique key, a misuse, not from this one).
+- **Without `FINAL`, the unmerged Replacing table gives the same wrong figure as the MergeTree.** The
+  difference is that in the Replacing table the error disappears on merging or on saying `FINAL`, and in the
+  MergeTree it never disappears: there the whole defence is that the load does not duplicate.
+- A fact that does not depend on the engine: the materialized view is an INSERT trigger, so
+  a row delivered twice **goes twice into `swaps_daily_agg`** even if the source table
+  were Replacing. With the view in place, the load has to be idempotent anyway.
 
-## Actualización: los 30 días completos (863.587 swaps)
+## Update: the full 30 days (863,587 swaps)
 
-Repetido el 2026-09-19 con el backfill terminado: 216 ficheros, bloques 25.794.751 a
-26.010.750, **863.587 swaps**. Mismo script, misma versión, caché de condiciones
-apagada y encendida. Resultado bruto en `docs/experiments/schema-2026-09-19-30d.json`.
-El resto del documento describe la primera pasada, con el 52 % de los datos; se deja
-tal cual porque el método y las explicaciones son los mismos. **Ninguna observación
-cambia de signo; las diferencias crecen con los datos.**
+Repeated on 2026-09-19 with the backfill finished: 216 files, blocks 25,794,751 to
+26,010,750, **863,587 swaps**. Same script, same version, condition cache
+off and on. Raw result in `docs/experiments/schema-2026-09-19-30d.json`.
+The rest of the document describes the first pass, with 52% of the data; it is left
+as it was because the method and the explanations are the same. **No observation
+changes sign; the differences grow with the data.**
 
-Reparto: USDC/WETH 0.01% 630.611 (73,0 %) · USDC/WETH 0.05% 227.678 (26,4 %) ·
-wstETH/USDC 0.05% 4.688 (0,5 %) · wstETH/USDC 0.3% 610 (0,07 %).
+Split: USDC/WETH 0.01% 630,611 (73.0%) · USDC/WETH 0.05% 227,678 (26.4%) ·
+wstETH/USDC 0.05% 4,688 (0.5%) · wstETH/USDC 0.3% 610 (0.07%).
 
-| Observación | Primera pasada (463.447) | 30 días (863.587) |
+| Observation | First pass (463,447) | 30 days (863,587) |
 |---|---|---|
-| Replacing con clave no única: filas perdidas | 65,7 % | **64,4 %** (quedan 307.720) |
-| Replacing sin `FINAL` ni merge: total inflado | 11,2 % | **10,5 %** (954.496 en vez de 863.587) |
-| `FINAL` sin mergear, consulta principal | 69 ms frente a 23 (3,0×) | **114 ms frente a 41 (2,8×)**, 45 MB de memoria frente a 9 |
-| `FINAL` sin mergear, un día de un pool | tabla entera, **igual que sin `FINAL`** | tabla entera con y sin `FINAL` (954.496 filas); 116 ms frente a 21. La clave probada aquí no lleva tiempo: no había poda que perder |
-| Un día del pool grande, `(pool, timestamp)` | 32.768 filas · 4/57 gránulos | **32.768 filas · 4/106 gránulos** |
-| Un día del pool grande, `(pool, block_number, log_index)` | 348.759 filas · 43/57 | **634.211 filas · 78/106** (19 veces más) |
-| …la misma, con la caché de condiciones encendida | 49.152 | 49.152 |
-| Un día del pool pequeño, claves con `pool` delante | 8.192 filas · 1 gránulo | 8.192 filas · 1 gránulo |
-| Un día del pool pequeño, `(timestamp, pool)` | 49.152 filas | 49.152 filas |
-| Un día, todos los pools: `(pool, ts)` / `(ts, pool)` / `(pool, block, log)` | 65.536 / 49.152 / 463.447 | 65.536 / 49.152 / **863.587** |
-| Partición mensual frente a ninguna: filas leídas | idénticas | **idénticas** (poda 1 de 2 partes; el índice ya las descartaba) |
-| Consulta principal, cualquier clave | tabla entera, 19 a 23 ms | tabla entera, **34 a 42 ms** |
-| `tx_hash` en hex: parte del disco | 52,9 % | **53,0 %** (55,8 de 105,2 MB) |
-| Tamaño de tabla con hashes en texto | 56,9 MB · 123 B/fila | **105,2 MB · 122 B/fila** |
+| Replacing with a non-unique key: rows lost | 65.7% | **64.4%** (307,720 left) |
+| Replacing without `FINAL` or merge: total too high | 11.2% | **10.5%** (954,496 instead of 863,587) |
+| `FINAL` unmerged, main query | 69 ms against 23 (3.0x) | **114 ms against 41 (2.8x)**, 45 MB of memory against 9 |
+| `FINAL` unmerged, one day of one pool | whole table, **the same as without `FINAL`** | whole table with and without `FINAL` (954,496 rows); 116 ms against 21. The key tested here has no time in it, so there was none to lose |
+| One day of the big pool, `(pool, timestamp)` | 32,768 rows · 4/57 granules | **32,768 rows · 4/106 granules** |
+| One day of the big pool, `(pool, block_number, log_index)` | 348,759 rows · 43/57 | **634,211 rows · 78/106** (19 times more) |
+| …the same one, with the condition cache on | 49,152 | 49,152 |
+| One day of the small pool, keys with `pool` first | 8,192 rows · 1 granule | 8,192 rows · 1 granule |
+| One day of the small pool, `(timestamp, pool)` | 49,152 rows | 49,152 rows |
+| One day, all pools: `(pool, ts)` / `(ts, pool)` / `(pool, block, log)` | 65,536 / 49,152 / 463,447 | 65,536 / 49,152 / **863,587** |
+| Monthly partitioning against none: rows read | identical | **identical** (prunes 1 of 2 parts; the index already discarded them) |
+| Main query, any key | whole table, 19 to 23 ms | whole table, **34 to 42 ms** |
+| `tx_hash` in hex: share of the disk | 52.9% | **53.0%** (55.8 of 105.2 MB) |
+| Table size with hashes as text | 56.9 MB · 123 B/row | **105.2 MB · 122 B/row** |
 
-Lo que se lee de la tabla, sin valorarlo: lo que lee una consulta bien servida por la
-clave **no crece** con la tabla (32.768 filas con el doble de datos), y lo que lee una mal
-servida crece en proporción (de 348.759 a 634.211).
+What is read from the table, without judging it: what a query well served by the
+key reads **does not grow** with the table (32,768 rows with twice the data), and what a badly
+served one reads grows in proportion (from 348,759 to 634,211).
 
-### La tabla real, con los tipos decididos
+### The real table, with the types decided
 
-Tras estos experimentos se decidió el esquema (DECISIONS.md #10 a #14) y se cargó
-`onchain.raw_swaps`. Medido sobre esa tabla, con `tx_hash`, `sender` y `recipient` en
-binario (`FixedString`):
+After these experiments the schema was decided (DECISIONS.md #10 to #14) and
+`onchain.raw_swaps` was loaded. Measured on that table, with `tx_hash`, `sender` and
+`recipient` in binary (`FixedString`):
 
-| | Hashes en texto (candidata) | Hashes en binario (tabla real) |
+| | Hashes as text (candidate) | Hashes in binary (real table) |
 |---|---|---|
-| Comprimido | 105,2 MB | **73,2 MB (−30 %)** |
-| Bytes por fila | 122 | **84,8** |
-| `tx_hash` | 55,8 MB · 53,0 % | **26,2 MB · 35,7 %** |
-| `sender` + `recipient` | 12,5 MB | 8,0 MB |
-| Particiones / partes tras la carga | | 2 particiones, 5 partes (9 inserts) |
+| Compressed | 105.2 MB | **73.2 MB (−30%)** |
+| Bytes per row | 122 | **84.8** |
+| `tx_hash` | 55.8 MB · 53.0% | **26.2 MB · 35.7%** |
+| `sender` + `recipient` | 12.5 MB | 8.0 MB |
+| Partitions / parts after the load | | 2 partitions, 5 parts (9 inserts) |
 
-`tx_hash` sigue siendo la columna mayor incluso en binario: es aleatorio y no comprime
-(ratio 1,0). Los tres enteros de 256 bits suman el 38,6 % de la tabla real.
+`tx_hash` is still the largest column even in binary: it is random and does not compress
+(ratio 1.0). The three 256-bit integers add up to 38.6% of the real table.
 
 ---
 
-## Qué se midió y con qué
+## What was measured and with what
 
-- **Datos:** los primeros 113 ficheros de la zona de aterrizaje del backfill real,
-  bloques 25.794.751 a 25.907.750 (20 de agosto a 4 de septiembre de 2026):
-  **463.447 swaps**, el 52 % de la ventana de 30 días. El backfill seguía en marcha.
-- **Servidor:** ClickHouse 26.3.33.24, el contenedor del repo (3 GiB, sin swap).
-- **Reparto por pool:** USDC/WETH 0.01% 345.451 (74,5 %) · USDC/WETH 0.05% 115.418
-  (24,9 %) · wstETH/USDC 0.05% 2.456 (0,5 %) · wstETH/USDC 0.3% 122 (0,03 %).
-- **Método:** `scripts/schema_experiments.py`. Crea la base `test_schema_exp`, carga
-  las mismas filas en cada tabla candidata (un `INSERT` por fichero, como haría un
-  cargador real), mide, y **borra la base al terminar**. Resultado bruto en
+- **Data:** the first 113 files of the landing zone of the real backfill,
+  blocks 25,794,751 to 25,907,750 (20 August to 4 September 2026):
+  **463,447 swaps**, 52% of the 30-day window. The backfill was still running.
+- **Server:** ClickHouse 26.3.33.24, the repo's container (3 GiB, no swap).
+- **Split by pool:** USDC/WETH 0.01% 345,451 (74.5%) · USDC/WETH 0.05% 115,418
+  (24.9%) · wstETH/USDC 0.05% 2,456 (0.5%) · wstETH/USDC 0.3% 122 (0.03%).
+- **Method:** `scripts/schema_experiments.py`. It creates the `test_schema_exp` database,
+  loads the same rows into each candidate table (one `INSERT` per file, as a real
+  loader would), measures, and **drops the database when it finishes**. Raw result in
   `docs/experiments/schema-2026-09-19.json`.
-- **De dónde sale cada número:** filas y bytes leídos, de `system.query_log`;
-  gránulos y partes que sobreviven, de `EXPLAIN indexes = 1`; tamaños y partes, de
-  `system.parts` y `system.parts_columns`. Tiempos: mediana de 5 ejecuciones.
+- **Where each number comes from:** rows and bytes read, from `system.query_log`;
+  granules and parts that survive, from `EXPLAIN indexes = 1`; sizes and parts, from
+  `system.parts` and `system.parts_columns`. Times: median of 5 runs.
 
-Columnas de todas las tablas (ilustrativas, no una propuesta de nombres):
+Columns of all the tables (illustrative, not a proposal of names):
 `pool LowCardinality(String)`, `block_number UInt32`, `block_timestamp DateTime('UTC')`,
 `log_index UInt32`, `tx_hash / sender / recipient String`, `amount0 / amount1 Int256`,
 `sqrt_price_x96 UInt256`, `liquidity UInt128`, `tick Int32`.
 
-### Reproducir
+### Reproducing
 
 ```
 PYTHONPATH=src uv run python scripts/schema_experiments.py \
     --landing /var/lib/univ3-indexer/landing > resultados.json
 ```
 
-Sin `--max-files` usa todo lo aterrizado: cuando acabe el backfill conviene repetirlo
-con los 30 días completos. No necesita API keys ni red, solo ClickHouse. Tarda ~1 min.
+Without `--max-files` it uses everything that has landed: when the backfill finishes it is
+worth repeating it with the full 30 days. It needs no API keys and no network, only
+ClickHouse. It takes ~1 min.
 
-### Dos avisos sobre cómo leer los números
+### Two warnings about how to read the numbers
 
-1. **A este tamaño los tiempos no distinguen nada.** Todas las consultas tardan entre
-   3 y 25 ms; las diferencias de 1 o 2 ms son ruido. Lo que sí discrimina es **cuántas
-   filas y bytes se leen**, que es lo que escalaría con más datos. Leer los tiempos como
-   "todo va sobrado", no como un ranking.
-2. **La caché de condiciones de consulta engaña al medir.** Me pasó: la primera pasada
-   daba, para una misma consulta, 43 de 57 gránulos según `EXPLAIN` pero solo 49.152
-   filas leídas según `query_log`. La causa es `use_query_condition_cache = 1` (por
-   defecto en esta versión): ClickHouse recuerda, por filtro, qué gránulos no tenían
-   filas que casaran, y desde la segunda ejecución se los salta. Eso **tapa justo la
-   diferencia entre claves de ordenación** que se quiere medir. Por eso las tablas de
-   abajo dan las dos cifras: con la caché apagada (lo que poda el `ORDER BY` por sí
-   solo) y con ella encendida (lo que verá el uso real en consultas repetidas).
+1. **At this size the times tell nothing apart.** Every query takes between
+   3 and 25 ms; differences of 1 or 2 ms are noise. What does discriminate is **how many
+   rows and bytes are read**, which is what would scale with more data. Read the times as
+   "everything has room to spare", not as a ranking.
+2. **The query condition cache deceives the measurement.** It happened to me: the first pass
+   gave, for one and the same query, 43 of 57 granules according to `EXPLAIN` but only 49,152
+   rows read according to `query_log`. The cause is `use_query_condition_cache = 1` (the
+   default in this version): ClickHouse remembers, per filter, which granules had no matching
+   rows, and from the second run onwards it skips them. That **covers up exactly the
+   difference between sorting keys** that is to be measured. That is why the tables
+   below give both figures: with the cache off (what the `ORDER BY` prunes on its
+   own) and with it on (what real use will see in repeated queries).
 
-## 1. Ida y vuelta de tipos con clickhouse-connect
+## 1. Type round-trip with clickhouse-connect
 
-Se insertaron los valores extremos reales de una muestra (los tres primeros ficheros,
-~14.000 swaps) más los límites de cada tipo, y se leyeron de tres formas: como valor Python por el driver, como texto (`toString`) en
-el servidor, y byte a byte (`hex(reinterpretAsFixedString(amount1))`, 32 bytes en
-little-endian reconstruidos en Python).
+The real extreme values of a sample were inserted (the first three files,
+~14,000 swaps) plus the limits of each type, and they were read in three ways: as a Python value through the driver, as text (`toString`) on
+the server, and byte by byte (`hex(reinterpretAsFixedString(amount1))`, 32 bytes in
+little-endian reconstructed in Python).
 
-| Valor | Bits | Driver exacto | Texto exacto | Bit a bit |
+| Value | Bits | Driver exact | Text exact | Bit for bit |
 |---|---|---|---|---|
-| amount1 máximo real: 635.972.951.593.090.648.054 (≈ 636 WETH) | 70 | sí | sí | sí |
-| amount1 mínimo real: −633.544.440.917.790.349.267 | 70 | sí | sí | sí |
-| amount0 máximo / mínimo reales (wstETH, ±1,3e17) | 57 | sí | sí | sí |
-| sqrt_price_x96 máximo real (1,71e33) | 111 | sí | sí | sí |
-| liquidity máxima real (3,3e20) | 69 | sí | sí | sí |
-| tick mínimo / máximo reales: −196.981 / +199.650 | 18 | sí | sí | sí |
-| Límites: Int256 mín. y máx., UInt256 máx., UInt128 máx., Int32 mín. | 256 | sí | sí | sí |
+| amount1 real maximum: 635,972,951,593,090,648,054 (≈ 636 WETH) | 70 | yes | yes | yes |
+| amount1 real minimum: −633,544,440,917,790,349,267 | 70 | yes | yes | yes |
+| amount0 real maximum / minimum (wstETH, ±1.3e17) | 57 | yes | yes | yes |
+| sqrt_price_x96 real maximum (1.71e33) | 111 | yes | yes | yes |
+| liquidity real maximum (3.3e20) | 69 | yes | yes | yes |
+| tick real minimum / maximum: −196,981 / +199,650 | 18 | yes | yes | yes |
+| Limits: Int256 min and max, UInt256 max, UInt128 max, Int32 min | 256 | yes | yes | yes |
 
-- **Sin sorpresas en los enteros grandes.** `Int256`, `UInt256` y `UInt128` entran y
-  salen como `int` de Python, sin pasar por float, en todo el rango del tipo.
-- **`JSONEachRow` con los enteros como cadena funciona** (`"amount1": "-6335…"` entra en
-  una columna `Int256` exacto). Es el formato de la zona de aterrizaje, así que un
-  cargador puede enviar los ficheros casi tal cual.
-- **Sorpresa menor del driver:** una columna `DateTime('UTC')` vuelve como `datetime`
-  **sin zona horaria** (`tzinfo=None`). El instante es correcto, pero es un `datetime`
-  ingenuo: compararlo con uno consciente de zona lanza `TypeError` en Python.
-- **El dato que ha crecido:** ayer el máximo visto eran 66 bits (50,8 WETH). Recorriendo
-  todo lo aterrizado hasta el momento (525.295 swaps, 129 ficheros) el mayor `amount1`
-  es de **1.136 WETH, 70 bits**: `Int64` se queda corto por un factor de 123. Otros
-  extremos de ese recorrido: `amount0` 61 bits, `sqrt_price_x96` 111, `liquidity` 69,
-  tick de −203.307 a +206.590, `log_index` hasta 10.500 (no cabe en `UInt8`; sí en
-  `UInt16`, por poco margen de costumbre: mejor `UInt32`). Todos caben en los tipos
-  probados, cuyo rango completo está verificado en la última fila de la tabla.
-- **Lo que pasa si se cuela un Float64:** `toInt256(toFloat64(amount1))` sobre el mínimo
-  real devuelve −633.544.440.917.790.**294.046**: se pierden 55.221 wei. No da error.
+- **No surprises in the big integers.** `Int256`, `UInt256` and `UInt128` go in and
+  come out as a Python `int`, without passing through a float, over the whole range of the type.
+- **`JSONEachRow` with the integers as strings works** (`"amount1": "-6335…"` goes into
+  an `Int256` column exactly). It is the format of the landing zone, so a
+  loader can send the files almost as they are.
+- **A minor surprise from the driver:** a `DateTime('UTC')` column comes back as a `datetime`
+  **with no time zone** (`tzinfo=None`). The instant is correct, but it is a naive
+  `datetime`: comparing it with a time-zone-aware one raises `TypeError` in Python.
+- **The figure that has grown:** yesterday the largest seen was 66 bits (50.8 WETH). Going over
+  everything landed so far (525,295 swaps, 129 files) the largest `amount1`
+  is **1,136 WETH, 70 bits**: `Int64` falls short by a factor of 123. Other
+  extremes from that pass: `amount0` 61 bits, `sqrt_price_x96` 111, `liquidity` 69,
+  tick from −203,307 to +206,590, `log_index` up to 10,500 (it does not fit in `UInt8`; it does in
+  `UInt16`, with little of the usual margin: better `UInt32`). They all fit in the types
+  tested, whose full range is verified in the last row of the table.
+- **What happens if a Float64 slips in:** `toInt256(toFloat64(amount1))` on the real
+  minimum returns −633,544,440,917,790,**294,046**: 55,221 wei are lost. It raises no error.
 
-## 2. Tablas candidatas
+## 2. Candidate tables
 
-Cada comparación cambia **una sola cosa**.
+Each comparison changes **one single thing**.
 
-| Tabla | Motor | ORDER BY | PARTITION BY |
+| Table | Engine | ORDER BY | PARTITION BY |
 |---|---|---|---|
-| `mt_pool_ts` (base) | MergeTree | (pool, block_timestamp) | ninguna |
-| `mt_ts_pool` | MergeTree | **(block_timestamp, pool)** | ninguna |
-| `mt_pool_block_log` | MergeTree | **(pool, block_number, log_index)** | ninguna |
-| `rmt_pool_block_log` | **ReplacingMergeTree** | (pool, block_number, log_index) | ninguna |
+| `mt_pool_ts` (baseline) | MergeTree | (pool, block_timestamp) | none |
+| `mt_ts_pool` | MergeTree | **(block_timestamp, pool)** | none |
+| `mt_pool_block_log` | MergeTree | **(pool, block_number, log_index)** | none |
+| `rmt_pool_block_log` | **ReplacingMergeTree** | (pool, block_number, log_index) | none |
 | `mt_pool_ts_monthly` | MergeTree | (pool, block_timestamp) | **toYYYYMM(block_timestamp)** |
 
-Pares a comparar: ORDER BY → las tres primeras entre sí. Motor → `mt_pool_block_log`
-frente a `rmt_pool_block_log`. Partición → `mt_pool_ts` frente a `mt_pool_ts_monthly`.
+Pairs to compare: ORDER BY → the first three against each other. Engine → `mt_pool_block_log`
+against `rmt_pool_block_log`. Partitioning → `mt_pool_ts` against `mt_pool_ts_monthly`.
 
-Las consultas:
+The queries:
 
-- **Q1, la principal:** volumen diario por pool, sobre toda la tabla.
-- **Q2-grande:** un pool y un día (2026-08-21), para USDC/WETH 0.01% (74,5 % de las filas).
-- **Q2-pequeño:** lo mismo para wstETH/USDC 0.3% (122 filas en total).
-- **Q3:** todos los pools en ese día (filtro solo por fecha).
+- **Q1, the main one:** daily volume per pool, over the whole table.
+- **Q2-big:** one pool and one day (2026-08-21), for USDC/WETH 0.01% (74.5% of the rows).
+- **Q2-small:** the same for wstETH/USDC 0.3% (122 rows in total).
+- **Q3:** all the pools on that day (filter by date only).
 
-### 2.1 Almacenamiento
+### 2.1 Storage
 
-Tras `OPTIMIZE ... FINAL` (una parte por partición):
+After `OPTIMIZE ... FINAL` (one part per partition):
 
-| Tabla | Partes antes → después | Comprimido | Sin comprimir | Índice primario en memoria | Marcas |
+| Table | Parts before → after | Compressed | Uncompressed | Primary index in memory | Marks |
 |---|---|---|---|---|---|
-| mt_pool_ts | 113 → 1 | 56,87 MB | 140,4 MB | 448 B | 58 |
-| mt_ts_pool | 113 → 1 | 56,39 MB | 140,4 MB | 232 B | 58 |
-| mt_pool_block_log | 113 → 1 | 56,87 MB | 140,4 MB | 448 B | 58 |
-| rmt_pool_block_log | 125 → 1 | 56,87 MB | 140,4 MB | 448 B | 58 |
-| mt_pool_ts_monthly | 114 → 2 | 56,87 MB | 140,4 MB | 616 B | 60 |
+| mt_pool_ts | 113 → 1 | 56.87 MB | 140.4 MB | 448 B | 58 |
+| mt_ts_pool | 113 → 1 | 56.39 MB | 140.4 MB | 232 B | 58 |
+| mt_pool_block_log | 113 → 1 | 56.87 MB | 140.4 MB | 448 B | 58 |
+| rmt_pool_block_log | 125 → 1 | 56.87 MB | 140.4 MB | 448 B | 58 |
+| mt_pool_ts_monthly | 114 → 2 | 56.87 MB | 140.4 MB | 616 B | 60 |
 
-- ~123 bytes por fila comprimida, ~303 sin comprimir. Extrapolado a 30 días (~881.000
-  filas): **~108 MB** en disco. La zona de aterrizaje JSONL ocupa ~12 veces más.
-- **El ORDER BY casi no cambia el tamaño** (menos de un 1 %). El índice primario ocupa
-  cientos de bytes en todos los casos: a esta escala no es un criterio.
-- "Antes" es una parte por `INSERT` porque los merges se pararon a propósito durante la
-  carga (`SYSTEM STOP MERGES`), para que la cifra sea determinista. La tabla mensual
-  tiene una más porque un fichero cruzaba de agosto a septiembre: **un insert que toca
-  dos particiones crea dos partes.**
+- ~123 bytes per row compressed, ~303 uncompressed. Extrapolated to 30 days (~881,000
+  rows): **~108 MB** on disk. The JSONL landing zone takes ~12 times more.
+- **The ORDER BY barely changes the size** (less than 1%). The primary index takes
+  hundreds of bytes in every case: at this scale it is not a criterion.
+- "Before" is one part per `INSERT` because merges were stopped on purpose during the
+  load (`SYSTEM STOP MERGES`), so that the figure is deterministic. The monthly table
+  has one more because one file crossed from August to September: **an insert that touches
+  two partitions creates two parts.**
 
-Por columna, en `mt_pool_ts`:
+By column, in `mt_pool_ts`:
 
-| Columna | Comprimido | % del total | Ratio |
+| Column | Compressed | % of the total | Ratio |
 |---|---|---|---|
-| tx_hash | 30,11 MB | **52,9 %** | 1,1× |
-| sqrt_price_x96 (UInt256) | 7,36 MB | 12,9 % | 2,0× |
-| amount1 (Int256) | 5,23 MB | 9,2 % | 2,8× |
-| recipient | 4,11 MB | 7,2 % | 5,6× |
-| amount0 (Int256) | 3,46 MB | 6,1 % | 4,3× |
-| sender | 2,73 MB | 4,8 % | 8,5× |
-| log_index | 1,33 MB | 2,3 % | 1,4× |
-| tick | 0,88 MB | 1,6 % | 2,1× |
-| block_timestamp | 0,68 MB | 1,2 % | 2,7× |
-| block_number | 0,67 MB | 1,2 % | 2,8× |
-| liquidity (UInt128) | 0,31 MB | 0,5 % | 24,1× |
-| pool (LowCardinality) | 0,002 MB | 0,0 % | 189× |
+| tx_hash | 30.11 MB | **52.9%** | 1.1x |
+| sqrt_price_x96 (UInt256) | 7.36 MB | 12.9% | 2.0x |
+| amount1 (Int256) | 5.23 MB | 9.2% | 2.8x |
+| recipient | 4.11 MB | 7.2% | 5.6x |
+| amount0 (Int256) | 3.46 MB | 6.1% | 4.3x |
+| sender | 2.73 MB | 4.8% | 8.5x |
+| log_index | 1.33 MB | 2.3% | 1.4x |
+| tick | 0.88 MB | 1.6% | 2.1x |
+| block_timestamp | 0.68 MB | 1.2% | 2.7x |
+| block_number | 0.67 MB | 1.2% | 2.8x |
+| liquidity (UInt128) | 0.31 MB | 0.5% | 24.1x |
+| pool (LowCardinality) | 0.002 MB | 0.0% | 189x |
 
-- **Más de la mitad del disco es `tx_hash`**, que al ser aleatorio no comprime (1,1×).
-  Guardarlo como `FixedString(32)` binario lo dejaría en torno a la mitad: es, con
-  diferencia, la decisión de tipos que más bytes mueve.
-- **Los tres campos de 256 bits juntos son el 28 %.** `Int256` cuesta 32 bytes sin
-  comprimir por valor, pero comprime 2,8 a 4,3×: `amount0` y `amount1` acaban en ~7 y
-  ~11 bytes por fila. `sqrt_price_x96` comprime peor (2,0×) porque cambia en cada swap.
-- `sender` comprime 8,5× siendo `String` (pocos routers repetidos); `recipient`, 5,6×.
-- `pool` como `LowCardinality` ocupa 2,4 KB en total.
+- **More than half the disk is `tx_hash`**, which being random does not compress (1.1x).
+  Storing it as binary `FixedString(32)` would leave it around half: it is, by far,
+  the type decision that moves the most bytes.
+- **The three 256-bit fields together are 28%.** `Int256` costs 32 bytes uncompressed
+  per value, but compresses 2.8 to 4.3x: `amount0` and `amount1` end up at ~7 and
+  ~11 bytes per row. `sqrt_price_x96` compresses worse (2.0x) because it changes on every swap.
+- `sender` compresses 8.5x while being a `String` (a few repeated routers); `recipient`, 5.6x.
+- `pool` as `LowCardinality` takes 2.4 KB in total.
 
-### 2.2 Lo que lee cada ORDER BY
+### 2.2 What each ORDER BY reads
 
-Filas leídas con la caché de condiciones **apagada** (entre paréntesis, encendida), y
-gránulos que sobreviven al índice primario sobre 57:
+Rows read with the condition cache **off** (in brackets, on), and
+granules that survive the primary index out of 57:
 
-| Consulta | (pool, timestamp) | (timestamp, pool) | (pool, block_number, log_index) |
+| Query | (pool, timestamp) | (timestamp, pool) | (pool, block_number, log_index) |
 |---|---|---|---|
-| Q1 principal, toda la tabla | 463.447 · 57/57 · 19 ms | 463.447 · 57/57 · 21 ms | 463.447 · 57/57 · 23 ms |
-| Q2-grande (74,5 % de las filas) | **32.768** · 4/57 | 49.152 · 6/57 | **348.759** (49.152) · 43/57 |
-| Q2-pequeño (122 filas) | **8.192** · 1/57 | 49.152 · 6/57 | **8.192** · 1/57 |
-| Q3 un día, todos los pools | 65.536 · 8/57 | **49.152** · 6/57 | **463.447** (57.344) · 57/57 |
+| Q1 main, the whole table | 463,447 · 57/57 · 19 ms | 463,447 · 57/57 · 21 ms | 463,447 · 57/57 · 23 ms |
+| Q2-big (74.5% of the rows) | **32,768** · 4/57 | 49,152 · 6/57 | **348,759** (49,152) · 43/57 |
+| Q2-small (122 rows) | **8,192** · 1/57 | 49,152 · 6/57 | **8,192** · 1/57 |
+| Q3 one day, all the pools | 65,536 · 8/57 | **49,152** · 6/57 | **463,447** (57,344) · 57/57 |
 
-Lo que se observa, sin valorarlo:
+What is observed, without judging it:
 
-- **La consulta principal lee la tabla entera con cualquier clave.** Agrupa todos los
-  pools y todos los días: no hay nada que podar. El `ORDER BY` no le afecta (19 a 23 ms,
-  17 MB leídos). Las claves solo se diferencian en las consultas **con filtro**.
-- **`(pool, timestamp)`:** con el filtro de pool y fecha lee 4 gránulos para el pool
-  grande y 1 para el pequeño. Filtrando **solo por fecha** (Q3) sigue podando (8/57)
-  aunque la fecha sea la segunda columna de la clave: con solo 4 valores distintos en la
-  primera, el índice puede saltar dentro de cada uno.
-- **`(timestamp, pool)`:** lee siempre los 6 gránulos del día, **sea cual sea el pool**.
-  Para el pool pequeño eso son 49.152 filas para encontrar unas pocas: 6 veces más que
-  con el pool delante. Para el grande, 1,5 veces más. Es la mejor para Q3.
-- **`(pool, block_number, log_index)`:** el filtro por fecha **no usa el índice**, porque
-  la fecha no está en la clave. Para el pool grande lee sus 43 gránulos completos
-  (348.759 filas, 10,6 veces más que con el timestamp en la clave) y para Q3, la tabla
-  entera. Para el pool pequeño da igual: cabe en un gránulo.
-- **El efecto del sesgo, medido:** poner `pool` delante le ahorra al pool pequeño casi
-  todo (1 gránulo de 57) y al grande casi nada por sí solo (43 de 57): al grande lo que
-  le poda es la **segunda** columna de la clave.
-- **La caché de condiciones tapa el problema de la tercera clave** en consultas
-  repetidas (348.759 → 49.152 filas), pero no en la primera ejecución de cada filtro, ni
-  con `FINAL` (ver 2.4).
+- **The main query reads the whole table with any key.** It groups all the
+  pools and all the days: there is nothing to prune. The `ORDER BY` does not affect it (19 to 23 ms,
+  17 MB read). The keys only differ on the queries **with a filter**.
+- **`(pool, timestamp)`:** with the pool and date filter it reads 4 granules for the big
+  pool and 1 for the small one. Filtering **by date only** (Q3) it still prunes (8/57)
+  even though the date is the second column of the key: with only 4 distinct values in the
+  first, the index can skip inside each one.
+- **`(timestamp, pool)`:** it always reads the 6 granules of the day, **whichever the pool is**.
+  For the small pool that is 49,152 rows to find a few: 6 times more than
+  with the pool first. For the big one, 1.5 times more. It is the best for Q3.
+- **`(pool, block_number, log_index)`:** the date filter **does not use the index**, because
+  the date is not in the key. For the big pool it reads its 43 granules in full
+  (348,759 rows, 10.6 times more than with the timestamp in the key) and for Q3, the whole
+  table. For the small pool it makes no difference: it fits in one granule.
+- **The effect of the skew, measured:** putting `pool` first saves the small pool almost
+  everything (1 granule of 57) and the big one almost nothing on its own (43 of 57): what
+  prunes for the big one is the **second** column of the key.
+- **The condition cache covers up the problem of the third key** in repeated
+  queries (348,759 → 49,152 rows), but not on the first run of each filter, nor
+  with `FINAL` (see 2.4).
 
-### 2.3 Partición mensual frente a ninguna
+### 2.3 Monthly partitioning against none
 
-Misma clave `(pool, timestamp)`; los datos cruzan de agosto a septiembre.
+Same key `(pool, timestamp)`; the data crosses from August to September.
 
-| | Sin partición | Mensual |
+| | No partitioning | Monthly |
 |---|---|---|
-| Partes tras optimizar | 1 | 2 (una por mes) |
-| Q1 principal | 463.447 filas · 19 ms | 463.447 filas · 21 ms |
-| Q2-grande | 32.768 filas · 4/57 gránulos · 1/1 partes | 32.768 filas · 4/43 gránulos · **1/2** partes |
-| Q2-pequeño | 8.192 filas | 8.192 filas |
-| Q3 | 65.536 filas | 65.536 filas |
-| Índice primario en memoria | 448 B | 616 B |
+| Parts after optimising | 1 | 2 (one per month) |
+| Q1 main | 463,447 rows · 19 ms | 463,447 rows · 21 ms |
+| Q2-big | 32,768 rows · 4/57 granules · 1/1 parts | 32,768 rows · 4/43 granules · **1/2** parts |
+| Q2-small | 8,192 rows | 8,192 rows |
+| Q3 | 65,536 rows | 65,536 rows |
+| Primary index in memory | 448 B | 616 B |
 
-- La poda por partición **ocurre** (descarta la parte de septiembre: 1 de 2), pero las
-  filas leídas son **idénticas**: el índice primario ya descartaba esos gránulos.
-- Lo que añade es una parte más, y una parte extra por cada insert que cruce de mes.
-- Lo que no se ha medido aquí, porque no es una consulta: la partición mensual permite
-  `DROP` / `REPLACE PARTITION` de un mes entero.
+- Partition pruning **does happen** (it discards the September part: 1 of 2), but the
+  rows read are **identical**: the primary index was already discarding those granules.
+- What it adds is one more part, and an extra part for every insert that crosses a month boundary.
+- What has not been measured here, because it is not a query: monthly partitioning allows
+  `DROP` / `REPLACE PARTITION` of a whole month.
 
-### 2.4 MergeTree frente a ReplacingMergeTree
+### 2.4 MergeTree against ReplacingMergeTree
 
-Misma clave `(pool, block_number, log_index)`, que es única por log. A la tabla
-Replacing se le reentregó uno de cada diez ficheros (51.883 filas repetidas), simulando
-lo que hace el ejecutor del backfill si muere entre el sink y el checkpoint.
+Same key `(pool, block_number, log_index)`, which is unique per log. One file in ten was
+redelivered to the Replacing table (51,883 repeated rows), simulating
+what the backfill runner does if it dies between the sink and the checkpoint.
 
-**Antes del merge** (merges parados; 125 partes):
+**Before the merge** (merges stopped; 125 parts):
 
-| | `count()` | Q1 principal | Q2-grande |
+| | `count()` | Q1 main | Q2-big |
 |---|---|---|---|
-| Sin `FINAL` | **515.330** (un 11,2 % de más) | 23 ms · 515.330 filas · 19 MB | 13 ms · 515.330 filas |
-| Con `FINAL` | 463.447 (correcto) | **69 ms** · 515.330 filas · 23 MB · 16 MB de memoria | **67 ms** · 515.330 filas · 23 MB |
+| Without `FINAL` | **515,330** (11.2% too many) | 23 ms · 515,330 rows · 19 MB | 13 ms · 515,330 rows |
+| With `FINAL` | 463,447 (correct) | **69 ms** · 515,330 rows · 23 MB · 16 MB of memory | **67 ms** · 515,330 rows · 23 MB |
 
-**Después del merge** (`OPTIMIZE ... FINAL`; 1 parte; 463.447 filas):
+**After the merge** (`OPTIMIZE ... FINAL`; 1 part; 463,447 rows):
 
-| | Q1 principal | Q2-grande | Q2-pequeño |
+| | Q1 main | Q2-big | Q2-small |
 |---|---|---|---|
-| MergeTree, sin `FINAL` | 23 ms · 17,2 MB | 4 ms · 348.759 filas · **2,5 MB** | 3 ms · 0,04 MB |
-| Replacing, sin `FINAL` | 25 ms · 17,2 MB | 6 ms · 348.759 filas · 2,5 MB | 3 ms · 0,04 MB |
-| Replacing, con `FINAL` | 22 ms · 17,2 MB | 7 ms · 348.759 filas · **12,9 MB** | 3 ms · 0,30 MB |
+| MergeTree, without `FINAL` | 23 ms · 17.2 MB | 4 ms · 348,759 rows · **2.5 MB** | 3 ms · 0.04 MB |
+| Replacing, without `FINAL` | 25 ms · 17.2 MB | 6 ms · 348,759 rows · 2.5 MB | 3 ms · 0.04 MB |
+| Replacing, with `FINAL` | 22 ms · 17.2 MB | 7 ms · 348,759 rows · **12.9 MB** | 3 ms · 0.30 MB |
 
-- **Sin `FINAL` y sin merge, el total sale inflado un 11,2 % y nada avisa.** Es el
-  escenario del que habla `SCHEMA_OPTIONS.md`, ahora con cifra.
-- **`FINAL` con muchas partes pequeñas cuesta 3 veces más** en la consulta principal
-  (69 frente a 23 ms). La consulta de un día tarda 67 ms frente a 13, pero lee las
-  mismas filas con y sin `FINAL` (la tabla entera: la clave de este experimento no lleva
-  tiempo). Una versión anterior de este texto decía que `FINAL` "anula la poda": los
-  resultados crudos no lo muestran. En absoluto siguen siendo milisegundos.
-- **Con la tabla ya mergeada, `FINAL` es casi gratis en tiempo** (22 frente a 25 ms),
-  pero lee **5 veces más bytes** en la consulta filtrada (12,9 frente a 2,5 MB). Mi
-  explicación, no comprobada: con `FINAL` el filtro no se adelanta a la lectura
-  (`PREWHERE`) y la caché de condiciones no actúa, así que se leen las columnas completas
-  de todos los gránulos candidatos.
-- Una vez mergeadas, las dos tablas ocupan exactamente lo mismo (56,87 MB).
-- **En la primera prueba, con merges activos, los duplicados desaparecieron solos en
-  menos de 3 segundos**: "eventual" puede ser muy rápido con tablas pequeñas. Pero no
-  está garantizado, y por eso aquí se pararon los merges para medirlo.
+- **Without `FINAL` and without a merge, the total comes out 11.2% too high and nothing warns.** It is the
+  scenario `SCHEMA_OPTIONS.md` talks about, now with a figure.
+- **`FINAL` with many small parts costs 3 times more** on the main query
+  (69 against 23 ms). The one-day query takes 67 ms against 13, but reads the
+  same rows with and without `FINAL` (the whole table: the key of this experiment has no
+  time in it). An earlier version of this text said that `FINAL` "removes the pruning": the
+  raw results do not show it. In absolute terms they are still milliseconds.
+- **With the table already merged, `FINAL` is almost free in time** (22 against 25 ms),
+  but it reads **5 times more bytes** on the filtered query (12.9 against 2.5 MB). My
+  explanation, unverified: with `FINAL` the filter does not move ahead of the read
+  (`PREWHERE`) and the condition cache does not act, so the full columns
+  of every candidate granule are read.
+- Once merged, the two tables take exactly the same (56.87 MB).
+- **In the first test, with merges active, the duplicates disappeared on their own in
+  less than 3 seconds**: "eventual" can be very fast with small tables. But it is not
+  guaranteed, and that is why merges were stopped here to measure it.
 
-### 2.5 Una trampa, medida
+### 2.5 A trap, measured
 
-`ReplacingMergeTree` con `ORDER BY (pool, block_timestamp)`, una clave que **no es
-única por swap** (todos los swaps de un pool en un bloque comparten timestamp):
+`ReplacingMergeTree` with `ORDER BY (pool, block_timestamp)`, a key that is **not
+unique per swap** (all the swaps of a pool in a block share a timestamp):
 
-| Filas cargadas | Filas en la tabla | Perdidas |
+| Rows loaded | Rows in the table | Lost |
 |---|---|---|
-| 463.447 | **159.151** | **304.296 (65,7 %)** |
+| 463,447 | **159,151** | **304,296 (65.7%)** |
 
-Sin error ni aviso. Y no es "eventual": la pérdida ya estaba **antes de cualquier
-merge** (159.151 filas con los merges parados), porque el motor colapsa las claves
-repetidas dentro de cada bloque insertado. Con Replacing, la clave de ordenación tiene
-que ser la identidad de la fila; `(pool, block_number, log_index)` lo es.
+No error and no warning. And it is not "eventual": the loss was already there **before any
+merge** (159,151 rows with merges stopped), because the engine collapses the repeated
+keys inside each inserted block. With Replacing, the sorting key has
+to be the identity of the row; `(pool, block_number, log_index)` is.
 
-## 3. Ajustes comprobados en esta versión
+## 3. Settings checked on this version
 
-Varios puntos marcados **verificar** en `SCHEMA_OPTIONS.md`, leídos de `system.settings`
-y `system.merge_tree_settings` en la 26.3.33.24:
+Several points marked **to verify** in `SCHEMA_OPTIONS.md`, read from `system.settings`
+and `system.merge_tree_settings` on 26.3.33.24:
 
-| Ajuste | Valor por defecto aquí | Qué implica |
+| Setting | Default value here | What it implies |
 |---|---|---|
-| `non_replicated_deduplication_window` | 0 | La deduplicación de inserts está **apagada** en MergeTree sin réplica. Hay que activarla en la tabla para que `insert_deduplication_token` sirva |
-| `insert_deduplication_token` | vacío | Existe como ajuste de consulta |
-| `max_partitions_per_insert_block` | 100 | Un insert que toque más de 100 particiones falla |
-| `do_not_merge_across_partitions_select_final` | 0 | Apagado por defecto |
-| `use_query_condition_cache` | 1 | Encendido por defecto. Ver el aviso 2 |
+| `non_replicated_deduplication_window` | 0 | Insert deduplication is **off** in a MergeTree without replication. It has to be enabled on the table for `insert_deduplication_token` to be of use |
+| `insert_deduplication_token` | empty | It exists as a query setting |
+| `max_partitions_per_insert_block` | 100 | An insert that touches more than 100 partitions fails |
+| `do_not_merge_across_partitions_select_final` | 0 | Off by default |
+| `use_query_condition_cache` | 1 | On by default. See warning 2 |
 | `index_granularity` | 8192 | |
 | `count_distinct_implementation` | uniqExact | |
 | `join_use_nulls` | 0 | |
 
-No probado: que `insert_deduplication_token` descarte de verdad un lote reentregado con
-la ventana activada. Es el experimento que falta si se va por MergeTree con ingestión
-idempotente.
+Not tested: that `insert_deduplication_token` really does discard a redelivered batch with
+the window enabled. It is the experiment missing if MergeTree with idempotent ingestion is
+the way taken.
 
-## 4. Lo que estos números sugieren, sin elegir
+## 4. What these numbers suggest, without choosing
 
-- La **consulta principal no distingue** entre ninguna de las opciones. Lo que decida el
-  `ORDER BY` serán las consultas con filtro que se quieran hacer además.
-- Si se va a **filtrar por fecha**, que la fecha esté en la clave cambia lo leído en un
-  orden de magnitud (32.768 frente a 348.759 filas). Si la clave tiene que ser la
-  identidad del log (Replacing), eso hay que recuperarlo por otra vía.
-- El **orden pool/fecha** es un intercambio entre consultas por pool (sobre todo los
-  pequeños) y consultas de todos los pools por fecha. Con 4 pools la diferencia máxima
-  medida es de 6 veces en filas y de 0 ms en tiempo.
-- La **partición mensual no cambia ninguna lectura**. Su valor, si lo tiene, es operativo.
-- **Replacing protege el total frente a reentregas solo si se lee con `FINAL`**, y
-  `FINAL` cuesta más cuantas más partes sin mergear haya. MergeTree no protege nada: la
-  garantía tiene que estar en la ingestión. La zona de aterrizaje ya hace idempotente la
-  carga por fichero.
-- En **tipos**, lo que más bytes mueve no son los enteros de 256 bits, sino el `tx_hash`.
-- **A 881.000 filas, todo esto son milisegundos y ~108 MB.** Ninguna opción es lenta. Lo
-  que separa las opciones es la corrección y lo que cada una obliga a recordar al
-  escribir consultas.
+- The **main query does not distinguish** between any of the options. What will decide the
+  `ORDER BY` are the filtered queries one wants to run alongside it.
+- If there is going to be **filtering by date**, having the date in the key changes what is read by an
+  order of magnitude (32,768 against 348,759 rows). If the key has to be the
+  identity of the log (Replacing), that has to be recovered some other way.
+- The **pool/date order** is a tradeoff between queries by pool (above all the
+  small ones) and queries of all the pools by date. With 4 pools the largest difference
+  measured is 6 times in rows and 0 ms in time.
+- **Monthly partitioning changes no read at all**. Its value, if it has one, is operational.
+- **Replacing protects the total against redeliveries only if it is read with `FINAL`**, and
+  `FINAL` costs more the more unmerged parts there are. MergeTree protects nothing: the
+  guarantee has to be in the ingestion. The landing zone already makes the load idempotent per file.
+- In **types**, what moves the most bytes is not the 256-bit integers but `tx_hash`.
+- **At 881,000 rows, all of this is milliseconds and ~108 MB.** No option is slow. What
+  separates the options is correctness and what each one forces you to remember when
+  writing queries.

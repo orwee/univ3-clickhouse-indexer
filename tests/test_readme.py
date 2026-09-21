@@ -121,7 +121,9 @@ def test_the_limitations_cover_what_was_known_before_the_draft():
     body = section("Limitations")
     for phrase in ("reorg", "block_hash", "1 USD", "read-only", "one chain", "tx.from"):
         assert phrase in body, phrase
-    assert "<!--" not in README, "no hidden candidates left behind"
+    hidden = " ".join(re.findall(r"<!--(.*?)-->", README, re.DOTALL))
+    for phrase in ("reorg", "block_hash", "1 USD", "read-only", "one chain", "tx.from"):
+        assert phrase not in hidden, f"{phrase} is hidden in an HTML comment again"
 
 
 def test_how_it_was_built_does_not_mention_what_was_not_used():

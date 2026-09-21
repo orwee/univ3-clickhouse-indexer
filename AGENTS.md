@@ -3,7 +3,7 @@
 > The rules live in this file. `CLAUDE.md` only imports it, so that every
 > executor (Claude Code, Codex, OpenCode) reads exactly the same text.
 
-You are an autonomous coding agent executing one card from the owner's Notion
+You are an autonomous coding agent executing one card from the owner's task board
 board. Nobody is watching while you work. These rules exist because of that.
 
 Read `README.md` and `DECISIONS.md` before changing anything. `DECISIONS.md`
@@ -44,8 +44,8 @@ text in the pull request description and let the owner write it.
 
 - Never print, log, echo or commit a secret value. To check a variable, check
   only that it is set and is not a placeholder.
-- Never read, list or try to access `/root/secrets` or anything else under
-  `/root`. Never look for API keys elsewhere (shell history, process
+- Never read, list or try to access the owner's secrets directory, which is
+  outside the agent user's permissions, or anything else under it. Never look for API keys elsewhere (shell history, process
   environments, other users' files, credential stores, `gh auth token`).
 - Never call the Nansen API. Not once, not to test. The Free plan is 100
   one-time trial credits and then a daily top-up to a 10-credit balance
@@ -108,14 +108,15 @@ Tests must not need the network, an API key, or write access to `onchain`.
 
 A rule that claims a protection that does not exist is worse than no rule. This
 table says which rules are backed by a barrier and which depend entirely on you
-following them. Checked on 2026-09-18 by running each thing as the agent user.
+following them. Checked on 2026-09-18 by running each thing as the agent user, and again on
+2026-09-21 for the rows that say so.
 
 | Rule | Backed by a barrier? | How it was checked |
 |---|---|---|
-| Cannot read `/root/secrets` | **Yes.** File permissions | `cat` as the agent user: permission denied |
+| Cannot read the owner's secrets directory | **Yes.** File permissions | `cat` as the agent user: permission denied |
 | Cannot use Docker | **Yes.** The agent user is not in the `docker` group | `docker ps`: permission denied |
-| Cannot push to `main` or force-push | **Partly.** A global `pre-push` hook blocks both, but `--no-verify` would skip it. Never use `--no-verify`. Branch protection on GitHub: not checked | Read the hook; did not attempt a push |
-| Can push a branch and open a pull request in this repo | **Not verified.** On 2026-09-18 the agent user's GitHub credential did not cover this repository | See the owner's pending list |
+| Cannot push to `main` or force-push | **Partly, and less than it looks.** A global `pre-push` hook blocks both, but `--no-verify` would skip it. Never use `--no-verify`. On GitHub there IS a ruleset named `protect-main` on the default branch, requiring a pull request and forbidding non-fast-forward pushes, with no bypass actors — but its enforcement is set to `disabled`, so nothing on GitHub's side stops a direct push today | 2026-09-21, read-only: `GET /repos/{owner}/{repo}/rulesets` shows `protect-main` with `"enforcement":"disabled"`, and `GET /repos/{owner}/{repo}/rules/branches/main` returns `[]`, meaning no rule is in effect. Classic branch protection could not be read: the token gets HTTP 403 on that endpoint |
+| Can push a branch and open a pull request in this repo | **Yes, while the owner allows it.** Pushes of non-`main` branches and `gh pr create/edit` go through a credential the owner grants for the session and can withdraw; the agent never holds it directly and cannot widen its scope | 2026-09-21: branches pushed and pull requests opened this way throughout |
 | `onchain` is read-only | **No barrier at all.** The only ClickHouse user, `indexer`, can create, alter and drop anything, in `onchain` and elsewhere | `CREATE TABLE` and `DROP TABLE` in `onchain` succeeded as `indexer` |
 | Can create and drop `test_*` databases | Yes, it works | `CREATE DATABASE`, `CREATE TABLE`, `DROP DATABASE` succeeded |
 | No Nansen calls, no backfills, no long processes | **No barrier** beyond not having the API keys | The keys are unreadable; nothing else stops a loop |
