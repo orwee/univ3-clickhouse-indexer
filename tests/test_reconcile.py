@@ -65,7 +65,7 @@ def test_matching_sources_reconcile_on_both_sides(clickhouse, world, tmp_path):
     rows = list(csv.DictReader((tmp_path / "reconciliation.csv").open()))
     assert len(rows) == len(result.external) and {r["over_threshold"] for r in rows} == {"0"}
     evidence = (tmp_path / "reconciliation_evidence.md").read_text()
-    # "PENDIENTE — lo escribe Roberto" until 2026-09-20; Roberto then asked for a marked draft.
+    # "PENDING — Roberto writes it" until 2026-09-20; Roberto then asked for a marked draft.
     assert f"## Findings\n\n**{reconcile.AUTHORSHIP}**\n" in evidence
     assert "- 1. " in evidence and "- 10. " in evidence, "titles and states of the ten findings"
 

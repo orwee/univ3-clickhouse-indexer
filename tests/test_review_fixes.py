@@ -75,7 +75,7 @@ def test_the_readme_does_not_hard_code_a_count_of_dbt_tests():
     assert not re.search(r"dbt build.{0,20}\(\d+ tests\)", (REPO_ROOT / "README.md").read_text())
 
 
-@pytest.mark.parametrize("claim", ["removed index pruning**", "anula la poda**", "no pruning"])
+@pytest.mark.parametrize("claim", ["removed index pruning**", "cancels pruning**", "no pruning"])
 def test_the_claim_that_final_removed_pruning_is_gone(claim):
     """The raw results show the same rows read with and without FINAL."""
     for path in ("DECISIONS.md", "README.md", "docs/SCHEMA_EXPERIMENTS.md"):
