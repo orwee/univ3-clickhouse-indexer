@@ -77,14 +77,17 @@ def _md_plain(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def gh_anchor(heading: str) -> str:
-    """The fragment GitHub gives a Markdown heading: lower-case, punctuation dropped.
+def finding_anchors(readme: str) -> dict[int, str]:
+    """The fragment GitHub gives each finding, taken from the links README.md already carries.
 
-    casefold() rather than the other one: tests/test_addresses.py greps every source file for
-    that method name, because on an address it would hide a mixed-case bug.
+    Not derived here: reimplementing GitHub's slug rule would be a second copy of it that
+    nothing checks, while every anchor in README.md is already resolved against the document
+    by tests/test_readme.py. A finding that is missing from that table raises below.
     """
-    slug = re.sub(r"[^a-z0-9 -]", "", heading.casefold())
-    return slug.replace(" ", "-")
+    return {
+        int(m.group(1)): m.group(2)
+        for m in re.finditer(r"\[(\d+)\]\(docs/RECONCILIATION_FINDINGS\.md(#[a-z0-9-]+)\)", readme)
+    }
 
 
 def fint(v: float) -> str:
@@ -141,12 +144,17 @@ def read_documents() -> dict:
     one_liner = _md_plain(
         _need(r"^Uniswap v3 .*?independent source\.", readme, "README.md", re.M | re.S).group(0)
     )
-    # README has no blockquote starting "Built over one weekend"; the caveat it does carry
-    # verbatim is the "Weekend scale" limitation, quoted here word for word.
+    # The caveat is quoted verbatim: the blockquote README.md opens with, word for word,
+    # with only its "> " markers and line wrapping removed.
     caveat = _md_plain(
-        _need(r"^- \*\*Weekend scale\.\*\*.*?(?=\n- |\n\n)", readme, "README.md", re.M | re.S)
-        .group(0)
-        .lstrip("- ")
+        re.sub(
+            r"^> ?",
+            "",
+            _need(r"^> Built over one weekend.*?(?=\n\n)", readme, "README.md", re.M | re.S).group(
+                0
+            ),
+            flags=re.M,
+        )
     )
 
     counts = _need(
@@ -164,8 +172,15 @@ def read_documents() -> dict:
     recon_generated = _need(
         r"generated (\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC)", recon_md, "reports/reconciliation.md"
     ).group(1)
+    # No finding is headed UNEXPLAINED; what is unexplained sits inside the partly explained
+    # ones and is listed pool-day by pool-day at the end of the document. Count those rows.
+    open_block = _need(
+        r"^## What is still open(.*)\Z", findings_md, "docs/RECONCILIATION_FINDINGS.md", re.M | re.S
+    ).group(1)
+    still_open = len(re.findall(r"^\| \w[^|]*\|[^|]*\|[^|]*\|$", open_block, re.M)) - 1
 
     return {
+        "still_open": still_open,
         "one_liner": one_liner,
         "caveat": caveat,
         "compared": _int(counts.group(2)),
@@ -176,7 +191,7 @@ def read_documents() -> dict:
         "internal": internal.group(1),
         "recon_line": recon_line,
         "recon_generated": recon_generated,
-        "findings": parse_findings(findings_md),
+        "findings": parse_findings(findings_md, finding_anchors(readme)),
         "hypotheses": parse_hypotheses(findings_md, h2_md),
         "sorting_keys": parse_sorting_keys(schema_md),
         "inserts": parse_inserts(perf_md),
@@ -184,7 +199,7 @@ def read_documents() -> dict:
     }
 
 
-def parse_findings(md: str) -> list[dict]:
+def parse_findings(md: str, anchors: dict[int, str]) -> list[dict]:
     """The ten findings and their state, from the headings, so the page cannot drift."""
     out = []
     for m in re.finditer(r"^### (\d+)\. (.+?) — (.+)$", md, re.M):
@@ -195,15 +210,16 @@ def parse_findings(md: str) -> list[dict]:
         )
         if state is None:
             raise SystemExit(f"build_dashboard: unknown finding state {tail!r}")
-        note = tail[len(state) :].strip().strip("()")
-        heading = f"{m.group(1)}. {m.group(2)} — {tail}"
+        number = _int(m.group(1))
+        if number not in anchors:
+            raise SystemExit(f"build_dashboard: README.md does not link to finding {number}")
         out.append(
             {
-                "n": _int(m.group(1)),
+                "n": number,
                 "title": m.group(2).strip(),
                 "state": state,
-                "note": note,
-                "anchor": gh_anchor(heading),
+                "note": tail[len(state) :].strip().strip("()"),
+                "anchor": anchors[number],
             }
         )
     if len(out) != 10:
@@ -1340,7 +1356,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     state_cls = {"EXPLAINED": "e", "PARTLY EXPLAINED": "p", "UNEXPLAINED": "u"}
     rows = []
     for f in docs["findings"]:
-        href = f"{GH}docs/RECONCILIATION_FINDINGS.md#{f['anchor']}"
+        href = f"{GH}docs/RECONCILIATION_FINDINGS.md{f['anchor']}"
         note = f' <span class="note">({esc(f["note"])})</span>' if f["note"] else ""
         rows.append(
             [
@@ -1353,9 +1369,13 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     body = (
         table(["#", "finding", "state"], rows)
         + f'<p class="note">{counted["EXPLAINED"]} explained, '
-        f"{counted['PARTLY EXPLAINED']} partly explained, {counted['UNEXPLAINED']} "
+        f"{counted['PARTLY EXPLAINED']} partly explained, {counted['UNEXPLAINED']} headed "
         "unexplained. The states are read out of the headings of the document itself at "
-        "build time, so this table cannot drift away from it.</p>"
+        "build time, so this table cannot drift away from it. That last count is not a clean "
+        f"bill: what is unexplained sits inside the partly explained findings, as "
+        f"{docs['still_open']} pool-days that are located but not accounted for and listed "
+        f'one by one under <a href="{GH}docs/RECONCILIATION_FINDINGS.md#what-is-still-open">'
+        "what is still open</a>.</p>"
     )
     a(
         section(

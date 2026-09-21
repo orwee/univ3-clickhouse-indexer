@@ -23,9 +23,13 @@ VOID = {
     "link", "meta", "param", "source", "track", "wbr",
 }  # fmt: skip
 
-# The only hosts the page is allowed to point at. Anything else would be a request at view
-# time, which is the whole thing this page is not allowed to make.
-ALLOWED_HOSTS = ("https://github.com/orwee/univ3-clickhouse-indexer",)
+# The only two places the page is allowed to point at: its own repository and its own Pages
+# site. Anything else would be a request to a third party at view time, which is the one thing
+# a self-contained page must not do.
+ALLOWED_HOSTS = (
+    "https://github.com/orwee/univ3-clickhouse-indexer",
+    "https://orwee.github.io/univ3-clickhouse-indexer",
+)
 
 MAX_BYTES = 250 * 1024
 
@@ -152,11 +156,27 @@ def test_every_finding_appears_with_the_state_its_document_gives(page):
 
 
 def test_every_finding_links_to_its_own_section(page):
-    anchors = re.findall(r"RECONCILIATION_FINDINGS\.md(#[a-z0-9-]+)\"", page)
-    assert len(anchors) == 10
+    """Each of the ten rows links to its own anchor, in order, and the anchor resolves."""
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    known = set(re.findall(r"RECONCILIATION_FINDINGS\.md(#[a-z0-9-]+)\)", readme))
-    assert set(anchors) <= known, f"anchors the README does not use: {set(anchors) - known}"
+    expected = {
+        int(m.group(1)): m.group(2)
+        for m in re.finditer(r"\[(\d+)\]\(docs/RECONCILIATION_FINDINGS\.md(#[a-z0-9-]+)\)", readme)
+    }
+    assert sorted(expected) == list(range(1, 11)), "README.md does not link all ten findings"
+
+    rows = re.findall(
+        r"<td>(\d+)</td><td><a href=\"[^\"]*RECONCILIATION_FINDINGS\.md(#[a-z0-9-]+)\"", page
+    )
+    assert len(rows) == 10, f"the page has {len(rows)} linked findings, not ten"
+    assert [int(n) for n, _ in rows] == list(range(1, 11)), "the findings are out of order"
+    for number, anchor in rows:
+        assert anchor == expected[int(number)], f"finding {number} points at {anchor}"
+
+    headings = re.findall(r"^#+ (.+)$", FINDINGS.read_text(encoding="utf-8"), re.M)
+    slugs = {re.sub(r"[^a-z0-9 -]", "", h.lower()).replace(" ", "-") for h in headings}
+    used = set(re.findall(r"RECONCILIATION_FINDINGS\.md#([a-z0-9-]+)\"", page))
+    assert used, "the page should link into the findings document"
+    assert used <= slugs, f"anchors that are not headings of the document: {used - slugs}"
 
 
 def test_both_colour_schemes_are_defined(page):
