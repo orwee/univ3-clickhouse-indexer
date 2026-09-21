@@ -94,7 +94,7 @@ Two readings were tested so that either could fail ([evidence §9](evidence/2026
   of these differences**. Whether it filters anything cannot be observed from outside; what
   can be measured is what its consequence would do to the numbers, and it does not fit. Leaving out
   swaps displaced more than 100 ticks brings 0 of 24 pool-days inside 1% and pushes 64 of the
-  96 that reconcile today outside it; across thresholds from 25 to 1,000 ticks it fixes 0 or 1
+  96 that reconciled in that run outside it; across thresholds from 25 to 1,000 ticks it fixes 0 or 1
   and breaks 19 to 93. Correlation with the daily difference: -0.09.
 - *The source counts them but values them at a going price, while this pipeline values every
   swap by its stablecoin leg* (a reading, not a documented behaviour: the source publishes no

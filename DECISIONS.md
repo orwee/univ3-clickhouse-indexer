@@ -427,9 +427,9 @@ and the measurement agrees: with the same sorting key, monthly partitioning
 it; the partition was pruned, but the primary index had already skipped those
 granules). What it gives is the ability to drop, detach or replace one month
 as a unit, and it is the answer that does not have to be corrected if the
-window grows from 30 days to a year (12 partitions). Daily would be 30
-partitions of 3 granules each today and 365 in a year, with one part per
-partition touched by every insert.
+window grows from 30 days to a year (12 partitions). Daily would be one
+partition per day — 43 of about 3 granules each with the data loaded today,
+365 in a year — with one part per partition touched by every insert.
 
 **Tradeoff.** One more part per month, and an insert that crosses a month
 boundary creates two parts instead of one (seen in the experiment: 114 parts
@@ -534,7 +534,8 @@ own section with both values and the reason. `RECONCILE_DAYS=all`
 
 **Why.** A difference that disappears by waiting a day says nothing about either
 source. Listing the excluded days, instead of dropping them, keeps the rule
-auditable: 8 pool-days are excluded today and all 8 are in the report.
+auditable: 8 pool-days were excluded the day this was decided and 7 in the
+current run; every one of them is in the report, with both values.
 
 **Tradeoff.** The most recent day is never reconciled the day it happens. The
 rule relies on `fetched_at` being stored per candle, and on the source's day
