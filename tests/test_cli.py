@@ -16,8 +16,11 @@ def word(value: int) -> str:
 class FakeClient:
     """One swap per block, from the first pool asked for."""
 
-    def __init__(self, tip=2_000_000, fail_at_call=None, failure=None, retries_per_call=0):
+    def __init__(self, tip=2_000_000, fail_at_call=None, failure=None, retries_per_call=0,
+                 finalized=None):  # fmt: skip
         self.tip = tip
+        # an int: what the node says is finalised. An exception: what asking for it raises.
+        self.finalized = tip - 70 if finalized is None else finalized
         self.requests_sent = 0
         self.retries = 0
         self.ranges = []
@@ -29,6 +32,11 @@ class FakeClient:
 
     def block_number(self):
         return self.tip
+
+    def finalized_block_number(self):
+        if isinstance(self.finalized, Exception):
+            raise self.finalized
+        return self.finalized
 
     def get_logs(self, from_block, to_block, addresses, topics):
         self.requests_sent += 1 + self.retries_per_call
@@ -69,10 +77,46 @@ def landed_blocks(data):
 # --- planning ---------------------------------------------------------------------
 
 
-def test_window_for_days_ends_behind_the_tip():
-    start, end = cli.plan_window(tip=1_000_000, days=30, confirmations=64)
-    assert end == 999_936
+def test_window_for_days_ends_at_the_block_it_is_given():
+    start, end = cli.plan_window(end=999_930, days=30)
+    assert end == 999_930
     assert end - start + 1 == 216_000
+
+
+def test_the_safe_head_is_the_block_the_node_calls_finalized():
+    assert cli.safe_head(FakeClient(tip=1_000_000, finalized=999_921)) == (999_921, "finalized")
+
+
+@pytest.mark.parametrize("answer", [RpcError("rpc error -32602: unknown block tag", code=-32602),
+                                    RpcError("the node returned no block")])  # fmt: skip
+def test_a_node_that_does_not_know_the_tag_falls_back_and_says_it_is_not_finalised(answer, caplog):
+    with caplog.at_level(logging.WARNING):
+        head = cli.safe_head(FakeClient(tip=1_000_000, finalized=answer))
+    assert head == (1_000_000 - 64, "tip_minus_confirmations")
+    assert "NOT finalised" in caplog.text
+
+
+def test_a_network_failure_is_not_a_reason_to_fall_back():
+    with pytest.raises(RpcRetriesExhausted):
+        cli.safe_head(FakeClient(finalized=RpcRetriesExhausted("down")))
+
+
+def test_a_finalized_block_ahead_of_the_tip_is_refused():
+    with pytest.raises(cli.BackfillError, match="finalised but its tip"):
+        cli.safe_head(FakeClient(tip=100, finalized=101))
+
+
+def test_finality_far_behind_the_tip_is_used_and_shouted_about(caplog):
+    with caplog.at_level(logging.WARNING):
+        assert cli.safe_head(FakeClient(tip=1_000_000, finalized=990_000))[0] == 990_000
+    assert "may not be finalising" in caplog.text
+
+
+def test_an_explicit_end_beyond_the_finalized_block_is_refused(paths):
+    client = FakeClient(tip=2_000, finalized=1_930)
+    assert run("--from-block", "1000", "--to-block", "1931", client=client) == cli.EXIT_USAGE
+    assert not (paths / "plan.json").exists() and client.ranges == []
+    assert run("--from-block", "1000", "--to-block", "1930", client=client) == cli.EXIT_OK
 
 
 def test_dry_run_with_explicit_blocks_touches_neither_network_nor_disk(paths, caplog):
@@ -122,7 +166,8 @@ def test_days_window_is_fixed_on_the_first_run_and_survives_a_moving_tip(paths):
     failing = FakeClient(tip=2_000_000, fail_at_call=8, failure=RpcRetriesExhausted("down"))
     assert run("--days", "0.02", client=failing) == cli.EXIT_NETWORK
     plan = json.loads((paths / "plan.json").read_text())
-    assert plan["end_block"] == 2_000_000 - 64
+    # Until 2026-09-21 the window ended at tip - 64. It now ends at the node's finalized block.
+    assert plan["end_block"] == 2_000_000 - 70 and plan["end_chosen_by"] == "finalized"
 
     later = FakeClient(tip=2_000_500)  # the chain moved on; the plan must not
     assert run("--days", "0.02", client=later) == cli.EXIT_OK

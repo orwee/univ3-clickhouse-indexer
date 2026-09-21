@@ -84,14 +84,44 @@ class Plan:
         return -(-self.blocks // MAX_BLOCK_RANGE)
 
 
-def plan_window(tip: int, days: float, confirmations: int = CONFIRMATIONS) -> tuple[int, int]:
-    """(start, end) for the last ``days`` days, ending safely behind the tip."""
-    end = tip - confirmations
+FINALIZED, BEHIND_TIP = "finalized", "tip_minus_confirmations"
+MAX_FINALITY_LAG = 1_000  # blocks; normal is 64 to 95. Beyond this something is off: say so.
+
+
+def safe_head(client, confirmations: int = CONFIRMATIONS) -> tuple[int, str]:
+    """(block, how it was chosen): the last block the backfill may read.
+
+    The node's own `finalized` block when it gives one. When the provider REJECTS the request
+    (an rpc error or an empty answer: RpcError), fall back to tip - confirmations and say, in
+    the log and in plan.json, that the window does NOT end at a finalised block. A network
+    failure is not a rejection: RpcRetriesExhausted propagates like any other."""
+    tip = client.block_number()
+    try:
+        finalized = client.finalized_block_number()
+    except RpcRetriesExhausted:
+        raise
+    except RpcError as exc:
+        log.warning("the node did not give a finalized block (%s): falling back to tip - %d, "
+                    "which is NOT finalised, only deep", exc, confirmations)  # fmt: skip
+        return tip - confirmations, BEHIND_TIP
+    if finalized > tip:
+        raise BackfillError(f"the node says block {finalized} is finalised but its tip is {tip}")
+    if tip - finalized > MAX_FINALITY_LAG:
+        log.warning(
+            "finality is %d blocks behind the tip (normal: 64 to 95): the chain may not be "
+            "finalising; the window still ends at the finalised block",
+            tip - finalized,
+        )
+    return finalized, FINALIZED
+
+
+def plan_window(end: int, days: float) -> tuple[int, int]:
+    """(start, end) for the ``days`` days that end at block ``end`` (see safe_head)."""
     return end - round(days * BLOCKS_PER_DAY) + 1, end
 
 
 def load_or_create_plan(
-    path: Path, wanted: Plan | None, pools: tuple[str, ...], *, save: bool
+    path: Path, wanted: Plan | None, pools: tuple[str, ...], *, save: bool, end_chosen_by: str = ""
 ) -> Plan:
     """The first run fixes the plan; later runs must agree with it."""
     if path.exists():
@@ -113,6 +143,8 @@ def load_or_create_plan(
                     "start_block": wanted.start_block,
                     "end_block": wanted.end_block,
                     "pools": list(wanted.pools),
+                    # "finalized", "tip_minus_confirmations" or "explicit": read by people
+                    "end_chosen_by": end_chosen_by or "explicit",
                 },
                 indent=2,
             ),
@@ -242,12 +274,23 @@ def main(argv: Sequence[str] | None = None, *, client=None) -> int:
             key = config.require_api_key("ALCHEMY_API_KEY")
             client = JsonRpcClient(alchemy_mainnet_url(key), min_interval=1 / args.rps)
 
-        wanted = None
+        wanted, chosen_by = None, ""
         if explicit:
             wanted = Plan(args.from_block, args.to_block, pools)
+            if client is not None and not plan_path.exists():
+                head, how = safe_head(client)
+                if args.to_block > head:
+                    raise BackfillError(
+                        f"--to-block {args.to_block} is beyond the last safe block {head} ({how}): "
+                        "blocks after it can still be reorganised"
+                    )
         elif args.days is not None and not plan_path.exists():
-            wanted = Plan(*plan_window(client.block_number(), args.days), pools)
-        plan = load_or_create_plan(plan_path, wanted, pools, save=not args.dry_run)
+            head, chosen_by = safe_head(client)
+            log.info("window ends at block %d (%s)", head, chosen_by)
+            wanted = Plan(*plan_window(head, args.days), pools)
+        plan = load_or_create_plan(
+            plan_path, wanted, pools, save=not args.dry_run, end_chosen_by=chosen_by
+        )
         if wanted and (wanted.start_block, wanted.end_block) != (plan.start_block, plan.end_block):
             raise BackfillError(
                 f"{plan_path} already fixes blocks {plan.start_block}-{plan.end_block}. "

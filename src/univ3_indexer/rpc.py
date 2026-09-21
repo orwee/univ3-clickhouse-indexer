@@ -116,6 +116,25 @@ class JsonRpcClient:
     def block_number(self) -> int:
         return int(self.call("eth_blockNumber", []), 16)
 
+    def finalized_block_number(self) -> int:
+        """Number of the latest FINALISED block, as the node reports it.
+
+        `eth_getBlockByNumber("finalized", false)`: the tag exists since the Merge. A node that
+        does not know it answers with an rpc error (RpcError, not retried), and one that has
+        no finalised block yet answers `null`; both are raised as RpcError so that the caller
+        decides what to fall back to, and says so."""
+        block = self.call("eth_getBlockByNumber", ["finalized", False])
+        if not isinstance(block, dict) or not isinstance(block.get("number"), str):
+            raise RpcError("eth_getBlockByNumber(finalized): the node returned no block")
+        return int(block["number"], 16)
+
+    def block_hash(self, number: int) -> str:
+        """Hash of the canonical block at this height, as the node sees the chain NOW."""
+        block = self.call("eth_getBlockByNumber", [hex(number), False])
+        if not isinstance(block, dict) or not isinstance(block.get("hash"), str):
+            raise RpcError(f"eth_getBlockByNumber({number}): the node returned no block")
+        return block["hash"]
+
     def get_logs(
         self, from_block: int, to_block: int, addresses: Sequence[str], topics: Sequence[str]
     ) -> list[dict]:

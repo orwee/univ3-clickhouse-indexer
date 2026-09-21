@@ -24,8 +24,8 @@ Guarantees, each covered by a test in tests/test_backfill.py
       produces duplicates is the sink's business, and it has what it needs to
       prevent it: the block range of the batch and a stable per-log identity.
 
-The end block is chosen by the caller. Stay some blocks behind the chain tip
-(``CONFIRMATIONS``) so that reorganised blocks are never ingested.
+The end block is chosen by the caller. The CLI ends at the block the node reports as
+FINALISED; ``CONFIRMATIONS`` is only the fallback for a node that does not know that tag.
 """
 
 from __future__ import annotations
@@ -46,9 +46,10 @@ from univ3_indexer.swap import Swap, decode_swap
 
 log = logging.getLogger(__name__)
 
-# 64 blocks = two epochs behind the tip. NOT the same as finalised: under normal conditions
-# the finalised checkpoint trails the head by 64 to 95 slots, and the node is never asked for
-# the `finalized` tag. Deep enough that a reorg is not a practical concern; no more than that.
+# FALLBACK ONLY, for a node that does not answer eth_getBlockByNumber("finalized") (cli.safe_head).
+# 64 blocks = two epochs behind the tip. NOT the same as finalised: under normal conditions the
+# finalised checkpoint trails the head by 64 to 95 slots. Deep enough that a reorg is not a
+# practical concern; no more than that, and the log says so when this is what was used.
 CONFIRMATIONS = 64
 CHECKPOINT_VERSION = 1
 
