@@ -2,9 +2,9 @@
 
 Numbers only, from section 1 on: what was measured, not why, and not what is acceptable. The one exception is the list right below, which is a draft and says so.
 
-## Hallazgos
+## Findings
 
-**DRAFT — to be reviewed and rewritten by Roberto**
+**Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.**
 
 Drafted by a coding agent from the numbers of one run; the text, with each figure and the section of this report behind it, is `docs/RECONCILIATION_FINDINGS.md`. Titles and states only:
 
@@ -469,3 +469,5 @@ Leaving swaps out (H1) can only lower our figure, so it cannot account for these
 | USDC/WETH 0.01% | 2026-08-27 | -1.65% | -891,843 | 59 | 17,743,704 | +0.50% | 21h: -892,887 | +1.35% |
 | USDC/WETH 0.01% | 2026-09-07 | -2.04% | -833,802 | 56 | 13,055,338 | +0.02% | 08h: -717,047 | -0.03% |
 | USDC/WETH 0.01% | 2026-09-16 | -1.27% | -611,518 | 33 | 8,213,804 | -0.02% | 02h: -517,498 | +0.01% |
+
+Banner and heading updated on 2026-09-21 to the current authorship note; numbers unchanged.

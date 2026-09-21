@@ -1,13 +1,14 @@
-# Reglas del proyecto para agentes
+# Project rules for agents
 
-> **Las reglas viven en `AGENTS.md`. Este fichero solo lo importa.**
+> **The rules live in `AGENTS.md`. This file only imports it.**
 >
-> Motivo: Codex lee `AGENTS.md` y **no** lee `CLAUDE.md`; OpenCode lee los dos pero
-> usa solo `AGENTS.md` si existen ambos; Claude Code lee `CLAUDE.md`. Con una sola
-> fuente de verdad los tres ejecutores leen exactamente lo mismo.
+> Reason: Codex reads `AGENTS.md` and does **not** read `CLAUDE.md`; OpenCode
+> reads both but uses only `AGENTS.md` if both exist; Claude Code reads
+> `CLAUDE.md`. With a single source of truth the three executors read exactly
+> the same thing.
 >
-> **No escribas reglas aquí. Edita `AGENTS.md`.** Dos copias de unas reglas son dos
-> copias que se separan sin que nadie lo note, y en un fichero de reglas esa es la
-> peor deriva posible.
+> **Do not write rules here. Edit `AGENTS.md`.** Two copies of a set of rules
+> are two copies that drift apart without anyone noticing, and in a rules file
+> that is the worst drift possible.
 
 @AGENTS.md

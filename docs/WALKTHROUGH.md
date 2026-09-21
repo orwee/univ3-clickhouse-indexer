@@ -27,7 +27,7 @@ answered: what does this pipeline do, and where does each stage live?*
 ReplacingMergeTree; why `ORDER BY (pool_address, block_timestamp, …)`; why partitions are for
 management and not for speed; why 256-bit integers and binary hashes.* Every one of those has
 a number measured on the real data; the measurements are in
-[docs/SCHEMA_EXPERIMENTS.md](SCHEMA_EXPERIMENTS.md) (Spanish) and
+[docs/SCHEMA_EXPERIMENTS.md](SCHEMA_EXPERIMENTS.md) and
 [docs/QUERY_PERFORMANCE.md](QUERY_PERFORMANCE.md).
 
 ## 3. How data gets in without being counted twice (1 minute)
