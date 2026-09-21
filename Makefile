@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 DEMO = docker compose -f docker-compose.demo.yml
 
-.PHONY: help demo up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check dbt-seed dbt-build dbt-test dbt-prove
+.PHONY: help demo up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check dbt-seed dbt-build dbt-test dbt-prove dashboard
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -85,6 +85,14 @@ fetch-external-hourly: ## the last 1,000 hourly candles per pool: to see in whic
 RECONCILE_THRESHOLD ?= 0.01
 RECONCILE_ABS_THRESHOLD ?= 1000
 RECONCILE_DAYS ?= complete
+
+# One self-contained HTML file, generated and committed. It reads ClickHouse (SELECT only)
+# and the reports in this repository; it never invents a number and never calls the network.
+# GENERATED_AT pins the timestamp on the page, for a reproducible build.
+GENERATED_AT ?=
+dashboard: ## build docs/index.html, the published status page (reads ClickHouse read-only)
+	PYTHONPATH=src uv run python scripts/build_dashboard.py \
+		$(if $(GENERATED_AT),--generated-at $(GENERATED_AT),)
 
 reconcile: ## A internal (must be exactly zero) + B external -> reports/reconciliation.{csv,md} + evidence
 	PYTHONPATH=src uv run python -m univ3_indexer.reconcile --threshold $(RECONCILE_THRESHOLD) \

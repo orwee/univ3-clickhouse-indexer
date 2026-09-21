@@ -1,0 +1,184 @@
+"""The published page, checked as it is committed.
+
+These tests read `docs/index.html` from the repository, never a freshly generated one: what is
+served by GitHub Pages is the committed file, so that is what has to hold. No server, no
+network, no ClickHouse. Run `make dashboard` after changing the generator or these fail.
+"""
+
+import html.parser
+import re
+
+import pytest
+
+from univ3_indexer.config import REPO_ROOT
+
+PAGE = REPO_ROOT / "docs" / "index.html"
+NOJEKYLL = REPO_ROOT / "docs" / ".nojekyll"
+FINDINGS = REPO_ROOT / "docs" / "RECONCILIATION_FINDINGS.md"
+RECONCILIATION = REPO_ROOT / "reports" / "reconciliation.md"
+
+# Void elements never close; everything else must be matched by the parser below.
+VOID = {
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+}  # fmt: skip
+
+# The only hosts the page is allowed to point at. Anything else would be a request at view
+# time, which is the whole thing this page is not allowed to make.
+ALLOWED_HOSTS = ("https://github.com/orwee/univ3-clickhouse-indexer",)
+
+MAX_BYTES = 250 * 1024
+
+
+@pytest.fixture(scope="module")
+def page() -> str:
+    assert PAGE.exists(), f"{PAGE} is missing: run `make dashboard`"
+    return PAGE.read_text(encoding="utf-8")
+
+
+class StrictParser(html.parser.HTMLParser):
+    """Fails on a tag that closes something else, or that is never closed."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[str] = []
+        self.problems: list[str] = []
+        self.counts: dict[str, int] = {}
+
+    def handle_starttag(self, tag, attrs):
+        self.counts[tag] = self.counts.get(tag, 0) + 1
+        if tag not in VOID:
+            self.stack.append(tag)
+
+    def handle_startendtag(self, tag, attrs):
+        self.counts[tag] = self.counts.get(tag, 0) + 1
+
+    def handle_endtag(self, tag):
+        if not self.stack:
+            self.problems.append(f"</{tag}> with nothing open")
+        elif self.stack[-1] != tag:
+            self.problems.append(f"expected </{self.stack[-1]}>, found </{tag}>")
+        else:
+            self.stack.pop()
+
+
+def parse(page: str) -> StrictParser:
+    parser = StrictParser()
+    parser.feed(page)
+    parser.close()
+    return parser
+
+
+def test_the_page_exists_and_is_not_empty(page):
+    assert len(page) > 10_000, "the page is too small to hold what it claims to"
+    assert page.startswith("<!doctype html>")
+
+
+def test_the_page_is_well_formed_html(page):
+    parser = parse(page)
+    assert not parser.problems, "\n".join(parser.problems)
+    assert not parser.stack, f"never closed: {parser.stack}"
+    assert parser.counts["html"] == 1
+    for tag in ("div", "section", "svg", "table"):
+        assert page.count(f"</{tag}>") == parser.counts[tag], f"unbalanced <{tag}>"
+
+
+def test_the_page_is_small_enough_to_serve(page):
+    size = PAGE.stat().st_size
+    assert size <= MAX_BYTES, f"{size:,} bytes is over the {MAX_BYTES:,} budget"
+
+
+def test_no_address_and_no_hash_anywhere(page):
+    """Not one identifier of a third party: no wallet, no transaction, no 0x string at all."""
+    assert not re.findall(r"0x[0-9a-fA-F]{40}\b", page), "a 40-hex address is on the page"
+    assert not re.findall(r"0x[0-9a-fA-F]{64}\b", page), "a 64-hex hash is on the page"
+    loose = re.findall(r"0x[0-9a-fA-F]{8,}", page)
+    assert not loose, f"0x-prefixed hex on the page: {loose[:3]}"
+
+
+def test_no_nansen_identifier_is_republished(page):
+    """Only the attribution line and aggregates: no label, no address from their responses."""
+    assert "Powered by Nansen API" in page
+    for forbidden in ("trader_address", "trader_address_label", "tx_hash", "estimated_value_usd"):
+        assert forbidden not in page, f"{forbidden} is on the page"
+
+
+def test_nothing_is_fetched_at_view_time(page):
+    assert "<script" not in page, "the page must not carry or load a script"
+    assert not re.search(r'<link[^>]+rel=["\']?stylesheet', page), "no external stylesheet"
+    assert "<img" not in page, "charts are SVG markup, never an image"
+    assert "@import" not in page and "url(" not in page, "no CSS fetch"
+    assert "<iframe" not in page and "<object" not in page and "<embed" not in page
+
+
+def test_every_link_points_at_github_and_nothing_else(page):
+    urls = re.findall(r'(?:src|href)\s*=\s*"([^"]+)"', page)
+    assert urls, "the page has no links at all, which cannot be right"
+    external = [u for u in urls if u.startswith(("http://", "https://", "//"))]
+    assert external, "the page should link to the repository"
+    bad = [u for u in external if not u.startswith(ALLOWED_HOSTS)]
+    assert not bad, f"links outside the repository: {bad}"
+
+
+def test_the_kpis_are_the_numbers_the_reports_give(page):
+    """The two figures the reconciliation report states, as text, on the page."""
+    report = RECONCILIATION.read_text(encoding="utf-8")
+    compared = re.search(r"(\d+) compared", report)
+    beyond = re.search(r"\*\*(\d+) beyond both thresholds\*\*", report)
+    assert compared and beyond, "reports/reconciliation.md changed shape"
+    assert f"{compared.group(1)} compared" in page
+    assert f"{beyond.group(1)} beyond" in page
+    assert "exact, 0 differences" in page, "the internal result must be stated"
+
+
+def test_the_page_says_when_it_was_generated(page):
+    assert re.search(r"Generated \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC", page)
+
+
+def test_every_finding_appears_with_the_state_its_document_gives(page):
+    """Parsed from the headings, so the page cannot drift away from the document."""
+    headings = re.findall(
+        r"^### (\d+)\. (.+?) — (EXPLAINED|PARTLY EXPLAINED|UNEXPLAINED)",
+        FINDINGS.read_text(encoding="utf-8"),
+        re.M,
+    )
+    assert len(headings) == 10, f"expected ten findings, the document has {len(headings)}"
+    for _number, title, _state in headings:
+        assert title in page, f"finding missing from the page: {title}"
+    for wanted in ("EXPLAINED", "PARTLY EXPLAINED", "UNEXPLAINED"):
+        expected = sum(1 for _, _, s in headings if s == wanted)
+        found = len(re.findall(rf'class="st [epu]">{wanted}<', page))
+        assert found == expected, f"{wanted}: {found} on the page, {expected} in the document"
+
+
+def test_every_finding_links_to_its_own_section(page):
+    anchors = re.findall(r"RECONCILIATION_FINDINGS\.md(#[a-z0-9-]+)\"", page)
+    assert len(anchors) == 10
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    known = set(re.findall(r"RECONCILIATION_FINDINGS\.md(#[a-z0-9-]+)\)", readme))
+    assert set(anchors) <= known, f"anchors the README does not use: {set(anchors) - known}"
+
+
+def test_both_colour_schemes_are_defined(page):
+    assert "prefers-color-scheme:dark" in page.replace(" ", "")
+    assert page.count("--s1:") == 2, "each categorical slot needs a light and a dark value"
+
+
+def test_the_page_scales_on_a_phone(page):
+    assert '<meta name="viewport" content="width=device-width,initial-scale=1">' in page
+    charts = re.findall(r"<svg [^>]*>", page)
+    assert len(charts) >= 6, "the page should carry the charts the sections describe"
+    for chart in charts:
+        assert "viewBox=" in chart, "a chart without a viewBox cannot scale"
+    assert "svg{width:100%;height:auto" in page.replace(" ", "")
+
+
+def test_every_chart_is_described_for_a_reader_who_cannot_see_it(page):
+    for chart in re.findall(r"<svg .*?</svg>", page, re.S):
+        assert 'role="img"' in chart
+        assert "<title>" in chart and "<desc>" in chart
+
+
+def test_nojekyll_exists_so_pages_serves_underscore_paths(page):
+    assert NOJEKYLL.exists(), "docs/.nojekyll is missing"
+    assert NOJEKYLL.stat().st_size == 0, "docs/.nojekyll must be empty"

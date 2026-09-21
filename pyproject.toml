@@ -61,4 +61,7 @@ select = ["E", "F", "I", "B", "UP", "S"]
 # Long lines are Markdown table rows.
 "src/univ3_indexer/sanity.py" = ["E501"]
 "scripts/query_performance.py" = ["S608", "E501"]
+# The only interpolated values are the two database names, module constants in the file
+# itself (RAW_DB, DBT_DB); nothing there comes from input. Every query is a SELECT.
+"scripts/build_dashboard.py" = ["S608"]
 "scripts/demo.py" = ["S608"]
