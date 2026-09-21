@@ -29,17 +29,15 @@ transaction hash from their responses, following their
 [redistribution guidelines](https://docs.nansen.ai/mcp/redistribution-guidelines.md). See
 [docs/NANSEN.md](docs/NANSEN.md).
 
-It is a learning project: the point was to work with ClickHouse hands-on (MergeTree parts and
-merges, sparse primary indexes, materialized views, the system tables) rather than read about
-it. The design choices are written down in [DECISIONS.md](DECISIONS.md), with the
-number that was measured wherever one was, and what went wrong along the way is kept where
-it happened instead of being cleaned up (for example the double count in
-[docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md) and the measurements spoiled by a
-cache in [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md)).
-
-Data in the working database on 2026-09-21: 1,110,676 swaps of 4 pools over 43 days
-(2026-08-09 to 2026-09-20). Some documents were measured on earlier states of the same
-table (863,587, 881,187 and 898,404 rows) and say so.
+It is a learning project, built to work with ClickHouse hands-on — MergeTree parts and merges,
+sparse primary indexes, materialized views, the system tables — rather than read about it. Every
+design choice is in [DECISIONS.md](DECISIONS.md) with the number that was measured for it, and
+what went wrong is kept where it happened instead of being cleaned up: the double count in
+[docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md), the measurements spoiled by a cache in
+[docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md), and a dated list of every correction
+in [Agent corrections](DECISIONS.md#agent-corrections). Figures above are of 2026-09-21; some
+documents were measured on earlier states of the same table (863,587, 881,187 and 898,404 rows)
+and say which.
 
 ## Architecture
 
