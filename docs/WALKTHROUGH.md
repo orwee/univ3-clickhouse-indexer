@@ -3,6 +3,9 @@
 For someone reviewing this repository with little time. What to open, in what order, and the
 question each piece answers. Times are for reading, not running.
 
+**Even shorter:** the [dashboard](https://orwee.github.io/univ3-clickhouse-indexer/) has the
+whole result on one page, with a link from each chart to the document or query behind it.
+
 ## 0. Run it while you read (1 minute of typing, no API key)
 
 ```

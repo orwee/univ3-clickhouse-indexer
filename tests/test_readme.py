@@ -72,13 +72,15 @@ def section(title: str) -> str:
     return VISIBLE.split(f"## {title}\n", 1)[1].split("\n## ", 1)[0].strip()
 
 
-def test_the_owner_sections_say_who_wrote_them_and_who_approved_them():
-    # "PENDING — written by Roberto" until 2026-09-20, then a draft banner, and from
-    # 2026-09-21 the authorship note Roberto settled on. What must not happen, in any of the
-    # three regimes, is that these sections claim an authorship they do not have.
-    for title in ("Reconciliation findings", "Limitations"):
-        assert section(title).startswith(f"> {AUTHORSHIP}"), title
+def test_the_authorship_note_appears_once_and_in_the_three_agreed_places():
+    # It used to sit on every owner-facing section, which read as a disclaimer repeated three
+    # times on one page. It now appears exactly once in the README, in "How this was built",
+    # and at the top of the two documents that carry conclusions.
+    assert README.count(AUTHORSHIP) == 1, "the README states it once"
+    assert AUTHORSHIP in section("How this was built")
     assert FINDINGS.read_text().split("\n", 3)[2] == f"> {AUTHORSHIP}"
+    decisions = (REPO_ROOT / "DECISIONS.md").read_text()
+    assert decisions.count(AUTHORSHIP) == 1 and decisions.split("\n", 3)[2] == f"> {AUTHORSHIP}"
 
 
 def test_every_finding_has_one_of_the_three_states_and_points_at_evidence():
@@ -165,9 +167,11 @@ def test_the_readme_figures_are_the_ones_of_the_findings():
 def test_the_drafts_never_say_sandwich_without_the_hedge():
     # Roberto's wording. What the data shows is a pattern; who did it and why is not in a log.
     hedge = "same-block round trips consistent with a sandwich pattern"
+    # The README's findings table is one line per finding and no longer uses the word at all;
+    # the rule is unchanged where it does appear: never "sandwich" outside the hedged phrase.
+    assert hedge in " ".join(FINDINGS.read_text().split()), "the findings describe the pattern"
     for path in (REPO_ROOT / "README.md", FINDINGS):
         text = " ".join(path.read_text().split())
-        assert hedge in text, path.name
         assert text.lower().count("sandwich") == text.count(hedge), path.name
 
 
