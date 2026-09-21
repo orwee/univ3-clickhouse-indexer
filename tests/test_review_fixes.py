@@ -80,3 +80,24 @@ def test_the_claim_that_final_removed_pruning_is_gone(claim):
     """The raw results show the same rows read with and without FINAL."""
     for path in ("DECISIONS.md", "README.md", "docs/SCHEMA_EXPERIMENTS.md"):
         assert claim not in (REPO_ROOT / path).read_text(), path
+
+
+def test_what_the_docs_say_about_final_is_what_the_committed_measurement_shows():
+    """docs/SCHEMA_EXPERIMENTS.md and DECISIONS #10 now quote this file. If someone reruns the
+    experiment and the picture changes, the prose has to change with it."""
+    import json
+
+    raw = json.loads((REPO_ROOT / "docs/experiments/final-real-key-2026-09-21.json").read_text())
+    for state in ("unmerged", "merged"):
+        table = raw[state]["replacing"]["queries"]
+        for query, plain in table["no_final"].items():
+            assert table["final"][query]["read_rows"] == plain["read_rows"], (state, query)
+    assert raw["merged"]["replacing"]["state"]["rows"] == raw["rows_in_source"], "the key is unique"
+    stored = raw["rows_in_source"] + raw["rows_redelivered"]
+    assert raw["merged"]["plain"]["state"]["rows"] == stored, "MergeTree never drops a duplicate"
+    slow = raw["unmerged"]["replacing"]["queries"]
+    ratio = (
+        slow["final"]["daily_volume_all_pools"]["ms_median"]
+        / slow["no_final"]["daily_volume_all_pools"]["ms_median"]
+    )
+    assert 2 < ratio < 4, "quoted as 2.6x"
