@@ -980,7 +980,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         chart
         + legend([(p, POOL_SLOT[p]) for p in POOL_ORDER])
         + '<p class="note">The vertical scale is <b>logarithmic</b>: each gridline is a '
-        "hundred times the one below it. The four pools differ by five orders of magnitude, "
+        "hundred times the one below it. The four pools differ by about five orders of "
+        "magnitude in volume over the whole window, and more on a given day, "
         "which is why a linear scale would show three flat lines.</p>"
         + details("Daily volume, every pool and day", tbl)
     )
@@ -990,7 +991,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             "Daily USD volume per pool",
             body,
             "Two USDC/WETH pools carry almost all the money while the two wstETH pools live "
-            "three to five orders of magnitude below them, with one 26 million dollar day.",
+            "four to seven orders of magnitude below them by median day, with one 26 million "
+            "dollar day.",
             "onchain_dbt.fct_pool_daily — dbt/models/marts/fct_pool_daily.sql",
             f"{GH}dbt/models/marts/fct_pool_daily.sql",
         )
@@ -1168,7 +1170,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             6,
             "Where the difference sits: one flagged day, hour by hour",
             body,
-            "Every hour of this day agrees with the external source to the cent except one, "
+            "Every hour of this day agrees with the external source to within a dollar except "
+            "one, "
             "so the day's difference is one event and not a systematic gap.",
             "sql/reconciliation/17_evidence_hourly.sql — re-run against "
             "onchain.raw_swaps and onchain.external_hourly_volume FINAL",
@@ -1345,8 +1348,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             "ClickHouse, measured",
             body,
             "Two decisions with a number behind each: the sorting key changes what a query "
-            "reads by nineteen times, and batch size changes an insert by two orders of "
-            "magnitude.",
+            "reads by nineteen times, and a thousand small inserts take five hundred times "
+            "as long as one.",
             "docs/SCHEMA_EXPERIMENTS.md and docs/QUERY_PERFORMANCE.md",
             f"{GH}docs/SCHEMA_EXPERIMENTS.md",
         )
