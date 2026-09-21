@@ -49,9 +49,13 @@ test that pins it.
 
 [docs/RECONCILIATION_FINDINGS.md](RECONCILIATION_FINDINGS.md). *Questions answered: does the
 pipeline agree with itself (exactly), does it agree with an independent source (12 of 120
-pool-days flagged), and what was done about each difference?* Read finding 7: a hypothesis
-that was tested so that it could fail, and did, next to one that fits. The numbers behind
-every sentence are in [docs/evidence/2026-09-20/](evidence/2026-09-20/reconciliation_evidence.md);
+pool-days flagged; 17 of 163 after ten more days were added), and what was done about each
+difference?* Read finding 7: a hypothesis that was tested so that it could fail, and did, next
+to one that fits, which was then tested again on days it had not been fitted on, with the
+protocol committed first ([docs/H2_PREREGISTRATION.md](H2_PREREGISTRATION.md)); the result is
+mixed and is reported as such. The numbers behind every sentence are in
+[docs/evidence/2026-09-20/](evidence/2026-09-20/reconciliation_evidence.md) and
+[docs/evidence/2026-09-21/](evidence/2026-09-21/README.md);
 the rules of what gets compared and flagged are [DECISIONS.md](../DECISIONS.md) 15 and 16;
 the code is [src/univ3_indexer/reconcile.py](../src/univ3_indexer/reconcile.py) and
 [sql/reconciliation/](../sql/reconciliation/03_external_b.sql).

@@ -153,3 +153,19 @@ def test_the_readme_figures_are_the_ones_of_the_findings():
     findings = FINDINGS.read_text()
     for figure in ("898,404 swaps", "128 pool-days", "120 compared"):
         assert figure in README and figure in findings, figure
+
+
+def test_the_drafts_never_say_sandwich_without_the_hedge():
+    # Roberto's wording. What the data shows is a pattern; who did it and why is not in a log.
+    hedge = "same-block round trips consistent with a sandwich pattern"
+    for path in (REPO_ROOT / "README.md", FINDINGS):
+        text = " ".join(path.read_text().split())
+        assert hedge in text, path.name
+        assert text.lower().count("sandwich") == text.count(hedge), path.name
+
+
+def test_the_sql_practice_material_is_no_longer_in_the_repo():
+    for name in ("docs/SQL_PRACTICE.md", "docs/SQL_PRACTICE_SOLUTIONS.md",
+                 "docs/sql_practice_solutions.sql", "scripts/check_sql_practice.py"):  # fmt: skip
+        assert not (REPO_ROOT / name).exists(), name
+    assert "SQL_PRACTICE" not in README

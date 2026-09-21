@@ -16,9 +16,9 @@ it happened instead of being cleaned up (for example the double count in
 [docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md) and the measurements spoiled by a
 cache in [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md)).
 
-Data in the working database on 2026-09-20: 898,404 swaps of 4 pools over 32 days
-(2026-08-20 to 2026-09-20). Some documents were measured on earlier states of the same
-table (863,587 and 881,187 rows) and say so.
+Data in the working database on 2026-09-21: 1,110,676 swaps of 4 pools over 43 days
+(2026-08-09 to 2026-09-20). Some documents were measured on earlier states of the same
+table (863,587, 881,187 and 898,404 rows) and say so.
 
 ## Architecture
 
@@ -200,7 +200,9 @@ redirect an agent there is a line under [Agent corrections](DECISIONS.md#agent-c
 Run of 2026-09-20: 898,404 swaps, 4 pools, 128 pool-days on both sides, 120 compared, 12
 flagged beyond 1% and 1,000 USD. The full draft, each figure with the section of the evidence
 behind it, is [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md); the snapshot of that run is in
-[docs/evidence/2026-09-20/](docs/evidence/2026-09-20/reconciliation.md).
+[docs/evidence/2026-09-20/](docs/evidence/2026-09-20/reconciliation.md). Ten earlier days
+were added on 2026-09-21 to test finding 7 on days it had not been fitted on (1,110,676 swaps,
+163 pool-days compared, 17 flagged): [docs/evidence/2026-09-21/](docs/evidence/2026-09-21/README.md).
 
 | # | Finding | State |
 |---|---|---|
@@ -210,13 +212,13 @@ behind it, is [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md)
 | [4](docs/RECONCILIATION_FINDINGS.md#4-which-leg-is-valued-does-not-matter-in-the-liquid-pools--explained) | Which leg is valued changes the liquid pools by -0.004% and +0.02%. It does not test whether USDC was worth 1 USD | EXPLAINED |
 | [5](docs/RECONCILIATION_FINDINGS.md#5-in-the-liquid-pools-the-30-day-totals-agree-and-the-daily-noise-is-centred--explained) | Liquid pools: 30-day totals at +0.10% and +0.24%; daily noise 15 up / 15 down in one, 19 / 11 in the other | EXPLAINED |
 | [6](docs/RECONCILIATION_FINDINGS.md#6-2026-08-27-two-pools-of-the-same-pair-off-in-opposite-directions--partly-explained) | 2026-08-27: the two USDC/WETH pools at -1.65% and +1.35%, the pair at +0.16%. Not a misattribution: the two differences sit in different hours, and one of them is unexplained | PARTLY EXPLAINED |
-| [7](docs/RECONCILIATION_FINDINGS.md#7-round-trips-inside-one-block-valued-differently--partly-explained) | The large differences coincide with round trips inside one block. "The source filters them" is refuted (fixes 0 of 24 days, breaks 64 of 96). "The source values them at a going price" fixes 15 of 24 and breaks 6 of 96 | PARTLY EXPLAINED |
+| [7](docs/RECONCILIATION_FINDINGS.md#7-round-trips-inside-one-block-valued-differently--partly-explained) | The large differences coincide with same-block round trips consistent with a sandwich pattern. "The source filters them" is refuted (fixes 0 of 24 days, breaks 64 of 96). "The source values them at a going price" fixes 15 of 24 and breaks 6 of 96 in sample. Out of sample, with the protocol committed first: fixes 6 of 10 and a placebo fixes 0 of 24, but the correlation falls from +0.72 to +0.05 and the largest difference of the project is untouched by it | PARTLY EXPLAINED |
 | [8](docs/RECONCILIATION_FINDINGS.md#8-2026-08-29-three-pools-high-on-a-quiet-saturday--partly-explained) | 2026-08-29: three pools high on a quiet Saturday. Not one effect: one pool is covered by finding 7, one is 18 USD, one stays at +1.44% | PARTLY EXPLAINED |
 | [9](docs/RECONCILIATION_FINDINGS.md#9-days-on-which-the-source-reports-more-than-the-chain--partly-explained) | Days on which the source reports more than the chain (-2.04%, -1.27%): +0.02% and -0.02% under the valuation reading, 85% of each in one hour. The source publishes no methodology | PARTLY EXPLAINED |
 | [10](docs/RECONCILIATION_FINDINGS.md#10-in-thin-pools-a-percentage-alone-does-not-discriminate--explained) | In thin pools a percentage does not discriminate: one 617 USD swap is 44% of a day. Flagging needs 1% and 1,000 USD | EXPLAINED |
 
-Still open: four pool-days, each located to one to three hours, listed at the end of the
-draft.
+Still open: eight pool-days (four found in sample, four in the hold-out), most of them
+located to one to three hours, listed at the end of the draft.
 
 ## Limitations
 
@@ -262,13 +264,14 @@ draft.
 | [dbt/](dbt/dbt_project.yml) | Seed, `stg_swaps`, `dim_pools`, `fct_pool_daily`, `fct_pool_daily_smart_money`, tests |
 | [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md) | The ten findings of the reconciliation, each with its state (draft) |
 | [docs/evidence/2026-09-20/](docs/evidence/2026-09-20/reconciliation_evidence.md) | Snapshot of one run: report, evidence (12 sections of numbers) and the per-day CSV |
+| [docs/H2_PREREGISTRATION.md](docs/H2_PREREGISTRATION.md) | What was going to be tested out of sample, committed before the data was fetched |
+| [docs/evidence/2026-09-21/](docs/evidence/2026-09-21/README.md) | Snapshot of the run with ten more days: the out-of-sample test and placebo, and the reconciliation over 43 days |
 | [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md) | The provider's limits and the size of the data, measured |
 | [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md) | Candidate schemas on the real data (Spanish) |
 | [docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md) | A materialized view is an insert trigger: procedure and observations |
 | [docs/EXTERNAL_SOURCE.md](docs/EXTERNAL_SOURCE.md) | The external source: documented, observed, unknown |
 | [docs/NANSEN.md](docs/NANSEN.md) | What Nansen adds to a Swap log (the signer and its classification), what runs on the free tier with the credits spent, and the production design that was not run |
 | [docs/QUERY_PERFORMANCE.md](docs/QUERY_PERFORMANCE.md) | Projection, bloom filter, one insert against a thousand |
-| [docs/SQL_PRACTICE.md](docs/SQL_PRACTICE.md) | 17 ClickHouse SQL exercises on this data (Spanish), solutions apart |
 
 ## License
 
