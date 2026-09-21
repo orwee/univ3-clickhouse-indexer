@@ -293,8 +293,6 @@ set has to be final before the backfill starts.
 
 ## 10. Engine: MergeTree, with deduplication left to the load
 
-> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
-
 - Date: 2026-09-19. Reasoning replaced on 2026-09-21, after measuring `FINAL` with the
   sorting key that was actually chosen; the decision itself did not change
 - Status: Accepted
@@ -369,8 +367,6 @@ blocks that can still be reorganised), or the landing zone goes away.
 
 ## 11. ORDER BY (pool_address, block_timestamp, block_number, log_index), PRIMARY KEY on the first two
 
-> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
-
 - Date: 2026-09-19
 - Status: Accepted
 
@@ -413,8 +409,6 @@ query stops filtering by pool.
 
 ## 12. PARTITION BY month, for management and not for speed
 
-> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
-
 - Date: 2026-09-19
 - Status: Accepted
 
@@ -440,8 +434,6 @@ instead of 113).
 **Revisit when.** Retention or reloads need a finer unit than a month.
 
 ## 13. Types: lossless integers, and hashes and addresses in binary
-
-> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-19
 - Status: Accepted
@@ -485,8 +477,6 @@ queries: then a readable alias column, not a change of storage type.
 
 ## 14. Nothing from pools.yml is denormalised into the raw table
 
-> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
-
 - Date: 2026-09-19
 - Status: Accepted
 
@@ -513,8 +503,6 @@ dictionary, or denormalising at load time.
 ---
 
 ## 15. The external comparison only looks at days that are whole on both sides
-
-> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-20
 - Status: Accepted
@@ -549,8 +537,6 @@ should come from the checkpoint, not from "first and last day of the window".
 ---
 
 ## 16. A pool-day is flagged beyond 1% AND beyond 1,000 USD
-
-> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-20
 - Status: Accepted
@@ -590,8 +576,6 @@ threshold should scale with the pool (for example a fraction of its median day).
 ---
 
 ## 17. The external check is GeckoTerminal, not the subgraph
-
-> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - Date: 2026-09-20
 - Status: Accepted. Supersedes the external-check half of #2

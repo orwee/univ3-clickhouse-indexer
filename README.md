@@ -19,8 +19,14 @@ ClickHouse, modelled with dbt, and reconciled against an independent source. 1,1
 - **Main limitation:** the external source publishes no methodology, so a difference can be
   located but not settled. Closing that needs a second source with per-swap rows.
 
-**Run it in one minute: `make demo`** — Docker only, no API key, no network data. Then
-[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) is a ten-minute guided read.
+**[Dashboard](https://orwee.github.io/univ3-clickhouse-indexer/)** — the whole result on one page, three minutes ·
+**Run it: `make demo`** — Docker only, no API key, no network data ·
+**[10-minute walkthrough](docs/WALKTHROUGH.md)** — what to open and in what order
+
+> Built over one weekend (18–21 September 2026) as a hands-on way to learn
+> ClickHouse on real on-chain data. It is tested and reconciled, but it has
+> never run in production and it may contain mistakes. Issues and
+> corrections are welcome.
 
 A third source, the Nansen API, adds what a Swap log cannot carry: who signed the
 transaction. **Smart-money data: Powered by Nansen API** — the repository publishes only
@@ -29,15 +35,13 @@ transaction hash from their responses, following their
 [redistribution guidelines](https://docs.nansen.ai/mcp/redistribution-guidelines.md). See
 [docs/NANSEN.md](docs/NANSEN.md).
 
-It is a learning project, built to work with ClickHouse hands-on — MergeTree parts and merges,
-sparse primary indexes, materialized views, the system tables — rather than read about it. Every
-design choice is in [DECISIONS.md](DECISIONS.md) with the number that was measured for it, and
-what went wrong is kept where it happened instead of being cleaned up: the double count in
-[docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md), the measurements spoiled by a cache in
-[docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md), and a dated list of every correction
-in [Agent corrections](DECISIONS.md#agent-corrections). Figures above are of 2026-09-21; some
-documents were measured on earlier states of the same table (863,587, 881,187 and 898,404 rows)
-and say which.
+Every design choice is in [DECISIONS.md](DECISIONS.md) with the number that was measured for
+it, and what went wrong is kept where it happened instead of being cleaned up: the double count
+in [docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md), the measurements spoiled by a cache
+in [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md), and a dated list of every
+correction in [Agent corrections](DECISIONS.md#agent-corrections). Figures above are of
+2026-09-21; some documents were measured on earlier states of the same table (863,587, 881,187
+and 898,404 rows) and say which.
 
 ## Architecture
 
@@ -203,19 +207,53 @@ times).
 
 ## How this was built
 
-The design decisions were proposed with AI assistance, tested by measurement and approved by
-me: what is in [DECISIONS.md](DECISIONS.md) is there because a number came out of this
-repository, not because it sounded right. The implementation was done by Claude Code agents in
-unattended sessions working from written specifications. Everything arrived as a pull request,
-and nothing reached `main` without me merging it ([AGENTS.md](AGENTS.md) ends with a table of
-which of its rules a barrier enforces and which depend on the agent following them). The
-prose, including this README, was drafted the same way and then checked against the repo by an
-independent review pass, which found a dozen objective errors; what it found is fixed, and
-[Agent corrections](DECISIONS.md#agent-corrections) keeps the record.
+A written brief with explicit non-goals, options measured before choosing, the decision
+written down, implementation by agents, verification, and a human merge. One branch and one
+pull request per block of work.
+
+```mermaid
+flowchart LR
+    brief["Brief<br/>goals and non-goals"]
+    measure["Options measured<br/>docs/SCHEMA_EXPERIMENTS.md"]
+    decide["Decision written<br/>DECISIONS.md"]
+    build["Claude Code agents<br/>unattended, 1 branch + 1 PR per block"]
+    verify["Verification<br/>tests, lint, make demo, adversarial review"]
+    merge["Owner merges the PR"]
+    record["Corrections recorded<br/>DECISIONS.md"]
+
+    brief --> measure --> decide --> build --> verify --> merge
+    verify -- "something is wrong" --> record --> build
+```
+
+**Rigour.** A decision is only written down once a number from this repository supports it, and
+when a measurement later contradicted one, the entry was corrected in place and the retraction
+kept (entry 10 is the clearest case). Tests are held to the same standard: `make dbt-prove`
+breaks the data on purpose in throw-away databases and fails unless each of the 24 dbt tests
+fails at least once, because about 30 of the previous 55 could not fail at all on ClickHouse.
+`make demo` runs the whole pipeline from a clean clone with no API key. An independent review
+pass, given only the repository and no history, found 14 objective errors and 10 claims the
+repo did not support; all of them are fixed and listed. The central hypothesis was
+[pre-registered](docs/H2_PREREGISTRATION.md) before the hold-out data was fetched, then
+evaluated out of sample and against a placebo — and the result, which weakened it on one
+criterion, is reported as it came out. What is not explained is labelled UNEXPLAINED.
+
+**Systems.** The agents run as a separate system user that cannot read the secrets directory
+and is not in the `docker` group. Their GitHub token is scoped to these repositories and is
+granted per session by the owner, who can withdraw it; they never hold it directly. A ruleset
+on `main` is the barrier that matters, because local hooks are a convention an agent could
+skip with one flag, not a barrier — [AGENTS.md](AGENTS.md) ends with a table saying, rule by
+rule, which is which, and it is honest about the ones that have no barrier at all.
+
+**Numbers of the process.** 37 pull requests merged, none by an agent. 361 Python tests and 24
+dbt tests, each of the latter demonstrated capable of failing. 30,102 provider calls for the
+whole backfill (10 blocks per call is the free tier's limit). 9 Nansen credits spent of 100,
+with a hard budget check before every call and no retries.
+
+> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto. Where an agent got something wrong it is in
+> [Agent corrections](DECISIONS.md#agent-corrections); where the owner did, in
+> [Owner mistakes](DECISIONS.md#owner-mistakes).
 
 ## Reconciliation findings
-
-> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 Current run, 2026-09-21: 1,110,676 swaps, 43 days, 163 pool-days compared, 17 flagged beyond
 1% and 1,000 USD ([snapshot](docs/evidence/2026-09-21/README.md)). Each finding below was made
@@ -233,7 +271,7 @@ behind it, is [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md)
 | [4](docs/RECONCILIATION_FINDINGS.md#4-which-leg-is-valued-does-not-matter-in-the-liquid-pools--explained) | Which leg is valued changes the liquid pools by -0.004% and +0.02%. It does not test whether USDC was worth 1 USD | EXPLAINED |
 | [5](docs/RECONCILIATION_FINDINGS.md#5-in-the-liquid-pools-the-30-day-totals-agree-and-the-daily-noise-is-centred--explained) | Liquid pools: 30-day totals at +0.10% and +0.24%; daily noise 15 up / 15 down in one, 19 / 11 in the other | EXPLAINED |
 | [6](docs/RECONCILIATION_FINDINGS.md#6-2026-08-27-two-pools-of-the-same-pair-off-in-opposite-directions--partly-explained) | 2026-08-27: the two USDC/WETH pools at -1.65% and +1.35%, the pair at +0.16%. Not a misattribution: the two differences sit in different hours, and one of them is unexplained | PARTLY EXPLAINED |
-| [7](docs/RECONCILIATION_FINDINGS.md#7-round-trips-inside-one-block-valued-differently--partly-explained) | The large differences coincide with same-block round trips consistent with a sandwich pattern. "The source filters them" is refuted (fixes 0 of 24 days, breaks 64 of 96). "The source values them at a going price" fixes 15 of 24 and breaks 6 of 96 in sample. Out of sample, with the protocol committed first: fixes 6 of 10 and a placebo fixes 0 of 24, but the correlation falls from +0.72 to +0.05 and the largest difference of the project is untouched by it | PARTLY EXPLAINED |
+| [7](docs/RECONCILIATION_FINDINGS.md#7-round-trips-inside-one-block-valued-differently--partly-explained) | Same-block round trips valued differently: holds out of sample (6 of 10 flagged days) and against a placebo (0 of 24); the largest gap is not explained by it | PARTLY EXPLAINED |
 | [8](docs/RECONCILIATION_FINDINGS.md#8-2026-08-29-three-pools-high-on-a-quiet-saturday--partly-explained) | 2026-08-29: three pools high on a quiet Saturday. Not one effect: one pool is covered by finding 7, one is 18 USD, one stays at +1.44% | PARTLY EXPLAINED |
 | [9](docs/RECONCILIATION_FINDINGS.md#9-days-on-which-the-source-reports-more-than-the-chain--partly-explained) | Days on which the source reports more than the chain (-2.04%, -1.27%): +0.02% and -0.02% under the valuation reading, 85% of each in one hour. The source publishes no methodology | PARTLY EXPLAINED |
 | [10](docs/RECONCILIATION_FINDINGS.md#10-in-thin-pools-a-percentage-alone-does-not-discriminate--explained) | In thin pools a percentage does not discriminate: one 617 USD swap is 44% of a day. Flagging needs 1% and 1,000 USD | EXPLAINED |
@@ -242,8 +280,6 @@ Still open: eight pool-days (four found in sample, four in the hold-out), most o
 located to one to three hours, listed at the end of the draft.
 
 ## Limitations
-
-> Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto.
 
 - **One protocol, one chain.** Uniswap v3 on Ethereum mainnet, four pools.
 - **No reorg handling, by staying out of their reach.** A backfill ends at the block the
@@ -334,6 +370,20 @@ the one decision that is expensive to change once the table is large.
 | [docs/EXTERNAL_SOURCE.md](docs/EXTERNAL_SOURCE.md) | The external source: documented, observed, unknown |
 | [docs/NANSEN.md](docs/NANSEN.md) | What Nansen adds to a Swap log (the signer and its classification), what runs on the free tier with the credits spent, and the production design that was not run |
 | [docs/QUERY_PERFORMANCE.md](docs/QUERY_PERFORMANCE.md) | Projection, bloom filter, one insert against a thousand |
+
+## About the author
+
+Roberto Fajardo Duro, data engineer based in Madrid, statistician by training. Data scientist
+at a Spanish bank, validating credit risk models. Co-founder of Orwee, a DeFi analytics
+platform covering liquidity pools, positions and opportunities across chains, where he built
+the data pipelines and is now a technical adviser. Previously a data analyst at a crypto fund
+investing in DeFi.
+
+Why this repository: preparing for a Senior Data Engineer role on an on-chain analytics team
+whose stack is ClickHouse, dbt, Python and Postgres. He had not run ClickHouse in production,
+and building something real against live chain data was the way to close that gap.
+
+[github.com/robertofd31](https://github.com/robertofd31)
 
 ## License
 
