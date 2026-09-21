@@ -1,10 +1,5 @@
 # univ3-clickhouse-indexer
 
-<!-- CI badge: uncomment once .github/workflows/ci.yml exists (the file is ready, it just
-     needs a token with the `workflow` scope to be committed).
-[![ci](https://github.com/orwee/univ3-clickhouse-indexer/actions/workflows/ci.yml/badge.svg)](https://github.com/orwee/univ3-clickhouse-indexer/actions/workflows/ci.yml)
--->
-
 Uniswap v3 `Swap` events from an Ethereum JSON-RPC node, landed as raw JSONL, loaded into
 ClickHouse, modelled with dbt, and reconciled against an independent source. 1,110,676 swaps,
 4 pools, 43 days (2026-08-09 to 2026-09-20).
