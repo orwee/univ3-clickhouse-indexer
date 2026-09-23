@@ -969,8 +969,11 @@ color:var(--ink-2);font-size:12.5px;font-weight:500;margin:0 0 14px}
 .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.5rem 1rem;
 border-radius:var(--r-btn);font-weight:600;font-size:13.5px;text-decoration:none;
 border:1px solid transparent}
-.btn-p{background:var(--accent);color:var(--on-accent)}
-.btn-p:hover{background:var(--accent-hover)}
+/* The one place this page does not copy the site: its .btn-primary is white on --primary-color,
+   which is 3.68:1, and a 13.5px label needs 4.5:1. The site's own --primary-hover is 5.17:1
+   dark and 6.7:1 light, so the button wears that and hovers to --primary-color. */
+.btn-p{background:var(--accent-hover);color:var(--on-accent)}
+.btn-p:hover{background:var(--accent)}
 .btn-s{background:var(--surface-2);color:var(--ink);border-color:var(--rule)}
 .btn-s:hover{border-color:var(--rule-strong)}
 .shows{font-size:13.5px;color:var(--ink-2);margin:12px 0 4px}
