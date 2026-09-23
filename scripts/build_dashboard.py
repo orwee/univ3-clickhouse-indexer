@@ -169,8 +169,8 @@ def read_documents() -> dict:
     """Every figure this page takes from a file in the repo, parsed once."""
     readme = (REPO / "README.md").read_text(encoding="utf-8")
     findings_md = (DOCS / "RECONCILIATION_FINDINGS.md").read_text(encoding="utf-8")
-    recon_md = config.report_or_snapshot("reconciliation.md").read_text(encoding="utf-8")
-    h2_md = config.report_or_snapshot("h2_out_of_sample.md").read_text(encoding="utf-8")
+    recon_md = config.newest_snapshot("reconciliation.md").read_text(encoding="utf-8")
+    h2_md = config.newest_snapshot("h2_out_of_sample.md").read_text(encoding="utf-8")
     schema_md = (DOCS / "SCHEMA_EXPERIMENTS.md").read_text(encoding="utf-8")
     perf_md = (DOCS / "QUERY_PERFORMANCE.md").read_text(encoding="utf-8")
 
@@ -382,7 +382,7 @@ def parse_inserts(md: str) -> dict:
 
 def parse_evidence_hours() -> dict:
     """Section 11 of the evidence report: the largest three hourly diffs per flagged pool-day."""
-    md = config.report_or_snapshot("reconciliation_evidence.md").read_text(encoding="utf-8")
+    md = config.newest_snapshot("reconciliation_evidence.md").read_text(encoding="utf-8")
     block = _need(
         r"^## 11\. The flagged pool-days, hour by hour(.*?)^## 12\.",
         md,
@@ -403,7 +403,7 @@ def parse_evidence_hours() -> dict:
 
 
 def read_reconciliation_csv() -> list[dict]:
-    with config.report_or_snapshot("reconciliation.csv").open(encoding="utf-8", newline="") as fh:
+    with config.newest_snapshot("reconciliation.csv").open(encoding="utf-8", newline="") as fh:
         rows = list(csv.DictReader(fh))
     for r in rows:
         r["day"] = datetime.date.fromisoformat(r["date"])  # the charts index by date, not text

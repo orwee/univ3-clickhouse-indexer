@@ -16,7 +16,7 @@ from univ3_indexer.config import REPO_ROOT
 PAGE = REPO_ROOT / "docs" / "index.html"
 NOJEKYLL = REPO_ROOT / "docs" / ".nojekyll"
 FINDINGS = REPO_ROOT / "docs" / "RECONCILIATION_FINDINGS.md"
-RECONCILIATION = config.report_or_snapshot("reconciliation.md")
+RECONCILIATION = config.newest_snapshot("reconciliation.md")
 
 # Void elements never close; everything else must be matched by the parser below.
 VOID = {
