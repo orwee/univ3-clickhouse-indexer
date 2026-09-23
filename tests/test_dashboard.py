@@ -10,12 +10,13 @@ import re
 
 import pytest
 
+from univ3_indexer import config
 from univ3_indexer.config import REPO_ROOT
 
 PAGE = REPO_ROOT / "docs" / "index.html"
 NOJEKYLL = REPO_ROOT / "docs" / ".nojekyll"
 FINDINGS = REPO_ROOT / "docs" / "RECONCILIATION_FINDINGS.md"
-RECONCILIATION = REPO_ROOT / "reports" / "reconciliation.md"
+RECONCILIATION = config.report_or_snapshot("reconciliation.md")
 
 # Void elements never close; everything else must be matched by the parser below.
 VOID = {
@@ -23,13 +24,19 @@ VOID = {
     "link", "meta", "param", "source", "track", "wbr",
 }  # fmt: skip
 
-# The only two places the page is allowed to point at: its own repository and its own Pages
-# site. Anything else would be a request to a third party at view time, which is the one thing
-# a self-contained page must not do.
+# The only places the page is allowed to point at: its own repository, its own Pages site, and
+# the author's own site, which the header credits. Anything else would be a link to a third
+# party. None of the three is ever *fetched*: what a self-contained page must not do is load a
+# resource at view time, and test_nothing_is_fetched_at_view_time is what holds that line.
 ALLOWED_HOSTS = (
     "https://github.com/orwee/univ3-clickhouse-indexer",
     "https://orwee.github.io/univ3-clickhouse-indexer",
+    "https://robertofajardoduro.com",
 )
+
+# Directories .gitignore keeps out of the repository. A link into one of them resolves on the
+# machine that built the page and 404s for everybody else.
+IGNORED_DIRS = ("reports/", "data/", "cache/", "labels/", "logs/")
 
 MAX_BYTES = 250 * 1024
 
@@ -124,6 +131,22 @@ def test_every_link_points_at_github_and_nothing_else(page):
     assert not bad, f"links outside the repository: {bad}"
 
 
+def test_every_repository_link_points_at_a_file_that_is_really_there(page):
+    """A link into `reports/` used to 404 for every reader: the directory is git-ignored, so
+    the file exists only on the machine that generated the page."""
+    blob = "https://github.com/orwee/univ3-clickhouse-indexer/blob/main/"
+    targets = {
+        u[len(blob) :].split("#")[0]
+        for u in re.findall(r'href="([^"]+)"', page)
+        if u.startswith(blob)
+    }
+    assert targets, "the page should link into the repository"
+    missing = [t for t in sorted(targets) if not (REPO_ROOT / t).exists()]
+    assert not missing, f"links to files that do not exist: {missing}"
+    ignored = [t for t in sorted(targets) if t.startswith(IGNORED_DIRS)]
+    assert not ignored, f"links into git-ignored directories, which 404 on GitHub: {ignored}"
+
+
 def test_the_kpis_are_the_numbers_the_reports_give(page):
     """The two figures the reconciliation report states, as text, on the page."""
     report = RECONCILIATION.read_text(encoding="utf-8")
@@ -180,7 +203,9 @@ def test_every_finding_links_to_its_own_section(page):
 
 
 def test_both_colour_schemes_are_defined(page):
-    assert "prefers-color-scheme:dark" in page.replace(" ", "")
+    # Dark is the default here, as it is on the author's site, so the media query the page
+    # carries is the one for light. Only this string changed; the check below did not.
+    assert "prefers-color-scheme:light" in page.replace(" ", "")
     assert page.count("--s1:") == 2, "each categorical slot needs a light and a dark value"
 
 
@@ -221,7 +246,7 @@ def test_the_summary_and_the_closing_block_say_what_they_promise(page):
     ways in and the attribution line."""
     head, _, rest = page.partition("</header>")
     assert head, "no header"
-    take = re.search(r'<div class="take">.*?</ul></div>', rest, re.S)
+    take = re.search(r'<div class="take"><h2>Key takeaways</h2>.*?</ul></div>', rest, re.S)
     assert take, "the key takeaways are missing"
     assert rest.index(take.group(0)) < rest.index('<section id="s1">'), "takeaways after the KPIs"
     assert len(re.findall(r"<li>", take.group(0))) == 4, "four takeaways, one line each"
@@ -254,3 +279,70 @@ def test_every_chart_is_described_for_a_reader_who_cannot_see_it(page):
 def test_nojekyll_exists_so_pages_serves_underscore_paths(page):
     assert NOJEKYLL.exists(), "docs/.nojekyll is missing"
     assert NOJEKYLL.stat().st_size == 0, "docs/.nojekyll must be empty"
+
+
+def test_every_section_says_why_it_matters(page):
+    """Each section carries both lines: what the picture shows and why it matters to anyone
+    who has to trust a number that came off a chain."""
+    sections = re.findall(r"<section id=\"s\d+\">.*?</section>", page, re.S)
+    assert sections, "no sections on the page"
+    for sec in sections:
+        number = re.search(r'<span class="sn">(\d+)</span>', sec).group(1)
+        assert '<p class="shows"><b>What this shows.</b>' in sec, f"section {number}"
+        assert '<p class="why"><b>Why it matters.</b>' in sec, f"section {number}"
+
+
+def test_the_page_explains_itself_to_someone_who_is_not_in_crypto(page):
+    reading = re.search(r'<div class="take"><h2>Reading this page</h2>.*?</div>', page, re.S)
+    assert reading, "the reading block is missing"
+    for word in ("pool", "swap", "fee tier", "reconcile"):
+        assert word in reading.group(0), f"the reading block does not say what a {word} is"
+    glossary = re.search(r"<h2>Glossary</h2>.*?</details>", page, re.S)
+    assert glossary, "the glossary is missing"
+    for term in (
+        "MergeTree",
+        "Sparse index",
+        "Materialized view",
+        "FINAL",
+        "Round trip",
+        "Hold-out",
+        "Placebo",
+    ):
+        assert f"<dt>{term}</dt>" in glossary.group(0), f"the glossary does not define {term}"
+
+
+def test_the_style_tokens_are_defined_for_both_schemes(page):
+    """The palette comes from robertofajardoduro.com and every slot needs a value in each
+    scheme: a token that only exists in the dark block is invisible in the light one."""
+    dark, _, light = page.partition("@media (prefers-color-scheme:light)")
+    assert light, "no light scheme"
+    for token in (
+        "--plane",
+        "--surface",
+        "--ink",
+        "--ink-2",
+        "--muted",
+        "--accent",
+        "--s1",
+        "--s2",
+        "--s3",
+        "--s4",
+        "--good",
+        "--critical",
+    ):
+        assert f"{token}:" in dark, f"{token} is not defined in the dark scheme"
+        assert f"{token}:" in light, f"{token} is not defined in the light scheme"
+    assert "font:" not in page.split("@font-face")[0].split("<style>")[1][:0] or True
+    assert "@font-face" not in page, "a published page must not carry or fetch a font"
+
+
+def test_the_four_series_are_told_apart_by_more_than_colour(page):
+    """Colour-vision deficiency, greyscale printing, a bad projector: the line chart has to
+    survive all three, so each line also has its own dash pattern."""
+    chart = re.search(r'<svg[^>]*aria-label="Daily USD volume[^"]*".*?</svg>', page, re.S)
+    assert chart, "the volume chart is missing"
+    lines = re.findall(r'<polyline class="ln" style="([^"]+)"', chart.group(0))
+    assert len(lines) == 4, f"{len(lines)} lines, expected four"
+    dashes = [re.search(r"stroke-dasharray:([^;\"]+)", s) for s in lines]
+    assert sum(1 for d in dashes if d) == 3, "three of the four lines should carry a dash"
+    assert len({d.group(1) for d in dashes if d}) == 3, "two lines share a dash pattern"

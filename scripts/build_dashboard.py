@@ -31,8 +31,16 @@ from univ3_indexer.pools import load_pools
 
 REPO = config.REPO_ROOT
 DOCS = REPO / "docs"
-REPORTS = REPO / "reports"
 GH = "https://github.com/orwee/univ3-clickhouse-indexer/blob/main/"
+AUTHOR_SITE = "https://robertofajardoduro.com"
+
+
+def report_source(name: str) -> tuple[str, str]:
+    """(path, link) for a report the page quotes. Always the committed snapshot: `reports/` is
+    git-ignored, so a link into it is a 404 for every reader of the published page."""
+    rel = config.newest_snapshot(name).relative_to(config.REPO_ROOT)
+    return str(rel), f"{GH}{rel}"
+
 
 RAW_DB = "onchain"
 DBT_DB = "onchain_dbt"
@@ -46,6 +54,15 @@ POOL_SLOT = {
     "wstETH/USDC 0.3%": "s4",
 }
 POOL_ORDER = list(POOL_SLOT)
+
+# A second encoding on top of the colour: the four lines differ by dash pattern too, so the
+# chart still reads under colour-vision deficiency, in greyscale and on a printout.
+POOL_DASH = {
+    "USDC/WETH 0.01%": "",
+    "USDC/WETH 0.05%": "9 5",
+    "wstETH/USDC 0.05%": "2 4",
+    "wstETH/USDC 0.3%": "14 4 2 4",
+}
 
 SVG_W = 680  # every chart is drawn in this many user units wide and scaled with width:100%
 FS = 18  # tick/label size in user units: ~9 px on a 360 px phone, ~18 px on a wide screen
@@ -152,8 +169,8 @@ def read_documents() -> dict:
     """Every figure this page takes from a file in the repo, parsed once."""
     readme = (REPO / "README.md").read_text(encoding="utf-8")
     findings_md = (DOCS / "RECONCILIATION_FINDINGS.md").read_text(encoding="utf-8")
-    recon_md = (REPORTS / "reconciliation.md").read_text(encoding="utf-8")
-    h2_md = (REPORTS / "h2_out_of_sample.md").read_text(encoding="utf-8")
+    recon_md = config.report_or_snapshot("reconciliation.md").read_text(encoding="utf-8")
+    h2_md = config.report_or_snapshot("h2_out_of_sample.md").read_text(encoding="utf-8")
     schema_md = (DOCS / "SCHEMA_EXPERIMENTS.md").read_text(encoding="utf-8")
     perf_md = (DOCS / "QUERY_PERFORMANCE.md").read_text(encoding="utf-8")
 
@@ -365,7 +382,7 @@ def parse_inserts(md: str) -> dict:
 
 def parse_evidence_hours() -> dict:
     """Section 11 of the evidence report: the largest three hourly diffs per flagged pool-day."""
-    md = (REPORTS / "reconciliation_evidence.md").read_text(encoding="utf-8")
+    md = config.report_or_snapshot("reconciliation_evidence.md").read_text(encoding="utf-8")
     block = _need(
         r"^## 11\. The flagged pool-days, hour by hour(.*?)^## 12\.",
         md,
@@ -386,7 +403,7 @@ def parse_evidence_hours() -> dict:
 
 
 def read_reconciliation_csv() -> list[dict]:
-    with (REPORTS / "reconciliation.csv").open(encoding="utf-8", newline="") as fh:
+    with config.report_or_snapshot("reconciliation.csv").open(encoding="utf-8", newline="") as fh:
         rows = list(csv.DictReader(fh))
     for r in rows:
         r["day"] = datetime.date.fromisoformat(r["date"])  # the charts index by date, not text
@@ -604,7 +621,9 @@ def line_chart_log(dates: list, series: dict, *, title: str, desc: str) -> str:
         points = [(sx(i), sy(v)) for i, v in enumerate(values) if v]
         path = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
         slot = POOL_SLOT[label]
-        out.append(f'<polyline class="ln" style="stroke:var(--{slot})" points="{path}"/>')
+        dash = POOL_DASH[label]
+        style = f"stroke:var(--{slot})" + (f";stroke-dasharray:{dash}" if dash else "")
+        out.append(f'<polyline class="ln" style="{style}" points="{path}"/>')
         ends.append((points[-1][1], label))
     # Each end label is two lines. A rendered line box is about 1.5 times the font size, so the
     # two lines need FS*1.65 between them and two labels need FS*3.2 between anchors; measured
@@ -798,14 +817,29 @@ def reconciliation_panels(dates: list, csv_rows: list[dict], *, clamp: float) ->
 # --------------------------------------------------------------------------- page assembly
 
 
-def section(num: int, title: str, body: str, shows: str, src_text: str, src_href: str) -> str:
+def section(
+    num: int, title: str, body: str, shows: str, why: str, src_text: str, src_href: str
+) -> str:
+    """Every section closes the same way: what the picture shows, why it matters for anyone who
+    has to trust on-chain numbers, and the file the figures came from."""
     return (
         f'<section id="s{num}"><h2><span class="sn">{num}</span> {esc(title)}</h2>'
         f"{body}"
         f'<p class="shows"><b>What this shows.</b> {shows}</p>'
+        f'<p class="why"><b>Why it matters.</b> {why}</p>'
         f'<p class="src">Source: <a href="{esc(src_href)}">{esc(src_text)}</a></p>'
         "</section>"
     )
+
+
+def line_legend() -> str:
+    """The legend of the line chart: a line in its own colour and dash, not a colour square,
+    because the dash is half of what tells the four pools apart."""
+    dots = "".join(
+        f'<span class="lg"><i class="sw l{i + 1}"></i>{esc(name)}</span>'
+        for i, name in enumerate(POOL_ORDER)
+    )
+    return f'<p class="legend">{dots}</p>'
 
 
 def legend(items: list[tuple[str, str]]) -> str:
@@ -851,48 +885,98 @@ def share_bar(parts: list[tuple[str, float, str]]) -> str:
 
 
 CSS = """
+/* Every colour, radius and type token below is taken from robertofajardoduro.com/styles.css
+   (fetched read-only on 2026-09-23) so this page and that site read as one system. Dark is the
+   default there and here; the light values are that file's [data-theme="light"] block, served
+   through prefers-color-scheme because this page carries no script to toggle a theme.
+   The two web fonts that site loads from Google (Outfit, Inter) are NOT embedded: a published
+   page that makes no external request cannot fetch a font, so the nearest system stack is
+   used instead. */
 *,*::before,*::after{box-sizing:border-box}
 :root{
-color-scheme:light;
---plane:#f9f9f7;--surface:#fcfcfb;--surface-2:#f2f1ec;
---ink:#0b0b0b;--ink-2:#52514e;--muted:#898781;
---grid:#e1e0d9;--axis:#c3c2b7;--rule:rgba(11,11,11,.10);
---s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;
---good:#0ca30c;--critical:#d03b3b;--warning:#fab219;
---good-tx:#006300;--crit-tx:#c02626;--warn-tx:#8a5b00;
-}
-@media (prefers-color-scheme:dark){:root{
 color-scheme:dark;
---plane:#0d0d0d;--surface:#1a1a19;--surface-2:#232321;
---ink:#ffffff;--ink-2:#c3c2b7;--muted:#95938c;
---grid:#2c2c2a;--axis:#383835;--rule:rgba(255,255,255,.10);
---s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;
---good:#0ca30c;--critical:#d03b3b;--warning:#fab219;
---good-tx:#0ca30c;--crit-tx:#e06a6a;--warn-tx:#e8a317;
+--plane:#050505;                      /* site --bg-color */
+--surface:rgba(255,255,255,.03);      /* site --surface-color */
+--surface-2:rgba(255,255,255,.05);    /* site --surface-hover */
+--surface-solid:#0d0d0d;              /* the card colour flattened: SVG strokes need a solid */
+--rule:rgba(255,255,255,.08);         /* site --surface-border */
+--rule-strong:rgba(255,255,255,.2);   /* site .glass:hover border */
+--ink:#f5f5f5;                        /* site --text-primary */
+--ink-2:#a1a1aa;                      /* site --text-secondary */
+--muted:#8b8b93;                      /* --text-secondary, dimmed; 5.8:1 on the card */
+--accent:#3b82f6;                     /* site --primary-color */
+--accent-hover:#2563eb;               /* site --primary-hover */
+--accent-2:#8b5cf6;                   /* second stop of site .gradient-text */
+--accent-3:#ec4899;                   /* third stop of site .gradient-text */
+--on-accent:#ffffff;                  /* site .btn-primary colour */
+--grid:rgba(255,255,255,.07);
+--axis:rgba(255,255,255,.18);
+--s1:#3b82f6;--s2:#d54b97;--s3:#b07d00;--s4:#009e7b;
+--good:#10b981;                       /* site .status-dot */
+--critical:#f2555a;--warning:#d99100;
+--good-tx:#10b981;--crit-tx:#f2555a;--warn-tx:#d99100;
+--r-card:16px;                        /* site .glass */
+--r-btn:8px;                          /* site .btn */
+--r-pill:9999px;                      /* site .status-badge */
+--font-sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+--font-display:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:light){:root{
+color-scheme:light;
+--plane:#fafafa;--surface:rgba(0,0,0,.02);--surface-2:rgba(0,0,0,.04);--surface-solid:#f5f5f5;
+--rule:rgba(0,0,0,.08);--rule-strong:rgba(0,0,0,.15);
+--ink:#171717;--ink-2:#52525b;--muted:#64646d;
+--accent:#2563eb;--accent-hover:#1d4ed8;--accent-2:#7c3aed;--accent-3:#db2777;
+--grid:rgba(0,0,0,.07);--axis:rgba(0,0,0,.2);
+--s1:#0866ea;--s2:#c31982;--s3:#936700;--s4:#008466;
+--good:#047857;--critical:#be123c;--warning:#92400e;
+--good-tx:#047857;--crit-tx:#be123c;--warn-tx:#92400e;
 }}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--plane);color:var(--ink);
-font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-overflow-wrap:break-word}
+font:15px/1.6 var(--font-sans);overflow-wrap:break-word}
 .wrap{max-width:760px;margin:0 auto;padding:28px 16px 72px}
-h1{font-size:22px;line-height:1.25;margin:0 0 6px;letter-spacing:-.01em}
+h1,h2,h3{font-family:var(--font-display);line-height:1.2}
+h1{font-size:clamp(1.9rem,5vw,2.6rem);margin:0 0 12px;letter-spacing:-.02em;font-weight:800}
 h2{font-size:17px;margin:0 0 10px;letter-spacing:-.005em;display:flex;gap:9px;align-items:baseline}
 h3{font-size:14px;margin:18px 0 6px;color:var(--ink-2);font-weight:600}
+.grad{background:linear-gradient(to right,var(--accent),var(--accent-2),var(--accent-3));
+-webkit-background-clip:text;background-clip:text;color:transparent;display:inline-block}
 .sn{font:600 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:3px 5px;flex:none}
 p{margin:0 0 10px}
 a{color:inherit;text-underline-offset:2px;text-decoration-color:var(--muted)}
 a:hover{text-decoration-color:currentColor}
-.sub{color:var(--ink-2);margin:0 0 14px}
+.sub{color:var(--ink-2);font-size:clamp(1rem,2vw,1.15rem);margin:0 0 18px;max-width:650px}
+.sub b{color:var(--ink);font-weight:600}
 .meta{color:var(--muted);font-size:13px;margin:0}
-blockquote{margin:14px 0;padding:10px 14px;border-left:3px solid var(--axis);
-background:var(--surface-2);color:var(--ink-2);font-size:14px;border-radius:0 4px 4px 0}
-section{background:var(--surface);border:1px solid var(--rule);border-radius:8px;
-padding:16px 16px 12px;margin:0 0 16px}
-header.top{background:var(--surface);border:1px solid var(--rule);border-radius:8px;
-padding:18px 16px 14px;margin:0 0 16px}
+blockquote{margin:14px 0;padding:10px 14px;border-left:3px solid var(--accent);
+background:var(--surface);color:var(--ink-2);font-size:14px;
+border-radius:0 var(--r-btn) var(--r-btn) 0}
+section,header.top,.take,.start{background:var(--surface);border:1px solid var(--rule);
+border-radius:var(--r-card);margin:0 0 16px}
+section{padding:16px 16px 12px}
+header.top{padding:22px 18px 18px}
+.take,.start{padding:16px 18px 12px}
+.badge{display:inline-flex;align-items:center;gap:.5rem;padding:.35rem .9rem;
+border-radius:var(--r-pill);background:var(--surface-2);border:1px solid var(--rule);
+color:var(--ink-2);font-size:12.5px;font-weight:500;margin:0 0 14px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--good);flex:none}
+.hero-figs{display:flex;flex-wrap:wrap;gap:10px 28px;margin:18px 0 18px}
+.hero-fig .v{font:700 clamp(1.4rem,3.6vw,1.9rem)/1.1 var(--font-display);letter-spacing:-.02em}
+.hero-fig .k{font-size:12px;color:var(--ink-2);margin-top:2px}
+.btns{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px}
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.5rem 1rem;
+border-radius:var(--r-btn);font-weight:600;font-size:13.5px;text-decoration:none;
+border:1px solid transparent}
+.btn-p{background:var(--accent);color:var(--on-accent)}
+.btn-p:hover{background:var(--accent-hover)}
+.btn-s{background:var(--surface-2);color:var(--ink);border-color:var(--rule)}
+.btn-s:hover{border-color:var(--rule-strong)}
 .shows{font-size:13.5px;color:var(--ink-2);margin:12px 0 4px}
-.src{font-size:12.5px;color:var(--muted);margin:0 0 4px}
+.why{font-size:13.5px;color:var(--ink-2);margin:0 0 4px;padding-left:11px;
+border-left:2px solid var(--accent)}
+.src{font-size:12.5px;color:var(--muted);margin:6px 0 4px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0 2px;
 font-size:12.5px;color:var(--ink-2)}
 .lg{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
@@ -903,6 +987,12 @@ width:12px;height:12px}
 width:9px;height:9px;border-radius:1px;margin:0 2px}
 .sw.dash{background:none;border-top:2px dashed var(--muted);width:16px;height:0;
 border-radius:0}
+.sw.l1,.sw.l2,.sw.l3,.sw.l4{width:18px;height:0;border-radius:0;border-top-width:2.5px;
+border-top-style:solid}
+.sw.l1{border-top-color:var(--s1)}
+.sw.l2{border-top-color:var(--s2);border-top-style:dashed}
+.sw.l3{border-top-color:var(--s3);border-top-style:dotted}
+.sw.l4{border-top-color:var(--s4);border-top-style:double;border-top-width:4px}
 svg{width:100%;height:auto;display:block;margin:4px 0 2px}
 .gr{stroke:var(--grid);stroke-width:1}
 .ax{stroke:var(--axis);stroke-width:1}
@@ -911,24 +1001,25 @@ svg{width:100%;height:auto;display:block;margin:4px 0 2px}
 .tk{fill:var(--muted);font-size:18px;font-variant-numeric:tabular-nums}
 .lb{fill:var(--ink-2);font-size:18px}
 .vl{fill:var(--ink-2);font-size:17px;font-variant-numeric:tabular-nums}
-text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-.pt,.off{stroke:var(--surface);stroke-width:1.2}
+text{font-family:var(--font-sans)}
+.pt,.off{stroke:var(--surface-solid);stroke-width:1.2}
 .flag{fill:none;stroke:var(--critical);stroke-width:2.4}
 .excl{fill:none;stroke:var(--muted);stroke-width:1.5}
-.bar{stroke:var(--surface);stroke-width:1}
-.dotring{stroke:var(--surface);stroke-width:1.5}
+.bar{stroke:var(--surface-solid);stroke-width:1}
+.dotring{stroke:var(--surface-solid);stroke-width:1.5}
 .kpis{display:grid;gap:10px;margin:2px 0 8px;
 grid-template-columns:repeat(auto-fit,minmax(152px,1fr))}
-.kpi{border:1px solid var(--rule);border-radius:6px;padding:10px 12px;background:var(--surface-2)}
-.kpi .v{font-size:22px;line-height:1.15;font-weight:600;letter-spacing:-.02em}
+.kpi{border:1px solid var(--rule);border-radius:var(--r-btn);padding:10px 12px;
+background:var(--surface-2)}
+.kpi .v{font:600 22px/1.15 var(--font-display);letter-spacing:-.02em}
 .kpi .k{font-size:12px;color:var(--ink-2);margin-top:3px}
 .kpi.ok .v{font-size:16px;color:var(--good-tx)}
 code{font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-background:var(--surface-2);border-radius:3px;padding:1px 4px}
+background:var(--surface-2);border-radius:4px;padding:1px 4px}
 /* No table scrolls sideways and none is cut: table-layout:fixed with an explicit colgroup
    keeps every column inside the card at any width, and a cell that still does not fit wraps
    instead of overflowing. Anything that would not fit was moved into a <details>. */
-.tw{overflow:hidden;margin:8px 0 4px;border:1px solid var(--rule);border-radius:6px}
+.tw{overflow:hidden;margin:8px 0 4px;border:1px solid var(--rule);border-radius:var(--r-btn)}
 table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:13px}
 th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--rule);
 overflow-wrap:anywhere}
@@ -945,28 +1036,27 @@ gap:2px;margin:3px 0 2px}
 .srow .lab{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-2);
 gap:12px}
 .st{display:inline-block;font-size:11.5px;font-weight:600;
-border-radius:3px;padding:1px 6px;border:1px solid var(--rule)}
+border-radius:4px;padding:1px 6px;border:1px solid var(--rule)}
 .st.e{color:var(--good-tx)}
 .st.p{color:var(--warn-tx)}
 .st.u{color:var(--crit-tx)}
 .note{font-size:12.5px;color:var(--muted);margin:6px 0 2px}
-.take{margin:0 0 16px;padding:14px 16px 10px;background:var(--surface);
-border:1px solid var(--rule);border-radius:8px}
-.take h2{font-size:15px;margin:0 0 8px;display:block}
-.take ul{margin:0;padding-left:18px}
-.take li{margin:0 0 6px;font-size:13.5px;color:var(--ink-2)}
+.take h2,.start h2{font-size:15px;margin:0 0 8px;display:block}
+.take ul,.start ol{margin:0;padding-left:18px}
+.take li,.start li{margin:0 0 6px;font-size:13.5px;color:var(--ink-2)}
 .take li b{color:var(--ink);font-weight:600}
-.start{margin:0 0 16px;padding:14px 16px 12px;background:var(--surface);
-border:1px solid var(--rule);border-radius:8px}
-.start h2{font-size:15px;margin:0 0 8px;display:block}
-.start ol{margin:0;padding-left:18px}
-.start li{margin:0 0 6px;font-size:13.5px;color:var(--ink-2)}
+.read{font-size:13.5px;color:var(--ink-2);margin:0}
+.read b{color:var(--ink);font-weight:600}
+.gloss dt{font-weight:600;color:var(--ink);font-size:12.5px;margin-top:8px}
+.gloss dd{margin:2px 0 0;color:var(--ink-2);font-size:12.5px}
 footer{color:var(--muted);font-size:12.5px;padding:4px 2px}
 @media (max-width:520px){
 .wrap{padding:20px 10px 56px}
 section,.take,.start{padding-left:11px;padding-right:11px}
+header.top{padding:16px 12px 14px}
 table{font-size:11.5px}
 th,td{padding:5px 6px}
+.hero-figs{gap:10px 18px}
 }
 """
 
@@ -977,18 +1067,55 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     parts: list[str] = []
     a = parts.append
 
-    # ---- header: not numbered, and neither is the summary that follows it
+    # ---- hero: the shape robertofajardoduro.com opens with — a status pill, the name, one
+    # sentence, the figures large, and the ways out as buttons. Not a numbered section.
+    figs = [
+        (fint(t["swaps"]), "swaps indexed"),
+        (f"{t['pools']}", "Uniswap v3 pools"),
+        (f"{t['days']}", "days of blocks"),
+        (fint(docs["compared"]), "pool-days compared"),
+    ]
+    tiles = "".join(
+        f'<div class="hero-fig"><div class="v">{esc(v)}</div><div class="k">{esc(k)}</div></div>'
+        for v, k in figs
+    )
+    buttons = [
+        ("btn-p", "https://github.com/orwee/univ3-clickhouse-indexer", "Repository"),
+        ("btn-s", f"{GH}docs/WALKTHROUGH.md", "Ten-minute walkthrough"),
+        ("btn-s", f"{GH}DECISIONS.md", "DECISIONS.md"),
+        ("btn-s", AUTHOR_SITE, "Roberto Fajardo Duro"),
+    ]
     a('<header class="top">')
-    a("<h1>univ3-clickhouse-indexer — what the pipeline measured</h1>")
+    a('<p class="badge"><span class="dot"></span>Independent weekend project</p>')
+    a('<h1>univ3-clickhouse-indexer<br><span class="grad">what the pipeline measured</span></h1>')
     a(f'<p class="sub">{esc(docs["one_liner"])}</p>')
+    a(f'<div class="hero-figs">{tiles}</div>')
+    a(
+        '<div class="btns">'
+        + "".join(
+            f'<a class="btn {c}" href="{esc(href)}">{esc(text)}</a>' for c, href, text in buttons
+        )
+        + "</div>"
+    )
     a(f"<blockquote>{esc(docs['caveat'])}</blockquote>")
     a(
-        f'<p class="meta">Generated {esc(stamp)} from ClickHouse and from the reports in the '
-        f'repository · <a href="https://github.com/orwee/univ3-clickhouse-indexer">'
-        f'repository</a> · <a href="{GH}docs/WALKTHROUGH.md">ten-minute walkthrough</a> '
-        f'· <a href="{GH}README.md">README</a></p>'
+        f'<p class="meta">Generated {esc(stamp)} from ClickHouse and from the reports in '
+        "the repository.</p>"
     )
     a("</header>")
+
+    # ---- reading this page: five lines for a reader who does not work with this data
+    a(
+        '<div class="take"><h2>Reading this page</h2><p class="read">'
+        "A <b>pool</b> is one trading pair held in one contract; a <b>swap</b> is one trade "
+        "against it, written to the chain as a log. A <b>fee tier</b> is what that pool charges "
+        "per trade — the same pair often has one pool at 0.01% and another at 0.05%, and they "
+        "behave differently. To <b>reconcile</b> here means two things: check that the pipeline "
+        "agrees with itself, and compare its daily totals with a source that indexed the same "
+        "chain independently. Every difference below is in US dollars of volume, per pool, "
+        "per day."
+        "</p></div>"
+    )
 
     # ---- key takeaways: four lines, every figure computed from the same data as the section
     # that backs it, never typed in. Not numbered: it summarises the sections, it is not one.
@@ -1049,8 +1176,9 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             body,
             "How much was indexed, how much of it could be compared with an independent "
             "source, and that the pipeline agrees with itself exactly.",
-            "reports/reconciliation.md",
-            f"{GH}reports/reconciliation.md",
+            "A pipeline that does not agree with itself cannot be checked against anything else, "
+            "so that is the first thing to establish and the cheapest to run on every load.",
+            *report_source("reconciliation.md"),
         )
     )
 
@@ -1086,7 +1214,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     )
     body = (
         chart
-        + legend([(p, POOL_SLOT[p]) for p in POOL_ORDER])
+        + line_legend()
         + '<p class="note">The vertical scale is <b>logarithmic</b>: each gridline is a '
         f"hundred times the one below it. On the median day the busiest pool moves about "
         f"{orders} orders of magnitude more than the quietest, which is why a linear scale "
@@ -1101,6 +1229,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             "Two USDC/WETH pools carry almost all the money while the two wstETH pools live far "
             f"below them: about {orders} orders of magnitude between the busiest pool and the "
             "quietest on the median day.",
+            "Four pools that differ by this much break any single threshold: a few hundred "
+            "dollars is noise in one pool and the whole day in another.",
             "onchain_dbt.fct_pool_daily — dbt/models/marts/fct_pool_daily.sql",
             f"{GH}dbt/models/marts/fct_pool_daily.sql",
         )
@@ -1156,6 +1286,9 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             body,
             "The 0.01% pool takes three swaps in four but a third of the money and a tenth of "
             "the fees: the cheap tier is where the small, frequent trade goes.",
+            "Two pools of the same pair are a free control. A mistake in decoding or in pricing "
+            "would not land on both in the same proportion, so agreement between them is "
+            "evidence.",
             "onchain_dbt.fct_pool_daily — columns swaps, volume_usd, fees_usd",
             f"{GH}dbt/models/marts/fct_pool_daily.sql",
         )
@@ -1221,8 +1354,9 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             body,
             "Most days sit inside ±1% in the two liquid pools and the differences that "
             "matter are a handful of located pool-days, not a drift.",
-            "reports/reconciliation.csv",
-            f"{GH}reports/reconciliation.csv",
+            "An aggregate that matches over a month can still be wrong every single day. Only a "
+            "per-day comparison says which days to look at.",
+            *report_source("reconciliation.csv"),
         )
     )
 
@@ -1289,6 +1423,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             "one, "
             "so the day's difference is one event and not a systematic gap.",
             "sql/reconciliation/17_evidence_hourly.sql — re-run against "
+            "A difference located to one hour can be investigated; the same difference spread "
+            "over a month cannot. Locating it is most of the work of trusting a number.",
             "onchain.raw_swaps and onchain.external_hourly_volume FINAL",
             f"{GH}sql/reconciliation/17_evidence_hourly.sql",
         )
@@ -1356,8 +1492,10 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             body,
             "One hypothesis was tested so that it could fail and did; the other fits, "
             "survives a hold-out and a placebo, and still does not explain everything.",
-            "reports/h2_out_of_sample.md and finding 7",
-            f"{GH}reports/h2_out_of_sample.md",
+            "An explanation fitted on the same data it explains is not evidence. A hold-out and a "
+            "placebo are what separate a real effect from a rule that was tuned until it fitted.",
+            f"{report_source('h2_out_of_sample.md')[0]} and finding 7",
+            report_source("h2_out_of_sample.md")[1],
         )
     )
 
@@ -1441,6 +1579,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             "Volume is extremely concentrated — one sender is a third of it and eight are "
             "seven tenths — while the wallets Nansen calls smart money are under a tenth "
             "of a percent of it.",
+            "Volume this concentrated means one participant can move a daily total on its own, so "
+            "any per-day check has to survive a single large trade without raising a false alarm.",
             "docs/NANSEN.md — onchain_dbt.stg_swaps and fct_pool_daily_smart_money",
             f"{GH}docs/NANSEN.md",
         )
@@ -1489,6 +1629,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             "Two decisions with a number behind each: the sorting key changes what a query "
             "reads by nineteen times, and a thousand small inserts take five hundred times "
             "as long as one.",
+            "How the data is stored decides whether a reconciliation takes seconds or minutes, "
+            "and that decides how often anyone actually runs it.",
             "docs/SCHEMA_EXPERIMENTS.md and docs/QUERY_PERFORMANCE.md",
             f"{GH}docs/SCHEMA_EXPERIMENTS.md",
         )
@@ -1527,9 +1669,66 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             "What was measured, what was located but not settled, and what is still open — "
             "the external source publishes no methodology, so nothing about what it does can "
             "be more than partly explained.",
+            "The list of what is not explained is the part of a data quality report that usually "
+            "goes missing, and it is the part that says how far the numbers can be trusted.",
             "docs/RECONCILIATION_FINDINGS.md",
             f"{GH}docs/RECONCILIATION_FINDINGS.md",
         )
+    )
+
+    # ---- glossary: the technical words used above, one line each, folded away
+    terms = [
+        (
+            "MergeTree",
+            "ClickHouse's table engine: data is written in parts and merged in the "
+            "background, sorted by the table's sorting key.",
+        ),
+        (
+            "Sorting key",
+            "the order rows are stored in. It decides how much of a table a query "
+            "has to read, which is what section 8 measures.",
+        ),
+        (
+            "Sparse index",
+            "ClickHouse indexes one row in every 8,192, not every row. Queries "
+            "skip whole blocks of rows rather than seeking to one.",
+        ),
+        (
+            "Materialized view",
+            "here, a trigger: every insert into the raw table also writes an "
+            "aggregate into a second table. Section 1 checks the two still agree.",
+        ),
+        (
+            "FINAL",
+            "a query modifier that collapses duplicate rows at read time. It costs a lot, "
+            "and DECISIONS.md records where that cost was measured.",
+        ),
+        (
+            "Round trip",
+            "a buy and a sell of the same pair in the same block, often by the same "
+            "sender. Section 6 tests whether these explain the large differences.",
+        ),
+        (
+            "Hold-out",
+            "days kept aside and not looked at while the explanation was written, then "
+            "used once to test it.",
+        ),
+        (
+            "Placebo",
+            "the same adjustment applied to swaps picked at random instead of the ones "
+            "the explanation points at. If it fixes as much, the explanation was fitting noise.",
+        ),
+        ("Pool-day", "one pool on one day: the unit everything on this page is counted in."),
+    ]
+    a(
+        '<div class="start"><h2>Glossary</h2>'
+        + details(
+            "The technical terms on this page, one line each",
+            '<dl class="gloss">'
+            + "".join(f"<dt>{esc(t)}</dt><dd>{esc(d)}</dd>" for t, d in terms)
+            + "</dl>",
+        )
+        + "</div>"
     )
 
     # ---- closing: where to go next, and who this is. Not numbered, like the summary above.
