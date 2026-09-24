@@ -355,7 +355,7 @@ the one decision that is expensive to change once the table is large.
 | [pools.yml](pools.yml) | The only source of pool addresses, each verified on chain |
 | [sql/](sql/001_raw_swaps.sql) | Plain SQL: tables, the materialized view, sanity, reconciliation, examples |
 | [dbt/](dbt/dbt_project.yml) | Seed, `stg_swaps`, `dim_pools`, `fct_pool_daily`, `fct_pool_daily_smart_money`, tests |
-| [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md) | The ten findings of the reconciliation, each with its state (draft) |
+| [docs/RECONCILIATION_FINDINGS.md](docs/RECONCILIATION_FINDINGS.md) | The ten findings of the reconciliation, each marked explained, partly explained or unexplained |
 | [docs/evidence/2026-09-20/](docs/evidence/2026-09-20/reconciliation_evidence.md) | Snapshot of one run: report, evidence (12 sections of numbers) and the per-day CSV |
 | [docs/H2_PREREGISTRATION.md](docs/H2_PREREGISTRATION.md) | What was going to be tested out of sample, committed before the data was fetched |
 | [docs/evidence/2026-09-21/](docs/evidence/2026-09-21/README.md) | Snapshot of the run with ten more days: the out-of-sample test and placebo, and the reconciliation over 43 days |
@@ -378,7 +378,7 @@ Why this repository: preparing for a Senior Data Engineer role on an on-chain an
 whose stack is ClickHouse, dbt, Python and Postgres. He had not run ClickHouse in production,
 and building something real against live chain data was the way to close that gap.
 
-[github.com/robertofd31](https://github.com/robertofd31)
+[robertofajardoduro.com](https://robertofajardoduro.com) · [github.com/robertofd31](https://github.com/robertofd31)
 
 ## License
 

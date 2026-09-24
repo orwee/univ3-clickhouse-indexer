@@ -33,6 +33,24 @@ from dotenv import dotenv_values
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLACEHOLDER = "REPLACE_ME"
 
+EVIDENCE_DIR = REPO_ROOT / "docs" / "evidence"
+
+
+def newest_snapshot(name: str) -> Path:
+    """The newest committed copy of a report, under ``docs/evidence/<date>/``.
+
+    Everything published — the dashboard and the tests that check it — reads its figures from
+    here and never from ``reports/``. ``reports/`` is git-ignored: a page built from it cannot
+    be rebuilt by anyone else, and a link into it is a 404 for every reader. Snapshotting a
+    run is a deliberate act (see ``docs/evidence/<date>/README.md``), and that is what makes
+    the published page reproducible from the repository alone.
+    """
+    snapshots = sorted(d for d in EVIDENCE_DIR.glob("*/") if (d / name).exists())
+    if not snapshots:
+        raise FileNotFoundError(f"no committed snapshot of {name} under {EVIDENCE_DIR}")
+    return snapshots[-1] / name
+
+
 CLICKHOUSE_POINTER = "CLICKHOUSE_ENV_FILE"
 CLICKHOUSE_DEFAULT = "~/secrets/clickhouse.env"
 API_KEYS_POINTER = "API_KEYS_ENV_FILE"
