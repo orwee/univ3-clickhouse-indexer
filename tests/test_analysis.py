@@ -152,3 +152,11 @@ def test_three_pools_of_one_pair_are_refused():
         analysis.fee_tier_pairs([pool(100, 1), pool(500, 2), pool(3000, 3)])
     with pytest.raises(analysis.AnalysisError):
         analysis.fee_tier_pairs([pool(100, 1)])
+
+
+def test_both_join_algorithms_give_the_same_answer(clickhouse, planted):
+    pair = {"lo": LO, "hi": HI, "fee_bps": 6.0}
+    rows = analysis.join_algorithms(clickhouse, pair, database=planted)
+    assert [r["join_algorithm"] for r in rows] == list(analysis.JOIN_ALGORITHMS)
+    assert all(r["same_answer_as_hash"] for r in rows)
+    assert all(r["runs"] == analysis.REPEATS and r["read_rows"] > 0 for r in rows)

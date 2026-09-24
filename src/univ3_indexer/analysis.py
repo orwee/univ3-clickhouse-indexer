@@ -136,6 +136,42 @@ def granules(client, name: str, parameters: dict, database: str = RAW_DB) -> lis
     return scans
 
 
+JOIN_ALGORITHMS = ("hash", "full_sorting_merge")
+REPEATS = 3
+
+
+def join_algorithms(client, pair: dict, database: str = RAW_DB) -> list[dict]:
+    """The gap query under each join algorithm, REPEATS times: median time, memory, and
+    whether the answers are identical. ClickHouse 26.3 runs an ASOF JOIN with either."""
+    params = {"lo": pair["lo"], "hi": pair["hi"], "fee_bps": pair["fee_bps"]}
+    out, answers = [], {}
+    for algorithm in JOIN_ALGORITHMS:
+        runs = []
+        for _ in range(REPEATS):
+            result = client.query(
+                sql_of(CROSS_POOL[0]),
+                parameters=params,
+                settings={**SETTINGS, "database": database, "join_algorithm": algorithm},
+            )
+            runs.append(result.summary or {})
+            answers[algorithm] = result.result_rows
+        elapsed = sorted(int(r.get("elapsed_ns", 0)) // 1_000_000 for r in runs)
+        memory = sorted(int(r.get("memory_usage", 0)) for r in runs)
+        out.append(
+            {
+                "join_algorithm": algorithm,
+                "runs": REPEATS,
+                "median_ms": elapsed[len(elapsed) // 2],
+                "median_memory_bytes": memory[len(memory) // 2],
+                "read_rows": int(runs[-1].get("read_rows", 0)),
+            }
+        )
+    same = len({repr(v) for v in answers.values()}) == 1
+    for row in out:
+        row["same_answer_as_hash"] = same
+    return out
+
+
 def cross_pool(client) -> dict:
     """The three cross-pool queries for every pair of fee tiers; EXPLAIN for the first."""
     out = {}
@@ -145,6 +181,7 @@ def cross_pool(client) -> dict:
             "pair": pair,
             "queries": {name: run(client, name, params) for name in CROSS_POOL},
             "explain": {CROSS_POOL[0]: granules(client, CROSS_POOL[0], params)},
+            "join_algorithms": join_algorithms(client, pair),
         }
     return out
 
@@ -204,6 +241,8 @@ def render(result: dict, generated_at: datetime.datetime, max_block: int, rows: 
             f"### {name_of_pair}: what the primary key kept, per scan of {CROSS_POOL[0]}\n"
         )
         parts.append(_table(one["explain"][CROSS_POOL[0]]))
+        parts.append(f"### {name_of_pair}: {CROSS_POOL[0]} under each join algorithm\n")
+        parts.append(_table(one["join_algorithms"]))
     return "\n".join(parts)
 
 
