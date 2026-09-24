@@ -1425,9 +1425,9 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             "Every hour of this day agrees with the external source to within a dollar except "
             "one, "
             "so the day's difference is one event and not a systematic gap.",
-            "sql/reconciliation/17_evidence_hourly.sql — re-run against "
             "A difference located to one hour can be investigated; the same difference spread "
             "over a month cannot. Locating it is most of the work of trusting a number.",
+            "sql/reconciliation/17_evidence_hourly.sql — re-run against "
             "onchain.raw_swaps and onchain.external_hourly_volume FINAL",
             f"{GH}sql/reconciliation/17_evidence_hourly.sql",
         )

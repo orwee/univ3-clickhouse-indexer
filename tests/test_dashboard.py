@@ -332,7 +332,6 @@ def test_the_style_tokens_are_defined_for_both_schemes(page):
     ):
         assert f"{token}:" in dark, f"{token} is not defined in the dark scheme"
         assert f"{token}:" in light, f"{token} is not defined in the light scheme"
-    assert "font:" not in page.split("@font-face")[0].split("<style>")[1][:0] or True
     assert "@font-face" not in page, "a published page must not carry or fetch a font"
 
 
@@ -346,3 +345,18 @@ def test_the_four_series_are_told_apart_by_more_than_colour(page):
     dashes = [re.search(r"stroke-dasharray:([^;\"]+)", s) for s in lines]
     assert sum(1 for d in dashes if d) == 3, "three of the four lines should carry a dash"
     assert len({d.group(1) for d in dashes if d}) == 3, "two lines share a dash pattern"
+
+
+def test_no_why_it_matters_line_carries_a_file_path(page):
+    """The section 5 line once read "Why it matters. sql/reconciliation/17_evidence_hourly.sql
+    — re-run against A difference located...": two adjacent string literals in the generator
+    had merged the source caption into the prose. A path belongs in the Source line only."""
+    for why in re.findall(r'<p class="why"><b>Why it matters.</b>(.*?)</p>', page, re.S):
+        assert not re.search(r"\bsql/|\.sql\b|\.md\b|\.py\b", why), why.strip()[:90]
+
+
+def test_every_source_line_names_a_file_or_a_table(page):
+    for src in re.findall(r'<p class="src">Source: <a href="[^"]+">(.*?)</a></p>', page, re.S):
+        assert re.search(r"\.(sql|md|csv|py)\b|onchain", src), (
+            f"a source caption with no file: {src}"
+        )
