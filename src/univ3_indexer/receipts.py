@@ -169,6 +169,8 @@ def summarize(pool: str, rows: list[dict], receipts: dict, tracked: dict[str, st
     v3_swaps_per_tx: Counter = Counter()
     this_pool_swaps_per_tx: Counter = Counter()
     touches: Counter = Counter()
+    touches_usd: Counter = Counter()
+    usd_first_slots = 0.0
     contracts_per_tx: list[int] = []
     gas_used: list[float] = []
     gas_price_gwei: list[float] = []
@@ -208,16 +210,19 @@ def summarize(pool: str, rows: list[dict], receipts: dict, tracked: dict[str, st
                 kinds.add("the v4 pool manager")
             elif topic in (TOPIC_WETH_DEPOSIT, TOPIC_WETH_WITHDRAWAL):
                 kinds.add("a WETH wrap or unwrap")
+        if not kinds:
+            kinds.add("nothing but this pool and token transfers")
         for kind in kinds:
             touches[kind] += 1
-        if not kinds:
-            touches["nothing but this pool and token transfers"] += 1
+            touches_usd[kind] += row["gross_usd"]
         used = int(rc.get("gasUsed", "0x0"), 16)
         price = int(rc.get("effectiveGasPrice", "0x0"), 16)
         gas_used.append(used)
         gas_price_gwei.append(price / 1e9)
         fee_eth += used * price / 1e18
         tx_index.append(int(rc.get("transactionIndex", "0x0"), 16))
+        if tx_index[-1] <= 2:
+            usd_first_slots += row["gross_usd"]
         status["success" if rc.get("status") == "0x1" else "reverted"] += 1
         tx_type[f"type {int(rc.get('type', '0x0'), 16)}"] += 1
 
@@ -248,6 +253,10 @@ def summarize(pool: str, rows: list[dict], receipts: dict, tracked: dict[str, st
         "v3_swap_logs_per_transaction": _buckets(v3_swaps_per_tx),
         "swaps_of_this_pool_per_transaction": _buckets(this_pool_swaps_per_tx),
         "transactions_that_also_touch": dict(touches.most_common()),
+        "usd_of_transactions_that_also_touch": {
+            k: touches_usd[k] for k, _ in touches.most_common()
+        },
+        "usd_in_the_first_three_slots": usd_first_slots,
         "contracts_emitting_logs_p50": _quantile(contracts_per_tx, 0.5),
         "contracts_emitting_logs_p90": _quantile(contracts_per_tx, 0.9),
         "gas_used_p50": _quantile(gas_used, 0.5),
@@ -301,6 +310,10 @@ def render(label: str, day: datetime.date, hour: int, s: dict, fetch_note: str) 
         ("status", ", ".join(f"{k} {v:,}" for k, v in s["status"].items())),
         ("transaction type", ", ".join(f"{k} {v:,}" for k, v in s["tx_type"].items())),
     ])  # fmt: skip
+    touch_rows = "\n".join(
+        f"| {k} | {v:,} | {s['usd_of_transactions_that_also_touch'][k]:,.0f} |"
+        for k, v in s["transactions_that_also_touch"].items()
+    )
     gas_rows = _rows([
         ("gas used, median", f"{s['gas_used_p50']:,.0f}"),
         ("gas used, 90th percentile", f"{s['gas_used_p90']:,.0f}"),
@@ -311,6 +324,7 @@ def render(label: str, day: datetime.date, hour: int, s: dict, fetch_note: str) 
         ("position in the block, median", f"{s['position_in_block_p50']:,.0f}"),
         ("transactions in the first three positions of their block",
          f"{s['transactions_in_the_first_three_slots']:,}"),
+        ("USD of this pool's swaps in those", f"{s['usd_in_the_first_three_slots']:,.0f}"),
     ])  # fmt: skip
     return f"""# Receipts: {label}, {day.isoformat()}, {hour:02d}:00-{hour + 1:02d}:00 UTC
 
@@ -344,11 +358,12 @@ Swaps of this pool per transaction:
 |---|---|
 {table(s["swaps_of_this_pool_per_transaction"])}
 
-Transactions that also emitted a log from (a transaction can be in more than one row):
+Transactions that also emitted a log from, and the USD of this pool's swaps in them (a
+transaction can be in more than one row, so the USD column does not add up to the hour):
 
-| | transactions |
-|---|---|
-{table(s["transactions_that_also_touch"])}
+| | transactions | USD of this pool's swaps |
+|---|---|---|
+{touch_rows}
 
 Contracts emitting a log, per transaction: median {s["contracts_emitting_logs_p50"]:,.0f},
 90th percentile {s["contracts_emitting_logs_p90"]:,.0f}.

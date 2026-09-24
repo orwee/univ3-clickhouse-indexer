@@ -88,6 +88,10 @@ def test_the_summary_counts_what_the_receipts_show():
     assert touched["another tracked pool"] == 1 and touched["a v2-style pair"] == 1
     assert touched["a WETH wrap or unwrap"] == 1
     assert touched["nothing but this pool and token transfers"] == 1
+    usd = s["usd_of_transactions_that_also_touch"]
+    assert usd["another tracked pool"] == 300.0 and usd["a WETH wrap or unwrap"] == 600.0
+    assert usd["nothing but this pool and token transfers"] == 100.0
+    assert s["usd_in_the_first_three_slots"] == 700.0  # positions 0 and 1: tx 0 and tx 2
     assert s["transactions_in_the_first_three_slots"] == 2
     assert s["fees_paid_eth"] == pytest.approx(3 * 100_000 * 2e9 / 1e18)
 
