@@ -105,3 +105,32 @@ def test_the_report_names_no_account_and_no_transaction():
     assert not re.search(r"0x[0-9a-fA-F]{8,}", text), "an address or a hash reached the report"
     assert "A 0.05%, 2026-08-19, 15:00-16:00 UTC" in text
     assert json.dumps(s).count("0x") == 0, "the JSON summary must be aggregates only too"
+
+
+def test_the_transactions_of_the_hour_come_from_raw_swaps(clickhouse, temp_database):
+    """Two swaps of one transaction and one of another inside the hour, one just outside it."""
+    import datetime
+
+    from univ3_indexer import clickhouse as ch
+    from univ3_indexer import loader
+    from univ3_indexer.pools import load_pools
+
+    pool = next(p.key for p in load_pools() if p.token0 == "USDC")  # USDC is token0: 6 decimals
+    day = datetime.date(2026, 8, 19)
+
+    def row(minute_of_day, tx_byte, log_index, usdc):
+        when = datetime.datetime.combine(day, datetime.time(0), tzinfo=datetime.UTC)
+        when += datetime.timedelta(minutes=minute_of_day)
+        sender = b"\x05" * 20
+        return [pool, 1000 + log_index, when, bytes([tx_byte]) * 32, log_index, sender, sender,
+                int(usdc * 1e6), -1, 2**96, 10**18, 0]  # fmt: skip
+
+    ch.apply_ddl(clickhouse, temp_database)
+    rows = [row(15 * 60 + 1, 1, 0, 1_000), row(15 * 60 + 1, 1, 1, -900),
+            row(15 * 60 + 30, 2, 2, 50), row(16 * 60, 3, 3, 7)]  # fmt: skip
+    clickhouse.insert(ch.qualified(temp_database), rows, column_names=loader.COLUMNS)
+    got = receipts.transactions(clickhouse, temp_database, pool, day, 15)
+    assert [r["swaps"] for r in got] == [2, 1], "16:00 belongs to the next hour"
+    first = got[0]
+    assert first["tx"] == "0x" + "01" * 32
+    assert first["gross_usd"] == pytest.approx(1_900) and first["net_usd"] == pytest.approx(100)

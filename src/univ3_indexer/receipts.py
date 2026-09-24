@@ -85,7 +85,7 @@ class ReceiptsError(RuntimeError):
 def transactions(client, database: str, pool: str, day: datetime.date, hour: int) -> list[dict]:
     stable = reconcile.stable_leg_parameters(load_pools(), reconcile.stablecoin_symbols())
     params = {**stable, "pool": pool, "day": day, "hour": hour}
-    result = client.query(ch.qualify_sql(SQL_TRANSACTIONS, database), parameters=params)
+    result = client.query(SQL_TRANSACTIONS, parameters=params, settings={"database": database})
     return [dict(zip(result.column_names, row, strict=True)) for row in result.result_rows]
 
 
