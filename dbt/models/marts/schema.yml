@@ -67,3 +67,59 @@ models:
           smart_money_volume_usd / volume_usd (stablecoin leg at 1 USD), between 0 and 1.
           Nullable, because volume_usd is.
         tests: [not_null]
+
+  - name: fct_round_trip_legs
+    description: >
+      Every swap that is a leg of a same-block round trip, one row per swap: same pool, same
+      block, same sender, opposite direction, the second undoing 90% to 110% of the first on
+      the non-stable leg (the definition of sql/reconciliation/16_evidence_round_trips.sql).
+      Consistent with a sandwich pattern; nothing here observes intent.
+      assert_round_trip_legs_match_their_definition recomputes it from the raw table.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [pool_address, block_number, log_index]
+    columns:
+      - name: pool_address
+      - name: block_number
+      - name: log_index
+      - name: block_date
+      - name: sender
+        description: The contract that called the pool, not the account that signed.
+      - name: pairs_opened
+        description: Pairs in which this swap is the first leg.
+      - name: pairs_closed
+        description: Pairs in which this swap is the second leg.
+      - name: in_a_one_transaction_pair
+        description: At least one of its pairs has both legs in the same transaction.
+      - name: volume_usd
+        description: "The stablecoin leg of this swap, as in stg_swaps. Nullable."
+
+  - name: fct_pool_daily_round_trips
+    description: >
+      Per pool and UTC day, every pool-day of fct_pool_daily: how many round trips, how many
+      swaps and how much USD they hold, and the volume left without them.
+      assert_round_trips_are_a_part_of_the_pool_day checks the ranges and the coverage.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [pool_address, block_date]
+    columns:
+      - name: pool_address
+      - name: block_date
+      - name: pool_label
+        tests: [not_default]
+      - name: swaps
+      - name: volume_usd
+        description: As in fct_pool_daily. Nullable.
+      - name: round_trips
+        description: Pairs, as defined in fct_round_trip_legs.
+      - name: round_trip_swaps
+        description: Distinct swaps in those pairs, each counted once.
+      - name: round_trip_swaps_in_one_transaction
+      - name: round_trip_volume_usd
+        description: USD of those swaps, both legs, each swap once.
+      - name: net_volume_usd
+        description: volume_usd minus round_trip_volume_usd. Nullable, because volume_usd is.
+      - name: round_trip_share_of_volume_usd
+        description: round_trip_volume_usd / volume_usd, 0 when volume_usd is 0.
