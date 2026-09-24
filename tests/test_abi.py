@@ -27,3 +27,14 @@ def test_every_selector_constant_is_covered():
 
 def test_swap_topic0_is_keccak_of_the_signature():
     assert abi.SWAP_TOPIC0 == "0x" + keccak256_hex(abi.SWAP_SIGNATURE)
+
+
+@pytest.mark.parametrize(("signature", "topic"), sorted(abi.RECEIPT_TOPICS.items()))
+def test_every_receipt_topic_is_keccak_of_its_signature(signature, topic):
+    assert topic == "0x" + keccak256_hex(signature)
+
+
+def test_the_named_receipt_topics_are_the_ones_in_the_table():
+    named = {v for k, v in vars(abi).items() if k.startswith("TOPIC_")}
+    assert named == set(abi.RECEIPT_TOPICS.values())
+    assert abi.SWAP_TOPIC0 not in named, "the v3 Swap topic has its own constant"
