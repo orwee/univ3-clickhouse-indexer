@@ -20,6 +20,7 @@ import argparse
 import csv
 import datetime
 import html
+import json
 import math
 import re
 import sys
@@ -63,6 +64,10 @@ POOL_DASH = {
     "wstETH/USDC 0.05%": "2 4",
     "wstETH/USDC 0.3%": "14 4 2 4",
 }
+
+# Sections that take the full width of the grid on a wide screen: the KPI row, and the last
+# section so that the grid never ends on an empty cell. The CSS rule is generated from this.
+SPAN_SECTIONS = (1, 12)
 
 SVG_W = 680  # every chart is drawn in this many user units wide and scaled with width:100%
 FS = 18  # tick/label size in user units: ~9 px on a 360 px phone, ~18 px on a wide screen
@@ -165,6 +170,23 @@ def esc(v: object) -> str:
 # --------------------------------------------------------------------------- documents
 
 
+# The run the page was first published with, and the receipts of the largest open case.
+BEFORE_SNAPSHOT = "2026-09-21"
+OPEN_CASE_RECEIPTS = "receipts_2026-08-19_15h.json"
+OPEN_CASE_POOL, OPEN_CASE_DAY, OPEN_CASE_HOUR = "USDC/WETH 0.05%", "2026-08-19", 15
+
+
+def parse_recon_counts(md: str) -> dict:
+    """The counts line of a reconciliation report: on both sides, compared, flagged."""
+    m = _need(
+        r"(\d+) pool-days present on both sides, (\d+) compared, \*\*(\d+) beyond both "
+        r"thresholds\*\*",
+        md,
+        "reconciliation.md",
+    )
+    return {"both": int(m.group(1)), "compared": int(m.group(2)), "flagged": int(m.group(3))}
+
+
 def read_documents() -> dict:
     """Every figure this page takes from a file in the repo, parsed once."""
     readme = (REPO / "README.md").read_text(encoding="utf-8")
@@ -229,6 +251,16 @@ def read_documents() -> dict:
         "sorting_keys": parse_sorting_keys(schema_md),
         "inserts": parse_inserts(perf_md),
         "evidence_top_hours": parse_evidence_hours(),
+        "analysis": json.loads(config.newest_snapshot("analysis.json").read_text(encoding="utf-8")),
+        "open_case": json.loads(
+            config.newest_snapshot(OPEN_CASE_RECEIPTS).read_text(encoding="utf-8")
+        ),
+        "before": parse_recon_counts(
+            (config.EVIDENCE_DIR / BEFORE_SNAPSHOT / "reconciliation.md").read_text(
+                encoding="utf-8"
+            )
+        ),
+        "after_snapshot": config.newest_snapshot("reconciliation.md").parent.name,
     }
 
 
@@ -657,7 +689,10 @@ def grouped_bars(
     height: int = 306,
 ) -> str:
     """Bars side by side, one group per category, one colour per series."""
-    left, right, top, bottom = 74, 16, 18, 44
+    # A category label may hold a line break ("USDC/WETH\n0.01%"): a long name on one line
+    # is wider than its band once there are four groups, and would run into its neighbour.
+    lines_per_label = max(g.count("\n") + 1 for g in groups)
+    left, right, top, bottom = 74, 16, 18, 44 + round(FS * 1.65) * (lines_per_label - 1)
     x0, x1 = left, SVG_W - right
     y0, y1 = top, height - bottom
     top_value = max(y_ticks)
@@ -694,14 +729,65 @@ def grouped_bars(
             out.append(
                 f'<rect class="bar" x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" '
                 f'height="{max(y1 - y, 0.8):.1f}" rx="2" style="fill:var(--{slot})">'
-                f"<title>{esc(group)} — {esc(series[si][0])}: "
+                f"<title>{esc(group.replace(chr(10), ' '))} — {esc(series[si][0])}: "
                 f"{esc((value_fmt or y_fmt)(v))}</title></rect>"
             )
             if value_labels:
                 ly = max(y - 6, FS * 0.9)  # never clipped by the top of the viewBox
                 out.append(_txt(x + bw / 2, ly, (value_fmt or y_fmt)(v), "vl", "middle"))
         if gi % label_every == 0:
-            out.append(_txt(centre, y1 + FS + 6, group, "tk", "middle"))
+            for k, line in enumerate(group.split("\n")):
+                # 1.65 x FS between lines: a rendered line box is about 1.5 x FS (see the
+                # end labels of line_chart_log), so anything tighter and the two lines touch
+                out.append(_txt(centre, y1 + FS + 6 + k * FS * 1.65, line, "tk", "middle"))
+    out.append("</svg>")
+    return "".join(out)
+
+
+def histogram(
+    buckets: list[int],
+    counts: list[int],
+    *,
+    threshold: float,
+    title: str,
+    desc: str,
+    last_is_open: bool = True,
+    height: int = 300,
+) -> str:
+    """Counts per 1-unit bucket, the bars at or past `threshold` in a second colour, and a
+    dashed line at the threshold itself. The last bucket is open-ended when last_is_open."""
+    left, right, top, bottom = 74, 16, 18, 44
+    x0, x1 = left, SVG_W - right
+    y0, y1 = top, height - bottom
+    ticks = nice_ticks(max(counts))
+    top_value = max(ticks)
+    band = (x1 - x0) / len(buckets)
+    bw = band * 0.78
+
+    def sy(v: float) -> float:
+        return y1 - (y1 - y0) * (v / top_value)
+
+    out = _open_svg(SVG_W, height, title, desc)
+    for t in ticks:
+        y = sy(t)
+        out.append(f'<line class="gr" x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}"/>')
+        out.append(_txt(x0 - 8, y + FS * 0.34, fusd_compact(t).lstrip("$"), "tk", "end"))
+    out.append(f'<line class="ax" x1="{x0}" y1="{y1}" x2="{x1}" y2="{y1}"/>')
+    for i, (b, c) in enumerate(zip(buckets, counts, strict=True)):
+        x = x0 + band * i + (band - bw) / 2
+        y = sy(c)
+        slot = "warning" if b >= threshold else "accent"
+        label = f"{b}+" if last_is_open and i == len(buckets) - 1 else f"{b}"
+        out.append(
+            f'<rect class="bar" x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" '
+            f'height="{max(y1 - y, 0.8):.1f}" rx="2" style="fill:var(--{slot})">'
+            f"<title>{esc(label)} bps: {c:,} swaps</title></rect>"
+        )
+        if i % 5 == 0 or i == len(buckets) - 1:
+            out.append(_txt(x + bw / 2, y1 + FS + 6, label, "tk", "middle"))
+    tx = x0 + band * buckets.index(int(threshold))
+    out.append(f'<line class="th" x1="{tx:.1f}" y1="{y0}" x2="{tx:.1f}" y2="{y1}"/>')
+    out.append(_txt(tx + 6, y0 + FS, f"combined fee {threshold:g} bps", "lb"))
     out.append("</svg>")
     return "".join(out)
 
@@ -935,7 +1021,10 @@ color-scheme:light;
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--plane);color:var(--ink);
 font:15px/1.6 var(--font-sans);overflow-wrap:break-word}
-.wrap{max-width:760px;margin:0 auto;padding:28px 16px 72px}
+/* Full width: a fluid page up to 1600px with side margins. Sections sit in one column on a
+   phone and in two at 1100px and up (see .grid). Prose keeps a readable measure. */
+.wrap{max-width:1600px;margin:0 auto;padding:28px clamp(16px,3vw,40px) 72px}
+.read,.note,.shows,.why,.take li,.start li,.sub,blockquote{max-width:92ch}
 h1,h2,h3{font-family:var(--font-display);line-height:1.2}
 h1{font-size:clamp(1.9rem,5vw,2.6rem);margin:0 0 12px;letter-spacing:-.02em;font-weight:800}
 h2{font-size:17px;margin:0 0 10px;letter-spacing:-.005em;display:flex;gap:9px;align-items:baseline}
@@ -996,7 +1085,9 @@ border-top-style:solid}
 .sw.l2{border-top-color:var(--s2);border-top-style:dashed}
 .sw.l3{border-top-color:var(--s3);border-top-style:dotted}
 .sw.l4{border-top-color:var(--s4);border-top-style:double;border-top-width:4px}
-svg{width:100%;height:auto;display:block;margin:4px 0 2px}
+svg{width:100%;height:auto;display:block;margin:4px auto 2px;max-width:820px}
+/* ^ charts are drawn in SVG user units and scale with their card: the cap keeps a label
+   near 20px on a wide single-column screen instead of growing to 30px and more. */
 .gr{stroke:var(--grid);stroke-width:1}
 .ax{stroke:var(--axis);stroke-width:1}
 .th{stroke:var(--muted);stroke-width:1;stroke-dasharray:4 4}
@@ -1048,11 +1139,25 @@ border-radius:4px;padding:1px 6px;border:1px solid var(--rule)}
 .take ul,.start ol{margin:0;padding-left:18px}
 .take li,.start li{margin:0 0 6px;font-size:13.5px;color:var(--ink-2)}
 .take li b{color:var(--ink);font-weight:600}
+.take.new{border-left:3px solid var(--accent)}
 .read{font-size:13.5px;color:var(--ink-2);margin:0}
 .read b{color:var(--ink);font-weight:600}
 .gloss dt{font-weight:600;color:var(--ink);font-size:12.5px;margin-top:8px}
 .gloss dd{margin:2px 0 0;color:var(--ink-2);font-size:12.5px}
 footer{color:var(--muted);font-size:12.5px;padding:4px 2px}
+.grid{display:block}
+.grid>section{min-width:0}
+.front>div{min-width:0}
+@media (min-width:1100px){
+.front{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));
+gap:16px;margin:0 0 16px;align-items:start}
+.front>div{margin:0}
+.split{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.grid>section{margin:0}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
+.hero-figs{gap:10px 40px}
+}
 @media (max-width:520px){
 .wrap{padding:20px 10px 56px}
 section,.take,.start{padding-left:11px;padding-right:11px}
@@ -1062,6 +1167,11 @@ th,td{padding:5px 6px}
 .hero-figs{gap:10px 18px}
 }
 """
+
+
+def span_css() -> str:
+    ids = ",".join(f"#s{n}" for n in SPAN_SECTIONS)
+    return f"@media (min-width:1100px){{{ids}{{grid-column:1/-1}}}}\n"
 
 
 def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now) -> str:
@@ -1106,6 +1216,63 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         "the repository.</p>"
     )
     a("</header>")
+
+    a('<div class="front">')
+
+    # ---- what's new since the page was first published: dated lines, every figure read from
+    # the snapshots and the analysis report, every line linking to the document it summarises.
+    an = docs["analysis"]
+    after = docs["after_snapshot"]
+    before = docs["before"]
+    rt_total = next(
+        r
+        for r in an["round_trips"]["queries"]["10_round_trips_by_pool.sql"]["rows"]
+        if not r["pool"]
+    )
+    liquid = max(
+        an["cross_pool"].values(),
+        key=lambda c: c["queries"]["01_cross_pool_gap.sql"]["rows"][-1]["swaps"],
+    )
+    gap = liquid["queries"]["01_cross_pool_gap.sql"]["rows"][-1]
+    eps = liquid["queries"]["03_cross_pool_episodes.sql"]["rows"][0]
+    within_fee = gap["swaps"] - gap["beyond_combined_fee"]
+    same_block = eps["closed_in_the_same_block"] / (eps["episodes"] - eps["still_open_at_the_end"])
+    oc = docs["open_case"]
+    news = [
+        (
+            f"{GH}docs/evidence/{after}/README.md",
+            f"More data, up to the node's finalized block: {fint(t['swaps'])} swaps over "
+            f"{t['days']} days. The reconciliation now compares {fint(docs['compared'])} "
+            f"pool-days and flags {fint(docs['flagged'])} (it was {fint(before['compared'])} "
+            f"and {fint(before['flagged'])} on {BEFORE_SNAPSHOT}).",
+        ),
+        (
+            f"{GH}docs/ROUND_TRIPS.md",
+            f"Round trips: {rt_total['share_of_usd'] * 100:.1f}% of all USD volume is swaps "
+            "that the same sender undid in the same block (section 10).",
+        ),
+        (
+            f"{GH}docs/CROSS_POOL.md",
+            f"Two fee tiers of {liquid['pair']['pair']}: {fint(within_fee)} of "
+            f"{fint(gap['swaps'])} swaps sit within the combined fee, and "
+            f"{same_block * 100:.0f}% of the divergences close in the same block (section 11).",
+        ),
+        (
+            f"{GH}docs/RECONCILIATION_FINDINGS.md#what-is-still-open",
+            f"The largest open case, read from {fint(oc['transactions'])} transaction receipts: "
+            "netting inside each transaction does not explain it, and it stays open "
+            "(section 12).",
+        ),
+        (f"{GH}CHANGELOG.md", "Every change since 18 September, by date: CHANGELOG.md."),
+    ]
+    a(
+        '<div class="take new"><h2>What\'s new since 21 September</h2><ul>'
+        + "".join(
+            f'<li><b>{esc(after)}</b> — <a href="{esc(href)}">{esc(text)}</a></li>'
+            for href, text in news
+        )
+        + "</ul></div>"
+    )
 
     # ---- reading this page: five lines for a reader who does not work with this data
     a(
@@ -1152,6 +1319,11 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         + "".join(f"<li>{t}</li>" for t in takeaways)
         + "</ul></div>"
     )
+
+    a("</div>")
+
+    # The numbered sections share one grid: one column on a phone, two from 1100px (CSS).
+    a('<main class="grid">')
 
     # ---- 1. KPIs
     kpis = [
@@ -1679,6 +1851,244 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         )
     )
 
+    # ---- 10. round trips in the same block (docs/ROUND_TRIPS.md)
+    an = docs["analysis"]
+    rt_q = an["round_trips"]["queries"]
+    by_pool = [r for r in rt_q["10_round_trips_by_pool.sql"]["rows"] if r["pool"]]
+    rt_all = next(r for r in rt_q["10_round_trips_by_pool.sql"]["rows"] if not r["pool"])
+    conc = rt_q["12_round_trips_concentration.sql"]["rows"][0]
+    by_hour = rt_q["11_round_trips_by_hour.sql"]["rows"]
+    sizes = rt_q["14_round_trips_leg_sizes.sql"]["rows"]
+    sizes_all = next(r for r in sizes if not r["leg_size_usd"])
+    big_share = sum(
+        r["share_of_round_trip_usd"] for r in sizes if r["leg_size_usd"][:1] in ("4", "5")
+    )
+    tol = {round(r["tolerance"], 2): r for r in rt_q["13_round_trips_tolerance.sql"]["rows"]}
+    tol_text = ", ".join(
+        f"{tol[t]['share_of_usd'] * 100:.1f}% of all USD at {t:.0%}" for t in (0.01, 0.05, 0.2)
+    )
+    order = [p for p in POOL_ORDER if any(r["pool"] == p for r in by_pool)]
+    row_of = {r["pool"]: r for r in by_pool}
+    top_share = max(r["share_of_usd"] for r in by_pool)
+    ticks = [0, 0.1, 0.2, 0.3] if top_share <= 0.3 else [0, 0.1, 0.2, 0.3, 0.4, 0.5]
+    chart = grouped_bars(
+        [p.replace(" ", "\n", 1) for p in order],
+        [("share of swaps", "muted"), ("share of USD volume", "accent")],
+        [[row_of[p]["share_of_swaps"] for p in order], [row_of[p]["share_of_usd"] for p in order]],
+        title="How much of each pool's activity is a round trip in one block",
+        desc="Per pool, the share of swaps and the share of USD volume that are legs of a "
+        "same-block round trip.",
+        y_ticks=ticks,
+        y_fmt=lambda v: f"{v * 100:.0f}%",
+        value_labels=True,
+        value_fmt=lambda v: f"{v * 100:.1f}%",
+        height=300,
+    )
+    hour_chart = grouped_bars(
+        [f"{r['hour_utc']:02d}" for r in by_hour],
+        [("share of the hour's USD", "accent")],
+        [[r["share_of_usd"] for r in by_hour]],
+        title="Round trips by hour of the day, all pools",
+        desc="For each hour of the day in UTC, the share of that hour's USD volume that is "
+        "round trips.",
+        y_ticks=nice_ticks(max(r["share_of_usd"] for r in by_hour)),
+        y_fmt=lambda v: f"{v * 100:.0f}%",
+        value_fmt=lambda v: f"{v * 100:.1f}%",
+        label_every=3,
+        height=240,
+    )
+    tbl = table(
+        ["pool", "days with any", "pairs", "swaps in them", "share of USD"],
+        [
+            [
+                esc(p),
+                f"{row_of[p]['pool_days_with_any']} of {row_of[p]['pool_days']}",
+                fint(row_of[p]["pairs"]),
+                fint(row_of[p]["legs"]),
+                f"{row_of[p]['share_of_usd'] * 100:.1f}%",
+            ]
+            for p in order
+        ],
+        widths=[30, 18, 16, 18, 18],
+    )
+    body = (
+        chart
+        + legend([("share of swaps", "muted"), ("share of USD volume", "accent")])
+        + tbl
+        + f'<p class="note">A round trip is two swaps of one pool in one block by the same '
+        f"sender, the second undoing 90% to 110% of the first. Over the whole window: "
+        f"{fint(rt_all['pairs'])} pairs, {fint(rt_all['legs'])} swaps, "
+        f"{esc(fusd_compact(rt_all['legs_usd']))} of {esc(fusd_compact(rt_all['all_usd']))}, "
+        f"of which the second legs, the part that comes back, are "
+        f"{esc(fusd_compact(sizes_all['usd_of_legs_that_undo']))}. How much this depends on "
+        f"the 10% tolerance: {tol_text}. {fint(conc['senders'])} contracts called the pool for "
+        f"them (a sender is a contract, not the account that signed); the largest ten account "
+        f"for {conc['top10_share_of_usd'] * 100:.0f}% of their USD. They are same-block round "
+        "trips consistent with a sandwich pattern; nothing here observes intent.</p>"
+        + details("By hour of the day (UTC)", hour_chart)
+    )
+    a(
+        section(
+            10,
+            "Round trips in one block: how much of the volume is undone at once",
+            body,
+            f"{rt_all['share_of_usd'] * 100:.1f}% of all USD volume is swaps that the same "
+            f"sender undid in the same block, but only {rt_all['share_of_swaps'] * 100:.1f}% of "
+            f"the swaps: most legs are small, and {big_share * 100:.0f}% of their USD sits in "
+            f"legs of 100k USD or more. In the "
+            f"{esc(max(by_pool, key=lambda r: r['share_of_usd'])['pool'])} pool it is "
+            f"{top_share * 100:.0f}% of the money.",
+            "A volume figure that counts a swap and its reversal inside one block reports "
+            "activity that left little or no position behind. Anything computed from volume — "
+            "fees, "
+            "market share, a pool's ranking — inherits it unless it is netted out.",
+            "docs/ROUND_TRIPS.md and dbt/models/marts/fct_round_trip_legs.sql",
+            f"{GH}docs/ROUND_TRIPS.md",
+        )
+    )
+
+    # ---- 11. the gap between two fee tiers of the same pair (docs/CROSS_POOL.md)
+    cps = an["cross_pool"]
+    liquid = max(
+        cps.values(), key=lambda c: c["queries"]["01_cross_pool_gap.sql"]["rows"][-1]["swaps"]
+    )
+    pair = liquid["pair"]
+    gap_rows = {r["moved"]: r for r in liquid["queries"]["01_cross_pool_gap.sql"]["rows"]}
+    gap_all = gap_rows[""]
+    hist = liquid["queries"]["02_cross_pool_gap_histogram.sql"]["rows"]
+    ep = liquid["queries"]["03_cross_pool_episodes.sql"]["rows"][0]
+    ends = liquid["queries"]["04_cross_pool_block_ends.sql"]["rows"][0]
+    lo_share = gap_rows["lo"]["swaps"] / gap_all["swaps"]
+    scans = liquid["explain"]["01_cross_pool_gap.sql"]
+    chart = histogram(
+        [r["bucket_bps"] for r in hist],
+        [r["swaps"] for r in hist],
+        threshold=pair["fee_bps"],
+        title=f"Price gap between {pair['lo_label']} and {pair['hi_label']} at every swap",
+        desc="Swaps per one-basis-point bucket of the absolute price gap between the two "
+        "pools; the last bucket holds every gap of 20 bps and more.",
+    )
+    closed = ep["episodes"] - ep["still_open_at_the_end"]
+    within = 1 - gap_all["beyond_combined_fee"] / gap_all["swaps"]
+    tbl = table(
+        ["divergences wider than the fee", "count", "share"],
+        [
+            ["closed in the same block", fint(ep["closed_in_the_same_block"]),
+             f"{ep['closed_in_the_same_block'] / closed * 100:.1f}%"],
+            ["closed one block later", fint(ep["closed_one_block_later"]),
+             f"{ep['closed_one_block_later'] / closed * 100:.1f}%"],
+            ["closed two or more blocks later", fint(ep["closed_two_or_more_blocks_later"]),
+             f"{ep['closed_two_or_more_blocks_later'] / closed * 100:.1f}%"],
+            ["closed by the same pool that opened it", fint(ep["closed_by_the_same_pool"]),
+             f"{ep['closed_by_the_same_pool'] / closed * 100:.1f}%"],
+            ["opened and closed inside one transaction", fint(ep["never_left_one_transaction"]),
+             f"{ep['never_left_one_transaction'] / closed * 100:.1f}%"],
+        ],
+        widths=[56, 22, 22],
+    )  # fmt: skip
+    kept = ", ".join(f"{s_['kept']} of {s_['total']}" for s_ in scans[:2])
+    body = (
+        chart + '<p class="legend"><span class="lg"><i class="sw" style="background:var(--accent)">'
+        '</i>within the combined fee</span><span class="lg"><i class="sw" '
+        'style="background:var(--warning)"></i>wider than the combined fee</span>'
+        '<span class="lg"><i class="sw dash"></i>combined fee</span></p>'
+        + tbl
+        + f'<p class="note">The gap is 10,000 × ln(P<sub>lo</sub> / P<sub>hi</sub>) in basis '
+        f"points, from an ASOF JOIN of each swap to the other pool's last swap before it in "
+        f"chain order. Median {gap_all['abs_gap_p50_bps']:.1f} bps, 95th percentile "
+        f"{gap_all['abs_gap_p95_bps']:.1f}, 99th {gap_all['abs_gap_p99_bps']:.1f}, over "
+        f"{fint(gap_all['swaps'])} swaps. The sorting key starts with the pool, so each scan "
+        f"reads only its pool's granules ({kept}); a CTE is not materialised, so each pool is "
+        "read twice.</p>"
+    )
+    a(
+        section(
+            11,
+            "Two fee tiers of one pair: how far apart, and for how long",
+            body,
+            f"The two pools of {esc(pair['pair'])} agree to within their combined "
+            f"{pair['fee_bps']:g} bps fee at {within * 100:.1f}% "
+            f"of swaps, and when they do not, the gap is gone in the same block "
+            f"{ep['closed_in_the_same_block'] / closed * 100:.0f}% of the time. "
+            f"At the end of a block they agree at {ends['share_within_the_fee'] * 100:.1f}% of "
+            f"blocks. Neither pool leads: the one that opens a divergence is "
+            f"{esc(pair['lo_label'])} {ep['opened_by_lo'] / ep['episodes'] * 100:.0f}% of the "
+            f"time, about its {lo_share * 100:.0f}% share of swaps.",
+            "Two pools of one pair are two measurements of one price. In this window they did "
+            f"not disagree beyond their fees for more than {ep['blocks_open_max']} blocks, which "
+            "is what lets each serve as a check on a price or a volume read from the other.",
+            "docs/CROSS_POOL.md and sql/analysis/03_cross_pool_episodes.sql",
+            f"{GH}docs/CROSS_POOL.md",
+        )
+    )
+
+    # ---- 12. the largest open case, read from its transaction receipts
+    oc = docs["open_case"]
+    case = next(
+        (h for h in hourly if h["pool"] == OPEN_CASE_POOL and h["date"] == OPEN_CASE_DAY), None
+    )
+    if case is None:
+        raise SystemExit("build_dashboard: the open case is no longer a flagged pool-day")
+    hour_diff = next(h["diff_usd"] for h in case["hours"] if h["hour_of_day"] == OPEN_CASE_HOUR)
+    touch = oc["usd_of_transactions_that_also_touch"]
+    chart = hbars(
+        [(k, v, fusd_compact(v)) for k, v in sorted(touch.items(), key=lambda kv: -kv[1])],
+        title=f"{OPEN_CASE_POOL} on {OPEN_CASE_DAY}, {OPEN_CASE_HOUR:02d}h UTC: what else the "
+        "transactions touched",
+        desc="For each kind of contract a transaction also emitted a log from, the USD of this "
+        "pool's swaps in those transactions. A transaction can be in more than one bar.",
+        label_above=True,
+    )
+    netting = oc["gross_usd"] - oc["net_usd_within_each_transaction"]
+    multi_swap = oc["transactions"] - oc["v3_swap_logs_per_transaction"].get("1", 0)
+    facts = [
+        ("transactions", fint(oc["transactions"])),
+        ("swaps of this pool", fint(oc["swaps_in_this_pool"])),
+        ("USD, every swap counted", esc(fusd(oc["gross_usd"]))),
+        ("USD, netted inside each transaction", esc(fusd(oc["net_usd_within_each_transaction"]))),
+        ("accounts that signed", fint(oc["distinct_signers"])),
+        ("USD signed by the largest five", f"{oc['top5_signers_share_of_usd']:.1f}%"),
+        (
+            "in the first three positions of a block",
+            fint(oc["transactions_in_the_first_three_slots"]),
+        ),
+        ("their USD", esc(fusd(oc["usd_in_the_first_three_slots"]))),
+        ("with two or more swaps of the Uniswap v3 signature", fint(multi_swap)),
+    ]
+    tbl = table(["", "value"], [[k, v] for k, v in facts], widths=[64, 36])
+    body = (
+        f'<div class="split"><div>{chart}</div><div>{tbl}</div></div>'
+        + f'<p class="note">The day differs from the external source by '
+        f"{esc(fusd_signed(case['day_diff'], 0))} and this hour by "
+        f"{esc(fusd_signed(hour_diff, 0))}. Netting the swaps inside each transaction first "
+        f"would move the hour by {esc(fusd(netting))}"
+        ", so a source that counts one trade per transaction does not explain it. The receipts "
+        "were read once and are kept outside the repository; this page carries aggregates only."
+        "</p>"
+    )
+    a(
+        section(
+            12,
+            "The largest open case, read from its transaction receipts",
+            body,
+            f"The hour that holds most of the largest unexplained difference is "
+            f"{fint(oc['transactions'])} transactions from "
+            f"{fint(oc['distinct_signers'])} accounts; "
+            f"{fint(oc['transactions_with_another_swap'])} of them also swapped in another pool, "
+            "and "
+            f"{oc['usd_in_the_first_three_slots'] / oc['gross_usd'] * 100:.0f}% of the hour's USD "
+            "sits in transactions in the first three positions of their block. The case stays "
+            "open.",
+            "A difference that survives every reading of the pool's own logs has to be looked "
+            "for in the transactions around them. This is where a second source with per-swap "
+            "rows would settle it, and what to ask that source for.",
+            "docs/RECONCILIATION_FINDINGS.md",
+            f"{GH}docs/RECONCILIATION_FINDINGS.md#what-is-still-open",
+        )
+    )
+
+    a("</main>")
+
     # ---- glossary: the technical words used above, one line each, folded away
     terms = [
         (
@@ -1722,6 +2132,28 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             "the explanation points at. If it fixes as much, the explanation was fitting noise.",
         ),
         ("Pool-day", "one pool on one day: the unit everything on this page is counted in."),
+        (
+            "ASOF JOIN",
+            "a join that matches each row to the LAST row of the other side at or "
+            "before it, here by position in the chain. Section 11 uses it to find the price in "
+            "effect in the other pool at every swap.",
+        ),
+        (
+            "Log ratio in bps",
+            "10,000 × ln(A / B). For a gap of a few bps it equals the "
+            "relative difference; unlike it, a price that doubles and one that halves come out "
+            "the same size.",
+        ),
+        (
+            "Finalized block",
+            "a block the network will no longer reorganise. Data is fetched "
+            "only up to the one the node reports, so nothing on this page can be rewritten.",
+        ),
+        (
+            "Transaction receipt",
+            "what the node returns about a transaction once it is mined: "
+            "who signed it, what it called, every log it emitted and the gas it paid. Section 12.",
+        ),
     ]
     a(
         '<div class="start"><h2>Glossary</h2>'
@@ -1760,7 +2192,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
         "<title>univ3-clickhouse-indexer — measurements</title>\n"
         f'<meta name="description" content="{esc(docs["one_liner"])}">\n'
-        f"<style>{CSS}</style>\n</head>\n<body>\n"
+        f"<style>{CSS}{span_css()}</style>\n</head>\n<body>\n"
         f'<div class="wrap">\n{"".join(parts)}\n</div>\n</body>\n</html>\n'
     )
 

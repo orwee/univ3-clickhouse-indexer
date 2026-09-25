@@ -360,3 +360,41 @@ def test_every_source_line_names_a_file_or_a_table(page):
         assert re.search(r"\.(sql|md|csv|py)\b|onchain", src), (
             f"a source caption with no file: {src}"
         )
+
+
+def test_the_page_uses_the_full_width_and_two_columns_on_a_wide_screen(page):
+    """Up to 1600px wide, two columns of sections from 1100px, and grid tracks that cannot
+    grow past the screen: minmax(0,1fr), never a bare 1fr, which a long word can stretch."""
+    flat = page.replace(" ", "").replace("\n", "")
+    assert ".wrap{max-width:1600px" in flat
+    assert "@media(min-width:1100px)" in flat
+    assert ".grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in flat
+    tracks = re.findall(r"grid-template-columns:([^;}]+)", flat)
+    assert tracks, "no grid at all"
+    for t in tracks:
+        assert not re.search(r"(?<![,(])1fr", t.replace("minmax(0,1fr)", "")), t
+    assert '<main class="grid">' in page and page.count("</main>") == 1
+
+
+def test_whats_new_is_dated_and_every_line_links_to_what_it_summarises(page):
+    new = re.search(
+        r'<div class="take new"><h2>What.s new since 21 September</h2>(.*?)</ul>', page, re.S
+    )
+    assert new, "the What's new block is missing"
+    items = re.findall(r"<li>(.*?)</li>", new.group(1), re.S)
+    assert 3 <= len(items) <= 5, f"{len(items)} lines; the block is meant to hold three to five"
+    for item in items:
+        assert re.search(r"<b>\d{4}-\d{2}-\d{2}</b>", item), f"an undated line: {item[:60]}"
+        assert re.search(r'<a href="https://github.com/orwee/', item), (
+            f"a line with no link: {item[:60]}"
+        )
+    assert page.index(new.group(0)) < page.index('<section id="s1">')
+
+
+def test_the_week_two_sections_each_carry_a_chart_and_their_source(page):
+    for number, source in ((10, "docs/ROUND_TRIPS.md"), (11, "docs/CROSS_POOL.md"),
+                           (12, "docs/RECONCILIATION_FINDINGS.md")):  # fmt: skip
+        sec = re.search(rf'<section id="s{number}">.*?</section>', page, re.S)
+        assert sec, f"section {number} is missing"
+        assert "<svg " in sec.group(0), f"section {number} has no chart"
+        assert source in sec.group(0), f"section {number} does not point at {source}"
