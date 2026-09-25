@@ -14,6 +14,12 @@ pool-days compared, 17 flagged) for one purpose: to test finding 7 on days it ha
 fitted on. That run is in its own [snapshot](evidence/2026-09-21/README.md). Everything else
 below still quotes the run of 2026-09-20, on which it was found.
 
+On 2026-09-25 five more days were added, up to the node's finalized block (1,240,618 swaps,
+2026-08-09 to 2026-09-25; 183 pool-days compared, 18 flagged), in a
+[snapshot](evidence/2026-09-25/README.md) of their own. None of the pool-days compared before
+changed, on our side or on the source's. The findings below are not rewritten: what the new
+run adds is marked with its date.
+
 Each finding carries one of three states. **EXPLAINED**: the cause was measured and the
 difference goes away when it is removed. **PARTLY EXPLAINED**: a cause fits the numbers but
 either does not cover all of the difference or rests on something the source does not
@@ -29,7 +35,7 @@ Daily swaps and raw token volume recomputed from `raw_swaps` equal the `swaps_da
 materialized view on all 128 pool-days, in raw integer units: 0 differences
 ([report, A](evidence/2026-09-20/reconciliation.md#a-differences-expected-none)). Still 0 on
 the 170 pool-days of the current window. Whatever differs below is between this
-pipeline and the outside, not inside it.
+pipeline and the outside, not inside it. (2026-09-25: still 0, on 188 pool-days.)
 
 ### 2. Partial days and open candles — EXPLAINED
 
@@ -137,6 +143,33 @@ part of the gap in USDC/WETH 0.01% and wstETH/USDC 0.05%; the placebo shows it i
 artefact of revaluing as such; and it is not the whole story. PARTLY EXPLAINED stands, with less confidence in the correlation than the
 in-sample figure suggested.
 
+**Five more days (2026-09-25).** Of the 16 new pool-days one is flagged: wstETH/USDC 0.05% on
+2026-09-24, -25.02% (-3,508 USD), all of it in 15h
+([evidence §11](evidence/2026-09-25/reconciliation_evidence.md#11-the-flagged-pool-days-hour-by-hour)).
+It has the shape this finding describes: a same-block round trip of 4,787 USD a leg that took
+the tick about 7,800 ticks away and back with another swap between its legs
+([§10](evidence/2026-09-25/reconciliation_evidence.md#10-round-trips-inside-one-block)), and
+revaluing the day's 5 displaced swaps at the going price brings the day to +0.27%
+([§9](evidence/2026-09-25/reconciliation_evidence.md#9-swaps-executed-away-from-the-pools-own-recent-price)).
+It is one more day that fits the reading, not a test of it: the test is the pre-registered
+one above.
+
+**Round trips over the whole dataset (2026-09-25).** The same definition, applied to every
+pool-day instead of the flagged ones ([ROUND_TRIPS.md](ROUND_TRIPS.md)): 9.8% of all USD volume
+is round-trip legs, 24.4% in USDC/WETH 0.01% and 0.96% in USDC/WETH 0.05%, and 95.0% of that
+USD has the shape of a swap before somebody else's and its reversal after it.
+
+**The largest open case, from its transaction receipts (2026-09-25).** USDC/WETH 0.05% on
+2026-08-19 differs by +7,766,114 USD, +6,361,336 of it in 15h. The 820 transactions that hold a
+swap of the pool in that hour were read from the node, once, and kept outside the repository
+([aggregate report](evidence/2026-09-25/receipts_2026-08-19_15h.md)). What they show: netting
+the swaps inside each transaction first would move the hour by 3,270 USD, so a source that
+counts one trade per transaction would not explain it; 499 accounts signed them, the largest
+five for 40.7% of the hour's USD; 442 also swapped in another pool; and the 152 transactions in
+the first three positions of their block hold 48.1 M of the hour's 72.7 M USD. What they do not
+show is where the difference comes from: the case stays open, and a second source with
+per-swap rows is still what would settle it.
+
 ### 8. 2026-08-29: three pools high on a quiet Saturday — PARTLY EXPLAINED
 
 Three of four pools are above the source (+1.80%, +1.34%, +1.44%) on the third quietest day
@@ -176,7 +209,7 @@ apart ([DECISIONS.md #16](../DECISIONS.md#16-a-pool-day-is-flagged-beyond-1-and-
 | USDC/WETH 0.05%, 2026-08-29 | +1.44%, +368,871 USD | Two hours (14h, 15h); no displaced swap; UNEXPLAINED |
 | USDC/WETH 0.01%, 2026-09-03 | +1.59%, +710,478 USD | One hour (17h, +631,096 USD); unchanged by the valuation reading; UNEXPLAINED |
 | USDC/WETH 0.01%, 2026-09-11 | +3.14%, +1,615,421 USD | Comes to +1.35% under the valuation reading; the rest UNEXPLAINED |
-| USDC/WETH 0.05%, 2026-08-19 (hold-out) | +2.63%, +7,766,114 USD | 82% in one hour (15h); 7 displaced swaps; unchanged by revaluation; UNEXPLAINED |
+| USDC/WETH 0.05%, 2026-08-19 (hold-out) | +2.63%, +7,766,114 USD | 82% in one hour (15h); 7 displaced swaps; unchanged by revaluation; 2026-09-25: its 820 receipts rule out netting inside a transaction (3,270 USD); UNEXPLAINED |
 | USDC/WETH 0.05%, 2026-08-20 (hold-out, secondary) | +1.07%, +1,273,956 USD | No displaced swap; UNEXPLAINED |
 | USDC/WETH 0.01%, 2026-08-11 (hold-out) | +1.31%, +396,150 USD | Made worse by revaluation (+1.93%); UNEXPLAINED |
 | wstETH/USDC 0.05%, 2026-08-17 (hold-out) | +121.53%, +812 USD | Below the absolute threshold; unchanged by revaluation; UNEXPLAINED |
