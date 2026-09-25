@@ -196,3 +196,11 @@ def test_the_raw_recomputation_must_agree_with_the_marts():
         "rows": [{"tolerance": 0.1, "pairs": 3, "legs": 5, "legs_usd": 10.0}]}}  # fmt: skip
     with pytest.raises(analysis.AnalysisError, match="raw 3 pairs, 5 legs"):
         analysis.check_tolerance_against_the_marts(drifted)
+
+
+def test_answers_that_differ_only_in_the_last_bits_of_a_float_are_the_same():
+    a = [("lo", 3, 0.1 + 0.2), ("", 5, 2.5)]
+    assert analysis.same_rows(a, [("lo", 3, 0.3), ("", 5, 2.5)])
+    assert not analysis.same_rows(a, [("lo", 4, 0.3), ("", 5, 2.5)]), "a count differs"
+    assert not analysis.same_rows(a, [("lo", 3, 0.31), ("", 5, 2.5)]), "a float really differs"
+    assert not analysis.same_rows(a, a[:1]), "a row is missing"

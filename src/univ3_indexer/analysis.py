@@ -26,6 +26,7 @@ import argparse
 import datetime
 import json
 import logging
+import math
 import re
 import sys
 from pathlib import Path
@@ -173,10 +174,28 @@ def join_algorithms(client, pair: dict, database: str = RAW_DB) -> list[dict]:
                 "read_rows": int(runs[-1].get("read_rows", 0)),
             }
         )
-    same = len({repr(v) for v in answers.values()}) == 1
+    base = answers[JOIN_ALGORITHMS[0]]
     for row in out:
-        row["same_answer_as_hash"] = same
+        row["same_answer_as_hash"] = same_rows(base, answers[row["join_algorithm"]])
     return out
+
+
+def same_rows(a: list, b: list, rel: float = 1e-9) -> bool:
+    """Equal row by row: exactly for integers and text, to a relative 1e-9 for floats. Two
+    join algorithms add the same floats in a different order, so an average can differ in
+    its last bits without the answer being different."""
+    if len(a) != len(b):
+        return False
+    for ra, rb in zip(a, b, strict=True):
+        if len(ra) != len(rb):
+            return False
+        for x, y in zip(ra, rb, strict=True):
+            if isinstance(x, float) or isinstance(y, float):
+                if not math.isclose(x, y, rel_tol=rel, abs_tol=1e-12):
+                    return False
+            elif x != y:
+                return False
+    return True
 
 
 def cross_pool(client) -> dict:
