@@ -96,6 +96,8 @@ def test_the_summary_counts_what_the_receipts_show():
     assert usd[receipts.NO_OTHER_SWAP] == 150.0
     assert s["transactions_in_the_first_three_slots"] == 2
     assert s["usd_in_the_first_three_slots"] == 700.0  # positions 0 and 1: tx 0 and tx 2
+    assert s["transactions_with_another_swap"] == 1  # tx 1: the sibling pool and a v2 pair
+    assert s["usd_of_transactions_with_another_swap"] == 300.0
     assert s["fees_paid_eth"] == pytest.approx(4 * 100_000 * 2e9 / 1e18)
 
 

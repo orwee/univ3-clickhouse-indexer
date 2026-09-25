@@ -54,6 +54,12 @@ DEFAULT_MAX_CALLS = 1000
 # What a transaction is labelled when it emitted no other Swap (v2, v3-style, v4) and no WETH
 # wrap: it may still carry other protocols' events, which are not classified here.
 NO_OTHER_SWAP = "no other swap, and no WETH wrap or unwrap"
+OTHER_SWAPS = {
+    "another tracked pool",
+    "an untracked v3-style pool",
+    "a v2-style pair",
+    "the v4 pool manager",
+}
 DATABASE = "onchain"
 
 # One row per transaction that holds at least one Swap of the pool in the hour, with what
@@ -198,6 +204,7 @@ def summarize(
     this_pool_swaps_per_tx: Counter = Counter()
     touches: Counter = Counter()
     touches_usd: Counter = Counter()
+    with_another_swap, with_another_swap_usd = 0, 0.0
     usd_first_slots = 0.0
     contracts_per_tx: list[int] = []
     gas_used: list[float] = []
@@ -238,6 +245,9 @@ def summarize(
                 kinds.add("the v4 pool manager")
             elif topic in (TOPIC_WETH_DEPOSIT, TOPIC_WETH_WITHDRAWAL) and where == weth:
                 kinds.add("a WETH wrap or unwrap")
+        if kinds & OTHER_SWAPS:
+            with_another_swap += 1
+            with_another_swap_usd += row["gross_usd"]
         if not kinds:
             kinds.add(NO_OTHER_SWAP)
         for kind in kinds:
@@ -285,6 +295,8 @@ def summarize(
             k: touches_usd[k] for k, _ in touches.most_common()
         },
         "usd_in_the_first_three_slots": usd_first_slots,
+        "transactions_with_another_swap": with_another_swap,
+        "usd_of_transactions_with_another_swap": with_another_swap_usd,
         "contracts_emitting_logs_p50": _quantile(contracts_per_tx, 0.5),
         "contracts_emitting_logs_p90": _quantile(contracts_per_tx, 0.9),
         "gas_used_p50": _quantile(gas_used, 0.5),
@@ -392,6 +404,10 @@ transaction can be in more than one row, so the USD column does not add up to th
 | | transactions | USD of this pool's swaps |
 |---|---|---|
 {touch_rows}
+
+Transactions with at least one swap in another pool (any row above but the WETH one):
+{s["transactions_with_another_swap"]:,}, with {s["usd_of_transactions_with_another_swap"]:,.0f}
+USD of this pool's swaps.
 
 Contracts emitting a log, per transaction: median {s["contracts_emitting_logs_p50"]:,.0f},
 90th percentile {s["contracts_emitting_logs_p90"]:,.0f}.
