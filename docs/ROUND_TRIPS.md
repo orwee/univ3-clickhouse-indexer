@@ -43,7 +43,7 @@ legs or USD.
 | Pool | Pairs | Swaps in them | Share of the pool's swaps | Share of the pool's USD | Median day |
 |---|---|---|---|---|---|
 | USDC/WETH 0.01% | 3,147 | 5,759 | 0.62% | **24.4%** | 24.8% |
-| USDC/WETH 0.05% | 2,065 | 3,616 | 1.18% | 0.96% | 0.1% |
+| USDC/WETH 0.05% | 2,065 | 3,616 | 1.18% | 0.96% | 0.06% |
 | wstETH/USDC 0.05% | 81 | 162 | 2.66% | 0.40% | 16.2% |
 | wstETH/USDC 0.3% | 6 | 12 | 1.29% | 5.75% | 0.0% |
 | **All four** | **5,299** | **9,549** | **0.77%** | **9.80%** | |
@@ -55,7 +55,7 @@ legs or USD.
   1,000 USD and hold 0.16% of the round-trip USD; the 1,446 legs of 100,000 USD or more hold
   87.4% of it.
 - **It is concentrated in one pool and a few contracts.** In USDC/WETH 0.01% it is a quarter of
-  the money on a median day, and steady from day to day; in USDC/WETH 0.05%, the larger pool by
+  the money on a median day; in USDC/WETH 0.05%, the larger pool by
   volume, it is under 1%. 124 contracts called the pool for these pairs; the largest one
   accounts for 25.3% of the round-trip USD, the largest three for 69.8%, the largest ten for
   97.5%. How many accounts are behind those contracts is not known from a Swap log.

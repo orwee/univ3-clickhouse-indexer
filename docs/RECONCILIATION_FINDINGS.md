@@ -34,7 +34,7 @@ nothing about what it does can be more than PARTLY EXPLAINED.
 Daily swaps and raw token volume recomputed from `raw_swaps` equal the `swaps_daily`
 materialized view on all 128 pool-days, in raw integer units: 0 differences
 ([report, A](evidence/2026-09-20/reconciliation.md#a-differences-expected-none)). Still 0 on
-the 170 pool-days of the current window. Whatever differs below is between this
+the 170 pool-days of the window of 2026-09-21. Whatever differs below is between this
 pipeline and the outside, not inside it. (2026-09-25: still 0, on 188 pool-days.)
 
 ### 2. Partial days and open candles — EXPLAINED
@@ -45,7 +45,7 @@ comparison of 2026-09-19 ran at 23:12 UTC of that day, against a candle still op
 USDC/WETH 0.01% read -2.14%; with the day closed on both sides it reads -0.55%
 ([DECISIONS.md #15](../DECISIONS.md#15-the-external-comparison-only-looks-at-days-that-are-whole-on-both-sides)).
 Resolution: only days complete on our side and closed on theirs are compared; the excluded
-pool-days are listed with their reason, not dropped (8 in that run, 7 in the current one)
+pool-days are listed with their reason, not dropped (8 in that run, 7 in that of 2026-09-21)
 ([report, excluded](evidence/2026-09-20/reconciliation.md#b-pool-days-excluded-from-the-comparison)).
 
 ### 3. The day boundary is not the cause — EXPLAINED (a negative result)
@@ -64,7 +64,7 @@ price, differs by -0.0038% (USDC/WETH 0.05%) and +0.0203% (USDC/WETH 0.01%) over
 was worth 1 USD: both valuations end up in USDC. An outside USDC price does exist in the
 data and is not used: for USDC/WETH 0.01% the source's daily close is the price of USDC, and
 it stayed between 0.9990 and 1.0008, both over the 30 days compared then and over the 41
-compared today (`close_usd` in `external_daily_volume`).
+compared on 2026-09-21 (`close_usd` in `external_daily_volume`).
 
 ### 5. In the liquid pools the 30-day totals agree and the daily noise is centred — EXPLAINED
 
@@ -149,7 +149,8 @@ in-sample figure suggested.
 It has the shape this finding describes: a same-block round trip of 4,787 USD a leg that took
 the tick about 7,800 ticks away and back with another swap between its legs
 ([§10](evidence/2026-09-25/reconciliation_evidence.md#10-round-trips-inside-one-block)), and
-revaluing the day's 5 displaced swaps at the going price brings the day to +0.27%
+valuing every swap of the day at its reference price, as the reading does (5 of them
+displaced, 9,674 USD), brings the day to +0.27%
 ([§9](evidence/2026-09-25/reconciliation_evidence.md#9-swaps-executed-away-from-the-pools-own-recent-price)).
 It is one more day that fits the reading, not a test of it: the test is the pre-registered
 one above.
@@ -193,10 +194,10 @@ values a swap.
 
 ### 10. In thin pools a percentage alone does not discriminate — EXPLAINED
 
-wstETH/USDC 0.3% had 625 swaps in that window (673 over the 43 days loaded today); on
+wstETH/USDC 0.3% had 625 swaps in that window (673 over the 43 days loaded on 2026-09-21); on
 2026-09-19 one swap of 617.28 USD is 44% of its day. Of the 24 compared pool-days beyond 1%,
-12 differ by less than 1,000 USD, 2,098 USD in total, all in the two wstETH pools (today: 35
-beyond 1%, 18 of them below 1,000 USD, 3,682 USD in total, same two pools)
+12 differ by less than 1,000 USD, 2,098 USD in total, all in the two wstETH pools (on
+2026-09-21: 35 beyond 1%, 18 of them below 1,000 USD, 3,682 USD in total, same two pools)
 ([report, below the absolute threshold](evidence/2026-09-20/reconciliation.md#b-beyond-1-but-below-the-absolute-threshold-of-1000-usd)).
 Resolution: a pool-day is flagged beyond 1% **and** beyond 1,000 USD; the others are listed
 apart ([DECISIONS.md #16](../DECISIONS.md#16-a-pool-day-is-flagged-beyond-1-and-beyond-1000-usd)).

@@ -38,7 +38,7 @@ than naming them.
 | median absolute gap | 2.85 bps | 2.79 bps | 3.00 bps |
 | 95th percentile | 6.30 bps | 6.10 bps | 7.14 bps |
 | 99th percentile | 12.64 bps | 11.15 bps | 16.93 bps |
-| within the 6 bps band | **94.1%** | 94.7% | 92.4% |
+| within the 6 bps band | **94.1%** | 94.6% | 92.4% |
 
 - **Measured swap by swap, the two pools sit within their fees 94.1% of the time.** A gap
   counted at every swap includes states inside a transaction and inside a block that nobody
@@ -49,8 +49,8 @@ than naming them.
   block** they opened in, 5,008 one block later, 637 two or more blocks later. The longest
   lasted 6 blocks. 3,874 of them (13.1%) opened and closed inside one transaction: a state
   that existed only between two steps of that transaction, not a gap anyone else could trade.
-- **Neither pool leads.** The swap that opens a divergence is in the 0.01% pool 76.9% of the
-  time, about its share of the swaps (75.1%). 57.5% of the divergences are closed by a later
+- **Neither pool opens divergences more often than its share of swaps predicts.** The swap that
+  opens one is in the 0.01% pool 76.9% of the time, about its share of the swaps (75.1%). 57.5% of the divergences are closed by a later
   swap in the same pool that opened them; when the other pool closes one, the split is 6,872
   to 5,657. The data show which pool's swap crossed the band,
   which is not the same thing as which market moved first.
@@ -64,7 +64,9 @@ The same queries on wstETH/USDC (0.05% against 0.3%, a combined fee of 35 bps) s
 gap of 27 bps and divergences that last a median of 38 blocks. Part of it is thin liquidity:
 the 0.3% pool has 931 swaps in the whole window. Part of it is a price nobody could trade at:
 five swaps left the 0.3% pool with no liquidity in range and three ended at the edge of its
-tick range, and every swap of the 0.05% pool while it sat there is measured against that edge.
+tick range (`countIf(liquidity = 0)` and `countIf(abs(tick) >= 887000)` on `raw_swaps`, run
+read-only on 2026-09-25), and every swap of the 0.05% pool while it sat there is measured
+against that edge.
 The report keeps the figures; this document draws no conclusion from them.
 
 ## What ClickHouse does with these queries
@@ -72,7 +74,9 @@ The report keeps the figures; this document draws no conclusion from them.
 - **The sorting key does the pruning.** `raw_swaps` is ordered by
   `(pool_address, block_timestamp, block_number, log_index)`. Every scan filters on one pool,
   so the primary index keeps only that pool's granules: 117 of 153 for the 0.01% pool and 42
-  of 153 for the 0.05% pool (`EXPLAIN indexes = 1`, kept in the report). The time part of the
+  of 153 for the 0.05% pool (`EXPLAIN indexes = 1`, kept in the report). The two add up to
+  more than 153 because a granule where one pool's rows end and the next pool's begin is read
+  for both. The time part of the
   key does nothing here: there is no time filter.
 - **A CTE is not a temporary table.** Each query names each pool's CTE twice (once on each side
   of the two ASOF joins), and ClickHouse reads it twice: 2,576,810 rows read for 1,233,584

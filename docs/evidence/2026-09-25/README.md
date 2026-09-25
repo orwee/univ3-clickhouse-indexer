@@ -2,7 +2,8 @@
 
 Made with the code of branch `feat/week-2`. The landing zone was extended from block
 26,019,266 to block 26,050,796, the block the node reported as `finalized` at 00:24 UTC
-(its timestamp: 2026-09-25 00:09:59 UTC), as a new plan of its own; no earlier plan moved.
+(its timestamp: 2026-09-25 00:09:59 UTC), as a new plan of its own; no earlier plan moved. The
+last swap landed is in block 26,050,795, at 00:09:47 UTC.
 
 | File | Made by |
 |---|---|

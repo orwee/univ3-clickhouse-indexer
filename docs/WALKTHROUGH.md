@@ -81,7 +81,7 @@ one of the 29 dbt tests failing, because a test that cannot fail checks nothing
   (how much of the volume is swaps undone in the same block, and how much that figure depends
   on its definition) and [docs/CROSS_POOL.md](CROSS_POOL.md) (the gap between two fee tiers of
   one pair, with an ASOF JOIN and what ClickHouse reads for it).
-- [docs/NANSEN.md](NANSEN.md): what a Swap log cannot tell you (who signed), what 9 API
+- [docs/NANSEN.md](NANSEN.md): what a Swap log cannot tell you (who signed), what 10 API
   credits bought, and the production design that was deliberately not run.
 - [docs/EXTERNAL_SOURCE.md](EXTERNAL_SOURCE.md): what the external source documents, what was
   only observed, and what is unknown.
