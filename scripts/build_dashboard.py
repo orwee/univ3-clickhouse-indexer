@@ -70,7 +70,12 @@ POOL_DASH = {
 SPAN_SECTIONS = (1, 12)
 
 SVG_W = 680  # every chart is drawn in this many user units wide and scaled with width:100%
-FS = 18  # tick/label size in user units: ~9 px on a 360 px phone, ~18 px on a wide screen
+FS = 18  # tick/label size in user units, the same in both drawings below
+# The phone drawing. At 390 px a card leaves about 346 px for a chart; 680 units there put an
+# 18-unit label at under 9 px. Drawn 460 units wide instead, the same label is about 13 px,
+# and still 11 px on a 320 px screen. The text is not made smaller: the canvas is.
+NARROW_W = 460
+NARROW_MAX_PX = 559  # viewports up to this width get the phone drawing
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -617,10 +622,32 @@ def _pack_labels(items: list[tuple[float, object]], gap: float, lo: float, hi: f
     return {key: y for (_, key), y in zip(ordered, ys, strict=True)}
 
 
-def line_chart_log(dates: list, series: dict, *, title: str, desc: str) -> str:
+def responsive(draw, *args, phone: dict | None = None, phone_draw=None, **kwargs) -> str:
+    """The chart drawn twice, at SVG_W for a screen and at NARROW_W for a phone. The CSS shows
+    one of the two; the other is display:none, so it is neither seen nor read aloud.
+
+    `phone` replaces keyword arguments in the phone drawing (shorter or two-line labels), and
+    `phone_draw` draws it with another function (one column instead of side by side) when
+    simpler labels are not enough. The font size is the same in both drawings.
+    """
+    wide = draw(*args, w=SVG_W, **kwargs).replace("<svg ", '<svg class="wide" ', 1)
+    narrow = (phone_draw or draw)(*args, w=NARROW_W, **{**kwargs, **(phone or {})})
+    return wide + narrow.replace("<svg ", '<svg class="narrow" ', 1)
+
+
+def _date_step(per_day: float) -> int:
+    """Days between two date ticks: the smallest whole number of weeks that leaves room for
+    a "%b %d" label (about 4.2 x FS wide once the gap to its neighbour is counted)."""
+    step = 7
+    while step * per_day < FS * 4.2:
+        step += 7
+    return step
+
+
+def line_chart_log(dates: list, series: dict, *, w: int = SVG_W, title: str, desc: str) -> str:
     """One line per pool on a base-10 log scale. Direct end labels plus the legend."""
     height, left, right, top, bottom = 372, 72, 152, 16, 44
-    x0, x1 = left, SVG_W - right
+    x0, x1 = left, w - right
     y0, y1 = top, height - bottom
     decades = [0, 2, 4, 6, 8]
     names = {0: "$1", 2: "$100", 4: "$10k", 6: "$1M", 8: "$100M"}
@@ -632,16 +659,18 @@ def line_chart_log(dates: list, series: dict, *, title: str, desc: str) -> str:
         lv = min(max(math.log10(max(v, 1.0)), 0.0), 9.0)
         return y1 - (y1 - y0) * lv / 9.0
 
-    out = _open_svg(SVG_W, height, title, desc)
+    out = _open_svg(w, height, title, desc)
     for d in decades:
         y = sy(10.0**d)
         out.append(f'<line class="gr" x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}"/>')
         out.append(_txt(x0 - 8, y + FS * 0.34, names[d], "tk", "end"))
     out.append(f'<line class="ax" x1="{x0}" y1="{y1}" x2="{x1}" y2="{y1}"/>')
-    # One date every fortnight, and always the last one: a weekly tick is narrower than the
-    # label that sits on it. The first is anchored at the start so it cannot reach back over
-    # the "$1" of the vertical axis, and the last at the end so it cannot run past the plot.
-    ticks_x = [i for i in range(0, len(dates), 14) if len(dates) - 1 - i >= 7]
+    # One date every whole number of weeks that leaves room for its label (a fortnight at
+    # full width), and always the last one. The first is anchored at the start so it cannot
+    # reach back over the "$1" of the vertical axis, and the last at the end so it cannot run
+    # past the plot.
+    step = _date_step((x1 - x0) / (len(dates) - 1))
+    ticks_x = [i for i in range(0, len(dates), step) if len(dates) - 1 - i >= step / 2]
     ticks_x.append(len(dates) - 1)
     for i in ticks_x:
         anchor = "start" if i == 0 else ("end" if i == len(dates) - 1 else "middle")
@@ -679,6 +708,7 @@ def grouped_bars(
     series: list[tuple[str, str]],
     values: list[list[float]],
     *,
+    w: int = SVG_W,
     title: str,
     desc: str,
     y_ticks: list[float],
@@ -693,7 +723,7 @@ def grouped_bars(
     # is wider than its band once there are four groups, and would run into its neighbour.
     lines_per_label = max(g.count("\n") + 1 for g in groups)
     left, right, top, bottom = 74, 16, 18, 44 + round(FS * 1.65) * (lines_per_label - 1)
-    x0, x1 = left, SVG_W - right
+    x0, x1 = left, w - right
     y0, y1 = top, height - bottom
     top_value = max(y_ticks)
     band = (x1 - x0) / len(groups)
@@ -713,7 +743,7 @@ def grouped_bars(
     def sy(v: float) -> float:
         return y1 - (y1 - y0) * (v / top_value)
 
-    out = _open_svg(SVG_W, height, title, desc)
+    out = _open_svg(w, height, title, desc)
     for t in y_ticks:
         y = sy(t)
         out.append(f'<line class="gr" x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}"/>')
@@ -744,10 +774,51 @@ def grouped_bars(
     return "".join(out)
 
 
+def grouped_hbars(
+    groups: list[str],
+    series: list[tuple[str, str]],
+    values: list[list[float]],
+    *,
+    w: int = SVG_W,
+    title: str,
+    desc: str,
+    value_fmt,
+    **_: object,
+) -> str:
+    """grouped_bars turned on its side: one block per category, its name on a line of its
+    own and one bar per series under it, the value at the end of each bar. For a width where
+    the categories side by side would leave each name less room than it needs."""
+    bar_h, pitch = FS * 1.35, FS * 1.8
+    block_h = FS * 1.5 + pitch * len(series) + FS * 0.6
+    height = int(block_h * len(groups) + 8)
+    texts = [value_fmt(v) for row in values for v in row]
+    x0 = 8
+    x1 = w - (max(len(t) for t in texts) * (FS - 1) * 0.58 + 16)
+    top = max(v for row in values for v in row) or 1.0
+    out = _open_svg(w, height, title, desc)
+    for gi, group in enumerate(groups):
+        name = group.replace("\n", " ")
+        y = 4 + gi * block_h
+        out.append(_txt(x0, y + FS, name, "lb"))
+        for si, (series_name, slot) in enumerate(series):
+            v = values[si][gi]
+            bar_y = y + FS * 1.5 + si * pitch
+            bw = max(1.0, (x1 - x0) * v / top)
+            out.append(
+                f'<rect class="bar" x="{x0}" y="{bar_y:.1f}" width="{bw:.1f}" '
+                f'height="{bar_h:.1f}" rx="3" style="fill:var(--{slot})">'
+                f"<title>{esc(name)} — {esc(series_name)}: {esc(value_fmt(v))}</title></rect>"
+            )
+            out.append(_txt(x0 + bw + 10, bar_y + FS * 1.05, value_fmt(v), "vl"))
+    out.append("</svg>")
+    return "".join(out)
+
+
 def histogram(
     buckets: list[int],
     counts: list[int],
     *,
+    w: int = SVG_W,
     threshold: float,
     title: str,
     desc: str,
@@ -757,7 +828,7 @@ def histogram(
     """Counts per 1-unit bucket, the bars at or past `threshold` in a second colour, and a
     dashed line at the threshold itself. The last bucket is open-ended when last_is_open."""
     left, right, top, bottom = 74, 16, 18, 44
-    x0, x1 = left, SVG_W - right
+    x0, x1 = left, w - right
     y0, y1 = top, height - bottom
     ticks = nice_ticks(max(counts))
     top_value = max(ticks)
@@ -767,7 +838,7 @@ def histogram(
     def sy(v: float) -> float:
         return y1 - (y1 - y0) * (v / top_value)
 
-    out = _open_svg(SVG_W, height, title, desc)
+    out = _open_svg(w, height, title, desc)
     for t in ticks:
         y = sy(t)
         out.append(f'<line class="gr" x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}"/>')
@@ -795,6 +866,7 @@ def histogram(
 def hbars(
     rows: list[tuple[str, float, str]],
     *,
+    w: int = SVG_W,
     title: str,
     desc: str,
     slot: str = "s1",
@@ -803,37 +875,43 @@ def hbars(
     label_w: float = 128,
 ) -> str:
     """Horizontal bars, one colour, the value written at the end of each bar."""
-    row_h = FS * 3.0 if label_above else FS * 2.4
+    # A label above its bar may hold a line break; each extra line takes FS * 1.65, the
+    # spacing measured for two-line labels in line_chart_log.
+    extra = max(label.count("\n") for label, _, _ in rows) if label_above else 0
+    row_h = (FS * 3.0 + extra * FS * 1.65) if label_above else FS * 2.4
     height = int(row_h * len(rows) + 10)
     top = max_value if max_value is not None else max(v for _, v, _ in rows)
     # Leave room for the longest value label, so the last bar's text cannot run off the edge.
     value_gutter = max(len(text) for _, _, text in rows) * (FS - 1) * 0.58 + 16
     x0 = 8 if label_above else label_w
-    x1 = SVG_W - value_gutter
-    out = _open_svg(SVG_W, height, title, desc)
+    x1 = w - value_gutter
+    out = _open_svg(w, height, title, desc)
     for i, (label, value, text) in enumerate(rows):
         y = 6 + i * row_h
-        bar_y = y + (FS * 1.4 if label_above else 0)
+        bar_y = y + (FS * 1.4 + extra * FS * 1.65 if label_above else 0)
         w = max(1.0, (x1 - x0) * (value / top if top else 0))
         if label_above:
-            out.append(_txt(x0, y + FS, label, "lb"))
+            for k, line in enumerate(label.split("\n")):
+                out.append(_txt(x0, y + FS + k * FS * 1.65, line, "lb"))
         else:
             out.append(_txt(label_w - 10, bar_y + FS * 1.05, label, "tk", "end"))
         out.append(
             f'<rect class="bar" x="{x0}" y="{bar_y:.1f}" width="{w:.1f}" '
             f'height="{FS * 1.35:.1f}" rx="3" style="fill:var(--{slot})">'
-            f"<title>{esc(label)}: {esc(text)}</title></rect>"
+            f"<title>{esc(label.replace(chr(10), ' '))}: {esc(text)}</title></rect>"
         )
         out.append(_txt(x0 + w + 10, bar_y + FS * 1.05, text, "vl"))
     out.append("</svg>")
     return "".join(out)
 
 
-def reconciliation_panels(dates: list, csv_rows: list[dict], *, clamp: float) -> str:
+def reconciliation_panels(
+    dates: list, csv_rows: list[dict], *, w: int = SVG_W, clamp: float
+) -> str:
     """One panel per pool: the daily relative difference, the threshold, what was flagged."""
     panel_h, title_h, gap, left, right = 122, 24, 16, 72, 40
     height = 10 + len(POOL_ORDER) * (panel_h + gap) + 28
-    x0, x1 = left, SVG_W - right
+    x0, x1 = left, w - right
     half = 40.0
     index = {d: i for i, d in enumerate(dates)}
 
@@ -841,7 +919,7 @@ def reconciliation_panels(dates: list, csv_rows: list[dict], *, clamp: float) ->
         return x0 + (x1 - x0) * index[d] / (len(dates) - 1)
 
     title = "Daily relative difference against the external source, one panel per pool"
-    out = _open_svg(SVG_W, height, title, f"Four panels, {len(dates)} days each.")
+    out = _open_svg(w, height, title, f"Four panels, {len(dates)} days each.")
     for pi, label in enumerate(POOL_ORDER):
         ptop = 10 + pi * (panel_h + gap)
         cy = ptop + title_h + half
@@ -890,11 +968,11 @@ def reconciliation_panels(dates: list, csv_rows: list[dict], *, clamp: float) ->
                     f'style="fill:var(--{slot})">{tip}</circle>'
                 )
     base = height - 26
-    for i in range(0, len(dates), 7):
+    for i in range(0, len(dates), _date_step((x1 - x0) / (len(dates) - 1))):
         x = sx(dates[i])
         text = dates[i].strftime("%b %d")
         # the last tick sits on the right edge: anchor it so the label stays inside the box
-        anchor = "end" if x + len(text) * FS * 0.3 > SVG_W else "middle"
+        anchor = "end" if x + len(text) * FS * 0.3 > w else "middle"
         out.append(_txt(x, base + FS, text, "tk", anchor))
     out.append("</svg>")
     return "".join(out)
@@ -1181,6 +1259,15 @@ th,td{padding:5px 6px}
 """
 
 
+def narrow_css() -> str:
+    """Show the phone drawing of each chart up to NARROW_MAX_PX, the screen drawing above."""
+    return (
+        "svg.narrow{display:none}\n"
+        f"@media (max-width:{NARROW_MAX_PX}px)"
+        "{svg.wide{display:none}svg.narrow{display:block}}\n"
+    )
+
+
 def span_css() -> str:
     ids = ",".join(f"#s{n}" for n in SPAN_SECTIONS)
     return f"@media (min-width:1100px){{{ids}{{grid-column:1/-1}}}}\n"
@@ -1396,7 +1483,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     whole = [i for i, d in enumerate(data["dates"]) if d not in partial]
     whole_dates = [data["dates"][i] for i in whole]
     whole_series = {k: [v[i] for i in whole] for k, v in data["volume_series"].items()}
-    chart = line_chart_log(
+    chart = responsive(
+        line_chart_log,
         whole_dates,
         whole_series,
         title="Daily USD volume per pool, logarithmic scale",
@@ -1464,7 +1552,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     ]
     shares_low = [lo / (lo + hi) for _, _, lo, hi, _ in metrics]
     shares_high = [hi / (lo + hi) for _, _, lo, hi, _ in metrics]
-    chart = grouped_bars(
+    chart = responsive(
+        grouped_bars,
         [m[0] for m in metrics],
         [("USDC/WETH 0.01%", "s1"), ("USDC/WETH 0.05%", "s2")],
         [shares_low, shares_high],
@@ -1520,7 +1609,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         r for r in csv_rows if r["rel"] is not None and not r["excluded"] and abs(r["rel"]) > clamp
     ]
     worst = max(off_scale, key=lambda r: abs(r["rel"]))
-    chart = reconciliation_panels(data["dates"], csv_rows, clamp=clamp)
+    chart = responsive(reconciliation_panels, data["dates"], csv_rows, clamp=clamp)
     rows = [
         [
             esc(r["pool"]),
@@ -1592,7 +1681,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     ours = [h["our_usd"] for h in hours]
     theirs = [h["external_usd"] for h in hours]
     ticks = nice_ticks(max(max(ours), max(theirs)))
-    chart = grouped_bars(
+    chart = responsive(
+        grouped_bars,
         labels,
         [("this pipeline", "s1"), ("external source", "s2")],
         [ours, theirs],
@@ -1654,10 +1744,12 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
 
     # ---- 6. hypotheses
     hyp = docs["hypotheses"]
-    chart = grouped_bars(
-        [h["short"] for h in hyp],
-        [("days brought inside 1%", "good"), ("days pushed outside 1%", "critical")],
-        [
+    chart = responsive(
+        grouped_bars,
+        groups=[h["short"] for h in hyp],
+        phone={"groups": [h["short"].replace(" ", "\n", 1) for h in hyp]},
+        series=[("days brought inside 1%", "good"), ("days pushed outside 1%", "critical")],
+        values=[
             [h["fixed"] / h["beyond"] for h in hyp],
             [h["broken"] / h["inside"] for h in hyp],
         ],
@@ -1725,7 +1817,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
 
     # ---- 7. who moves the volume
     cum = data["senders"]["cumulative"]
-    chart = hbars(
+    chart = responsive(
+        hbars,
         [(f"top {r}", cum[r] * 100, f"{cum[r] * 100:.1f}%") for r in SENDER_RANKS],
         title="Share of USD volume held by the largest senders",
         desc="Cumulative share of USD volume by sender rank. No address is shown.",
@@ -1812,14 +1905,29 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
 
     # ---- 8. ClickHouse, measured
     keys = docs["sorting_keys"]
-    chart_a = hbars(
-        [(k["key"], k["rows"], f"{fint(k['rows'])} rows · {k['granules']} granules") for k in keys],
+    chart_a = responsive(
+        hbars,
+        rows=[
+            (k["key"], k["rows"], f"{fint(k['rows'])} rows · {k['granules']} granules")
+            for k in keys
+        ],
+        phone={
+            "rows": [
+                (
+                    k["key"].replace(" — ", "\n"),
+                    k["rows"],
+                    f"{fint(k['rows'])} rows · {k['granules']} granules",
+                )
+                for k in keys
+            ]
+        },
         title="Rows read for the same one-day query under two sorting keys",
         desc="The same query, two candidate sorting keys, rows read from system.query_log.",
         label_above=True,
     )
     ins = docs["inserts"]
-    chart_b = hbars(
+    chart_b = responsive(
+        hbars,
         [
             ("1 insert of 50,000 rows", ins["seconds"][0], f"{ins['seconds'][0]:g} s"),
             ("1,000 inserts of 50 rows", ins["seconds"][1], f"{ins['seconds'][1]:g} s"),
@@ -1922,10 +2030,12 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     row_of = {r["pool"]: r for r in by_pool}
     top_share = max(r["share_of_usd"] for r in by_pool)
     ticks = [0, 0.1, 0.2, 0.3] if top_share <= 0.3 else [0, 0.1, 0.2, 0.3, 0.4, 0.5]
-    chart = grouped_bars(
+    chart = responsive(
+        grouped_bars,
         [p.replace(" ", "\n", 1) for p in order],
         [("share of swaps", "muted"), ("share of USD volume", "accent")],
         [[row_of[p]["share_of_swaps"] for p in order], [row_of[p]["share_of_usd"] for p in order]],
+        phone_draw=grouped_hbars,
         title="How much of each pool's activity is a round trip in one block",
         desc="Per pool, the share of swaps and the share of USD volume that are legs of a "
         "same-block round trip.",
@@ -1935,7 +2045,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         value_fmt=share_pct,
         height=300,
     )
-    hour_chart = grouped_bars(
+    hour_chart = responsive(
+        grouped_bars,
         [f"{r['hour_utc']:02d}" for r in by_hour],
         [("share of the hour's USD", "accent")],
         [[r["share_of_usd"] for r in by_hour]],
@@ -2015,7 +2126,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     lo_share = gap_rows["lo"]["swaps"] / gap_all["swaps"]
     lo_fee, hi_fee = pair["lo_label"].split()[-1], pair["hi_label"].split()[-1]
     scans = liquid["explain"]["01_cross_pool_gap.sql"]
-    chart = histogram(
+    chart = responsive(
+        histogram,
         [r["bucket_bps"] for r in hist],
         [r["swaps"] for r in hist],
         threshold=pair["fee_bps"],
@@ -2088,7 +2200,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         raise SystemExit("build_dashboard: the open case is no longer a flagged pool-day")
     hour_diff = next(h["diff_usd"] for h in case["hours"] if h["hour_of_day"] == OPEN_CASE_HOUR)
     touch = oc["usd_of_transactions_that_also_touch"]
-    chart = hbars(
+    chart = responsive(
+        hbars,
         [(k, v, fusd_compact(v)) for k, v in sorted(touch.items(), key=lambda kv: -kv[1])],
         title=f"{OPEN_CASE_POOL} on {OPEN_CASE_DAY}, {OPEN_CASE_HOUR:02d}h UTC: what else the "
         "transactions touched",
@@ -2255,7 +2368,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
         "<title>univ3-clickhouse-indexer — measurements</title>\n"
         f'<meta name="description" content="{esc(docs["one_liner"])}">\n'
-        f"<style>{CSS}{span_css()}</style>\n</head>\n<body>\n"
+        f"<style>{CSS}{span_css()}{narrow_css()}</style>\n</head>\n<body>\n"
         f'<div class="wrap">\n{"".join(parts)}\n</div>\n</body>\n</html>\n'
     )
 

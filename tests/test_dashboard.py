@@ -7,11 +7,15 @@ network, no ClickHouse. Run `make dashboard` after changing the generator or the
 
 import html.parser
 import re
+import sys
 
 import pytest
 
 from univ3_indexer import config
 from univ3_indexer.config import REPO_ROOT
+
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+import build_dashboard  # noqa: E402
 
 PAGE = REPO_ROOT / "docs" / "index.html"
 NOJEKYLL = REPO_ROOT / "docs" / ".nojekyll"
@@ -398,3 +402,20 @@ def test_the_week_two_sections_each_carry_a_chart_and_their_source(page):
         assert sec, f"section {number} is missing"
         assert "<svg " in sec.group(0), f"section {number} has no chart"
         assert source in sec.group(0), f"section {number} does not point at {source}"
+
+
+def test_every_chart_has_a_phone_drawing_with_the_same_font(page):
+    """On a 390 px phone a card leaves about 346 px for a chart (measured in Chromium). Drawn
+    680 units wide there, an 18-unit label renders under 9 px; each chart is therefore drawn a
+    second time, narrower, and the CSS shows that one on a phone. The font is not touched."""
+    wide = re.findall(r'<svg class="wide" viewBox="0 0 (\d+) ', page)
+    narrow = re.findall(r'<svg class="narrow" viewBox="0 0 (\d+) ', page)
+    assert len(wide) >= 6 and len(wide) == len(narrow), "a chart without its phone drawing"
+    assert len(re.findall(r"<svg ", page)) == len(wide) + len(narrow), "a chart drawn once"
+    assert set(wide) == {str(build_dashboard.SVG_W)}
+    assert set(narrow) == {str(build_dashboard.NARROW_W)}
+    assert f"@media (max-width:{build_dashboard.NARROW_MAX_PX}px)" in page
+    css = page.replace(" ", "")
+    for cls, size in ((".tk", 18), (".lb", 18), (".vl", 17)):
+        assert f"{cls}{{fill:" in css and f"font-size:{size}px" in css
+        assert size * 346 / build_dashboard.NARROW_W >= 11, f"{cls} under 11 px on a phone"
