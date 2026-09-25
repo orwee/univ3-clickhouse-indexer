@@ -1,12 +1,12 @@
 # Analysis report
 
-Database `onchain` (1,240,618 swaps, through block 26,050,795) and the dbt marts in `onchain_dbt`, generated 2026-09-25 00:37 UTC by `make analysis`. Numbers only; what they mean is in docs/ROUND_TRIPS.md and docs/CROSS_POOL.md. Every query ran with the query condition cache off.
+Database `onchain` (1,240,618 swaps, through block 26,050,795) and the dbt marts in `onchain_dbt`, generated 2026-09-25 00:40 UTC by `make analysis`. Numbers only; what they mean is in docs/ROUND_TRIPS.md and docs/CROSS_POOL.md. Every query ran with the query condition cache off.
 
 ## Round trips in the same block
 
 ### 10_round_trips_by_pool.sql
 
-Read 188 rows in 4 ms.
+Read 188 rows in 3 ms.
 
 | pool | pool_days | pool_days_with_any | all_swaps | pairs | legs | legs_in_one_transaction_pairs | all_usd | legs_usd | net_usd | share_of_usd | share_of_swaps | median_daily_share_of_usd | largest_daily_share_of_usd |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -18,7 +18,7 @@ Read 188 rows in 4 ms.
 
 ### 11_round_trips_by_hour.sql
 
-Read 1,250,171 rows in 199 ms.
+Read 1,250,171 rows in 169 ms.
 
 | hour_utc | hour_swaps | hour_usd | leg_swaps | leg_usd | share_of_usd |
 |---|---|---|---|---|---|
@@ -49,7 +49,7 @@ Read 1,250,171 rows in 199 ms.
 
 ### 12_round_trips_concentration.sql
 
-Read 9,549 rows in 6 ms.
+Read 9,549 rows in 5 ms.
 
 | senders | total_legs | total_usd | top1_share_of_usd | top3_share_of_usd | top10_share_of_usd | top1_share_of_legs | top10_share_of_legs | senders_with_one_pair_at_most |
 |---|---|---|---|---|---|---|---|---|
@@ -57,7 +57,7 @@ Read 9,549 rows in 6 ms.
 
 ### 13_round_trips_tolerance.sql
 
-Read 9,924,950 rows in 1,617 ms.
+Read 9,924,950 rows in 1,676 ms.
 
 | tolerance | pairs | legs | legs_usd | share_of_usd | share_of_swaps |
 |---|---|---|---|---|---|
@@ -70,7 +70,7 @@ Read 9,924,950 rows in 1,617 ms.
 
 ### 14_round_trips_leg_sizes.sql
 
-Read 19,098 rows in 10 ms.
+Read 19,098 rows in 8 ms.
 
 | leg_size_usd | legs | usd | share_of_round_trip_usd | usd_of_legs_that_undo |
 |---|---|---|---|---|
@@ -81,13 +81,23 @@ Read 19,098 rows in 10 ms.
 | 5. 1M and more | 94 | 159,759,359.87 | 0.272085 | 79,751,393.28 |
 |  | 9,549 | 587,166,378.97 | 1.00 | 292,261,213.58 |
 
+### 15_round_trips_what_sits_between.sql
+
+Read 12,406,180 rows in 1,219 ms.
+
+| kind | pairs | usd | share_of_pair_usd |
+|---|---|---|---|
+| 1. two transactions, a swap of someone else between | 2,228 | 558,409,370.55 | 0.950116 |
+| 2. two transactions, nobody between | 1,799 | 26,511,256.98 | 0.0451081 |
+| 3. inside one transaction | 1,272 | 2,806,900.49 | 0.00477585 |
+
 ## Cross-pool: USDC/WETH 0.01% against USDC/WETH 0.05%
 
 Combined fee: 6 bps. `lo` is USDC/WETH 0.01%, `hi` is USDC/WETH 0.05%.
 
 ### USDC/WETH: 01_cross_pool_gap.sql
 
-Read 2,576,810 rows (115,541,274 bytes) in 235 ms, 211,471,754 bytes of memory.
+Read 2,576,810 rows (115,541,274 bytes) in 257 ms, 209,256,970 bytes of memory.
 
 | moved | swaps | abs_gap_p50_bps | abs_gap_p95_bps | abs_gap_p99_bps | abs_gap_max_bps | mean_signed_gap_bps | beyond_combined_fee |
 |---|---|---|---|---|---|---|---|
@@ -97,7 +107,7 @@ Read 2,576,810 rows (115,541,274 bytes) in 235 ms, 211,471,754 bytes of memory.
 
 ### USDC/WETH: 02_cross_pool_gap_histogram.sql
 
-Read 2,576,810 rows (115,541,274 bytes) in 159 ms, 113,639,937 bytes of memory.
+Read 2,576,810 rows (115,541,274 bytes) in 157 ms, 112,699,321 bytes of memory.
 
 | bucket_bps | swaps |
 |---|---|
@@ -125,7 +135,7 @@ Read 2,576,810 rows (115,541,274 bytes) in 159 ms, 113,639,937 bytes of memory.
 
 ### USDC/WETH: 03_cross_pool_episodes.sql
 
-Read 2,576,810 rows (156,287,424 bytes) in 428 ms, 267,948,337 bytes of memory.
+Read 2,576,810 rows (156,287,424 bytes) in 418 ms, 264,187,014 bytes of memory.
 
 | episodes | still_open_at_the_end | closed_in_the_same_block | closed_one_block_later | closed_two_or_more_blocks_later | blocks_open_p50 | blocks_open_p90 | blocks_open_p99 | blocks_open_max | opened_by_lo | opened_by_hi | closed_by_lo | closed_by_hi | closed_by_the_other_pool | closed_by_the_same_pool | opened_by_lo_closed_by_hi | opened_by_hi_closed_by_lo | never_left_one_transaction | peak_gap_p50_bps | peak_gap_p99_bps |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -133,7 +143,7 @@ Read 2,576,810 rows (156,287,424 bytes) in 428 ms, 267,948,337 bytes of memory.
 
 ### USDC/WETH: 04_cross_pool_block_ends.sql
 
-Read 2,576,810 rows (115,541,274 bytes) in 186 ms, 147,234,198 bytes of memory.
+Read 2,576,810 rows (115,541,274 bytes) in 176 ms, 149,355,317 bytes of memory.
 
 | blocks | blocks_ending_within_the_fee | share_within_the_fee | end_gap_p50_bps | end_gap_p99_bps |
 |---|---|---|---|---|
@@ -152,8 +162,8 @@ Read 2,576,810 rows (115,541,274 bytes) in 186 ms, 147,234,198 bytes of memory.
 
 | join_algorithm | runs | median_ms | median_memory_bytes | read_rows | same_answer_as_hash |
 |---|---|---|---|---|---|
-| hash | 3 | 234 | 211,356,810 | 2,576,810 | 1 |
-| full_sorting_merge | 3 | 625 | 188,424,974 | 2,576,810 | 1 |
+| hash | 3 | 228 | 214,367,582 | 2,576,810 | 1 |
+| full_sorting_merge | 3 | 637 | 185,672,436 | 2,576,810 | 1 |
 
 ## Cross-pool: wstETH/USDC 0.05% against wstETH/USDC 0.3%
 
@@ -161,7 +171,7 @@ Combined fee: 35 bps. `lo` is wstETH/USDC 0.05%, `hi` is wstETH/USDC 0.3%.
 
 ### wstETH/USDC: 01_cross_pool_gap.sql
 
-Read 191,148 rows (4,953,540 bytes) in 16 ms, 6,598,551 bytes of memory.
+Read 191,148 rows (4,953,540 bytes) in 15 ms, 9,343,763 bytes of memory.
 
 | moved | swaps | abs_gap_p50_bps | abs_gap_p95_bps | abs_gap_p99_bps | abs_gap_max_bps | mean_signed_gap_bps | beyond_combined_fee |
 |---|---|---|---|---|---|---|---|
@@ -171,7 +181,7 @@ Read 191,148 rows (4,953,540 bytes) in 16 ms, 6,598,551 bytes of memory.
 
 ### wstETH/USDC: 02_cross_pool_gap_histogram.sql
 
-Read 191,148 rows (4,953,540 bytes) in 17 ms, 7,393,052 bytes of memory.
+Read 191,148 rows (4,953,540 bytes) in 13 ms, 5,761,520 bytes of memory.
 
 | bucket_bps | swaps |
 |---|---|
@@ -199,7 +209,7 @@ Read 191,148 rows (4,953,540 bytes) in 17 ms, 7,393,052 bytes of memory.
 
 ### wstETH/USDC: 03_cross_pool_episodes.sql
 
-Read 191,148 rows (6,684,580 bytes) in 41 ms, 9,570,223 bytes of memory.
+Read 191,148 rows (6,684,580 bytes) in 36 ms, 9,146,351 bytes of memory.
 
 | episodes | still_open_at_the_end | closed_in_the_same_block | closed_one_block_later | closed_two_or_more_blocks_later | blocks_open_p50 | blocks_open_p90 | blocks_open_p99 | blocks_open_max | opened_by_lo | opened_by_hi | closed_by_lo | closed_by_hi | closed_by_the_other_pool | closed_by_the_same_pool | opened_by_lo_closed_by_hi | opened_by_hi_closed_by_lo | never_left_one_transaction | peak_gap_p50_bps | peak_gap_p99_bps |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -207,7 +217,7 @@ Read 191,148 rows (6,684,580 bytes) in 41 ms, 9,570,223 bytes of memory.
 
 ### wstETH/USDC: 04_cross_pool_block_ends.sql
 
-Read 191,148 rows (4,953,540 bytes) in 16 ms, 6,311,944 bytes of memory.
+Read 191,148 rows (4,953,540 bytes) in 14 ms, 7,988,580 bytes of memory.
 
 | blocks | blocks_ending_within_the_fee | share_within_the_fee | end_gap_p50_bps | end_gap_p99_bps |
 |---|---|---|---|---|
@@ -226,5 +236,5 @@ Read 191,148 rows (4,953,540 bytes) in 16 ms, 6,311,944 bytes of memory.
 
 | join_algorithm | runs | median_ms | median_memory_bytes | read_rows | same_answer_as_hash |
 |---|---|---|---|---|---|
-| hash | 3 | 14 | 6,344,670 | 191,148 | 1 |
-| full_sorting_merge | 3 | 18 | 6,268,489 | 191,148 | 1 |
+| hash | 3 | 15 | 6,509,654 | 191,148 | 1 |
+| full_sorting_merge | 3 | 18 | 6,204,657 | 191,148 | 1 |

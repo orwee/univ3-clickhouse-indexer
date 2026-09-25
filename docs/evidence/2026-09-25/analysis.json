@@ -32,16 +32,16 @@
       "join_algorithms": [
         {
           "join_algorithm": "hash",
-          "median_memory_bytes": 211356810,
-          "median_ms": 234,
+          "median_memory_bytes": 214367582,
+          "median_ms": 228,
           "read_rows": 2576810,
           "runs": 3,
           "same_answer_as_hash": true
         },
         {
           "join_algorithm": "full_sorting_merge",
-          "median_memory_bytes": 188424974,
-          "median_ms": 625,
+          "median_memory_bytes": 185672436,
+          "median_ms": 637,
           "read_rows": 2576810,
           "runs": 3,
           "same_answer_as_hash": true
@@ -57,8 +57,8 @@
       },
       "queries": {
         "01_cross_pool_gap.sql": {
-          "elapsed_ms": 235,
-          "memory_usage": 211471754,
+          "elapsed_ms": 257,
+          "memory_usage": 209256970,
           "name": "01_cross_pool_gap.sql",
           "read_bytes": 115541274,
           "read_rows": 2576810,
@@ -96,8 +96,8 @@
           ]
         },
         "02_cross_pool_gap_histogram.sql": {
-          "elapsed_ms": 159,
-          "memory_usage": 113639937,
+          "elapsed_ms": 157,
+          "memory_usage": 112699321,
           "name": "02_cross_pool_gap_histogram.sql",
           "read_bytes": 115541274,
           "read_rows": 2576810,
@@ -189,8 +189,8 @@
           ]
         },
         "03_cross_pool_episodes.sql": {
-          "elapsed_ms": 428,
-          "memory_usage": 267948337,
+          "elapsed_ms": 418,
+          "memory_usage": 264187014,
           "name": "03_cross_pool_episodes.sql",
           "read_bytes": 156287424,
           "read_rows": 2576810,
@@ -220,8 +220,8 @@
           ]
         },
         "04_cross_pool_block_ends.sql": {
-          "elapsed_ms": 186,
-          "memory_usage": 147234198,
+          "elapsed_ms": 176,
+          "memory_usage": 149355317,
           "name": "04_cross_pool_block_ends.sql",
           "read_bytes": 115541274,
           "read_rows": 2576810,
@@ -269,15 +269,15 @@
       "join_algorithms": [
         {
           "join_algorithm": "hash",
-          "median_memory_bytes": 6344670,
-          "median_ms": 14,
+          "median_memory_bytes": 6509654,
+          "median_ms": 15,
           "read_rows": 191148,
           "runs": 3,
           "same_answer_as_hash": true
         },
         {
           "join_algorithm": "full_sorting_merge",
-          "median_memory_bytes": 6268489,
+          "median_memory_bytes": 6204657,
           "median_ms": 18,
           "read_rows": 191148,
           "runs": 3,
@@ -294,8 +294,8 @@
       },
       "queries": {
         "01_cross_pool_gap.sql": {
-          "elapsed_ms": 16,
-          "memory_usage": 6598551,
+          "elapsed_ms": 15,
+          "memory_usage": 9343763,
           "name": "01_cross_pool_gap.sql",
           "read_bytes": 4953540,
           "read_rows": 191148,
@@ -333,8 +333,8 @@
           ]
         },
         "02_cross_pool_gap_histogram.sql": {
-          "elapsed_ms": 17,
-          "memory_usage": 7393052,
+          "elapsed_ms": 13,
+          "memory_usage": 5761520,
           "name": "02_cross_pool_gap_histogram.sql",
           "read_bytes": 4953540,
           "read_rows": 191148,
@@ -426,8 +426,8 @@
           ]
         },
         "03_cross_pool_episodes.sql": {
-          "elapsed_ms": 41,
-          "memory_usage": 9570223,
+          "elapsed_ms": 36,
+          "memory_usage": 9146351,
           "name": "03_cross_pool_episodes.sql",
           "read_bytes": 6684580,
           "read_rows": 191148,
@@ -457,8 +457,8 @@
           ]
         },
         "04_cross_pool_block_ends.sql": {
-          "elapsed_ms": 16,
-          "memory_usage": 6311944,
+          "elapsed_ms": 14,
+          "memory_usage": 7988580,
           "name": "04_cross_pool_block_ends.sql",
           "read_bytes": 4953540,
           "read_rows": 191148,
@@ -475,14 +475,14 @@
       }
     }
   },
-  "generated_at": "2026-09-25 00:37 UTC",
+  "generated_at": "2026-09-25 00:40 UTC",
   "max_block": 26050795,
   "raw_swaps": 1240618,
   "round_trips": {
     "queries": {
       "10_round_trips_by_pool.sql": {
-        "elapsed_ms": 4,
-        "memory_usage": 4604376,
+        "elapsed_ms": 3,
+        "memory_usage": 4603496,
         "name": "10_round_trips_by_pool.sql",
         "read_bytes": 29279,
         "read_rows": 188,
@@ -570,8 +570,8 @@
         ]
       },
       "11_round_trips_by_hour.sql": {
-        "elapsed_ms": 199,
-        "memory_usage": 41394395,
+        "elapsed_ms": 169,
+        "memory_usage": 45966998,
         "name": "11_round_trips_by_hour.sql",
         "read_bytes": 85956981,
         "read_rows": 1250171,
@@ -771,8 +771,8 @@
         ]
       },
       "12_round_trips_concentration.sql": {
-        "elapsed_ms": 6,
-        "memory_usage": 6315765,
+        "elapsed_ms": 5,
+        "memory_usage": 6314597,
         "name": "12_round_trips_concentration.sql",
         "read_bytes": 744822,
         "read_rows": 9549,
@@ -791,39 +791,39 @@
         ]
       },
       "13_round_trips_tolerance.sql": {
-        "elapsed_ms": 1617,
-        "memory_usage": 974465221,
+        "elapsed_ms": 1676,
+        "memory_usage": 952857051,
         "name": "13_round_trips_tolerance.sql",
         "read_bytes": 898221160,
         "read_rows": 9924950,
         "rows": [
           {
             "legs": 226,
-            "legs_usd": 7224566.337214,
+            "legs_usd": 7224566.3372140005,
             "pairs": 113,
             "share_of_swaps": 0.00018216727469696554,
-            "share_of_usd": 0.0012057208516000205,
+            "share_of_usd": 0.0012057208516000207,
             "tolerance": 0.0
           },
           {
             "legs": 3239,
-            "legs_usd": 437463798.8225499,
+            "legs_usd": 437463798.8225497,
             "pairs": 1841,
             "share_of_swaps": 0.002610795587360493,
-            "share_of_usd": 0.07300911908629637,
+            "share_of_usd": 0.07300911908629636,
             "tolerance": 0.01
           },
           {
             "legs": 5558,
-            "legs_usd": 547587345.475766,
+            "legs_usd": 547587345.4757657,
             "pairs": 3126,
             "share_of_swaps": 0.004480025277724489,
-            "share_of_usd": 0.09138783557312337,
+            "share_of_usd": 0.09138783557312334,
             "tolerance": 0.05
           },
           {
             "legs": 9549,
-            "legs_usd": 587166378.97448,
+            "legs_usd": 587166378.9744799,
             "pairs": 5299,
             "share_of_swaps": 0.007696970380890814,
             "share_of_usd": 0.09799325155909906,
@@ -834,21 +834,21 @@
             "legs_usd": 611523041.4017237,
             "pairs": 7676,
             "share_of_swaps": 0.010872000889879076,
-            "share_of_usd": 0.10205817869702821,
+            "share_of_usd": 0.10205817869702823,
             "tolerance": 0.2
           },
           {
             "legs": 24316,
-            "legs_usd": 639276541.4393592,
+            "legs_usd": 639276541.4393587,
             "pairs": 15089,
             "share_of_swaps": 0.019599909077572628,
-            "share_of_usd": 0.1066900101645988,
+            "share_of_usd": 0.10669001016459874,
             "tolerance": 0.5
           }
         ]
       },
       "14_round_trips_leg_sizes.sql": {
-        "elapsed_ms": 10,
+        "elapsed_ms": 8,
         "memory_usage": 5642239,
         "name": "14_round_trips_leg_sizes.sql",
         "read_bytes": 706626,
@@ -895,6 +895,33 @@
             "share_of_round_trip_usd": 1.0000000000000004,
             "usd": 587166378.9744803,
             "usd_of_legs_that_undo": 292261213.581592
+          }
+        ]
+      },
+      "15_round_trips_what_sits_between.sql": {
+        "elapsed_ms": 1219,
+        "memory_usage": 286682328,
+        "name": "15_round_trips_what_sits_between.sql",
+        "read_bytes": 1094245382,
+        "read_rows": 12406180,
+        "rows": [
+          {
+            "kind": "1. two transactions, a swap of someone else between",
+            "pairs": 2228,
+            "share_of_pair_usd": 0.9501160723633679,
+            "usd": 558409370.5471228
+          },
+          {
+            "kind": "2. two transactions, nobody between",
+            "pairs": 1799,
+            "share_of_pair_usd": 0.04510807426753341,
+            "usd": 26511256.983234003
+          },
+          {
+            "kind": "3. inside one transaction",
+            "pairs": 1272,
+            "share_of_pair_usd": 0.004775853369098456,
+            "usd": 2806900.494831001
           }
         ]
       }

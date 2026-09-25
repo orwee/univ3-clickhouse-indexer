@@ -145,9 +145,11 @@ def test_concentration_is_reported_as_ranks_and_never_names_a_sender(clickhouse,
 def test_no_analysis_query_selects_an_address_or_a_hash():
     for path in sorted(analysis.ANALYSIS_DIR.glob("*.sql")):
         sql = ch.strip_sql_comments(path.read_text(encoding="utf-8"))
-        select_lists = re.findall(r"SELECT(.*?)FROM", sql, re.S | re.I)
-        for select in select_lists[-1:]:  # the outermost SELECT is the last one written
-            assert not re.search(r"\b(sender|recipient|tx_hash|pool_address)\b", select), path.name
+        # The outermost query is the one whose SELECT and FROM start a line: every CTE and
+        # subquery in sql/analysis/ is indented. That select list is what reaches the report.
+        outer = re.findall(r"^SELECT\b(.*?)^FROM\b", sql, re.S | re.M)
+        assert outer, f"{path.name}: no top-level SELECT ... FROM found"
+        assert not re.search(r"\b(sender|recipient|tx_hash|pool_address)\b", outer[-1]), path.name
 
 
 # --- which pools -------------------------------------------------------------------------------
@@ -204,3 +206,34 @@ def test_answers_that_differ_only_in_the_last_bits_of_a_float_are_the_same():
     assert not analysis.same_rows(a, [("lo", 4, 0.3), ("", 5, 2.5)]), "a count differs"
     assert not analysis.same_rows(a, [("lo", 3, 0.31), ("", 5, 2.5)]), "a float really differs"
     assert not analysis.same_rows(a, a[:1]), "a row is missing"
+
+
+def test_what_sits_between_the_legs_splits_the_round_trips(clickhouse, temp_database):
+    """Three round trips of one pool: a sandwich shape (two transactions, another sender's
+    swap between), two transactions with nothing between, and one inside a transaction."""
+    from univ3_indexer import reconcile
+
+    pool = next(p.key for p in load_pools() if p.token0 == "USDC")  # stable leg: amount0
+    bot, other = b"\x0b" * 20, b"\x0c" * 20
+
+    def row(block, log_index, tx, who, usdc):
+        when = datetime.datetime(2026, 9, 1, 12, tzinfo=UTC)
+        weth = -usdc * 10**9  # the non-stable leg moves the other way
+        return [pool, block, when, bytes([tx]) * 32, log_index, who, who, int(usdc * 1e6), weth,
+                2**96, 10**18, 0]  # fmt: skip
+
+    rows = [
+        row(10, 0, 1, bot, 1_000), row(10, 1, 2, other, 5), row(10, 2, 3, bot, -1_000),
+        row(20, 0, 4, bot, 200), row(20, 1, 5, bot, -200),
+        row(30, 0, 6, bot, 30), row(30, 1, 6, bot, -30),
+    ]  # fmt: skip
+    ch.apply_ddl(clickhouse, temp_database)
+    clickhouse.insert(ch.qualified(temp_database), rows, column_names=loader.COLUMNS)
+    stable = reconcile.stable_leg_parameters(load_pools(), reconcile.stablecoin_symbols())
+    got = analysis.run(clickhouse, "15_round_trips_what_sits_between.sql", stable, temp_database)
+    kinds = {r["kind"]: (r["pairs"], r["usd"]) for r in got["rows"]}
+    assert kinds == {
+        "1. two transactions, a swap of someone else between": (1, pytest.approx(2_000)),
+        "2. two transactions, nobody between": (1, pytest.approx(400)),
+        "3. inside one transaction": (1, pytest.approx(60)),
+    }

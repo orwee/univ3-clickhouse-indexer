@@ -54,10 +54,11 @@ ROUND_TRIPS = (
     "12_round_trips_concentration.sql",
     "13_round_trips_tolerance.sql",
     "14_round_trips_leg_sizes.sql",
+    "15_round_trips_what_sits_between.sql",
 )
 # 13_ recomputes the pairs from the raw table instead of reading the dbt marts; it takes the
 # stable-leg parameters, the others the dbt database.
-FROM_RAW = {"13_round_trips_tolerance.sql"}
+FROM_RAW = {"13_round_trips_tolerance.sql", "15_round_trips_what_sits_between.sql"}
 DEFINITION_TOLERANCE = 0.10
 
 
