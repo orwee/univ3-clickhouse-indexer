@@ -51,7 +51,13 @@ ROUND_TRIPS = (
     "10_round_trips_by_pool.sql",
     "11_round_trips_by_hour.sql",
     "12_round_trips_concentration.sql",
+    "13_round_trips_tolerance.sql",
+    "14_round_trips_leg_sizes.sql",
 )
+# 13_ recomputes the pairs from the raw table instead of reading the dbt marts; it takes the
+# stable-leg parameters, the others the dbt database.
+FROM_RAW = {"13_round_trips_tolerance.sql"}
+DEFINITION_TOLERANCE = 0.10
 
 
 class AnalysisError(RuntimeError):
@@ -188,8 +194,37 @@ def cross_pool(client) -> dict:
 
 
 def round_trips(client) -> dict:
-    params = {"dbt": DBT_DB}
-    return {"queries": {name: run(client, name, params) for name in ROUND_TRIPS}}
+    from univ3_indexer import reconcile
+
+    stable = reconcile.stable_leg_parameters(load_pools(), reconcile.stablecoin_symbols())
+    queries = {
+        name: run(client, name, stable if name in FROM_RAW else {"dbt": DBT_DB})
+        for name in ROUND_TRIPS
+    }
+    check_tolerance_against_the_marts(queries)
+    return {"queries": queries}
+
+
+def check_tolerance_against_the_marts(queries: dict) -> None:
+    """At the tolerance of the definition, the recomputation from the raw table must give the
+    marts' pairs, legs and USD. A difference means one of the two copies drifted."""
+    marts = next(r for r in queries["10_round_trips_by_pool.sql"]["rows"] if not r["pool"])
+    raw = next(
+        r
+        for r in queries["13_round_trips_tolerance.sql"]["rows"]
+        if abs(r["tolerance"] - DEFINITION_TOLERANCE) < 1e-9
+    )
+    same = (
+        raw["pairs"] == marts["pairs"]
+        and raw["legs"] == marts["legs"]
+        and abs(raw["legs_usd"] - marts["legs_usd"]) <= 1e-6 * max(marts["legs_usd"], 1.0)
+    )
+    if not same:
+        raise AnalysisError(
+            f"round trips at {DEFINITION_TOLERANCE:.0%}: raw {raw['pairs']} pairs, "
+            f"{raw['legs']} legs, {raw['legs_usd']:,.2f} USD; marts {marts['pairs']}, "
+            f"{marts['legs']}, {marts['legs_usd']:,.2f}"
+        )
 
 
 def _fmt(v) -> str:

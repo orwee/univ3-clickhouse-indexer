@@ -180,3 +180,19 @@ def test_both_join_algorithms_give_the_same_answer(clickhouse, planted):
     assert [r["join_algorithm"] for r in rows] == list(analysis.JOIN_ALGORITHMS)
     assert all(r["same_answer_as_hash"] for r in rows)
     assert all(r["runs"] == analysis.REPEATS and r["read_rows"] > 0 for r in rows)
+
+
+def test_the_raw_recomputation_must_agree_with_the_marts():
+    ok = {
+        "10_round_trips_by_pool.sql": {
+            "rows": [{"pool": "", "pairs": 3, "legs": 6, "legs_usd": 10.0}]
+        },
+        "13_round_trips_tolerance.sql": {
+            "rows": [{"tolerance": 0.1, "pairs": 3, "legs": 6, "legs_usd": 10.0}]
+        },
+    }
+    analysis.check_tolerance_against_the_marts(ok)
+    drifted = {**ok, "13_round_trips_tolerance.sql": {
+        "rows": [{"tolerance": 0.1, "pairs": 3, "legs": 5, "legs_usd": 10.0}]}}  # fmt: skip
+    with pytest.raises(analysis.AnalysisError, match="raw 3 pairs, 5 legs"):
+        analysis.check_tolerance_against_the_marts(drifted)
