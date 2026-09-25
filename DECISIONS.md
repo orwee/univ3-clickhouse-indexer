@@ -602,6 +602,38 @@ with per-swap rows (the subgraph, or a second indexer) is the next step.
 
 ---
 
+## 18. Round trips are measured, not removed
+
+- Date: 2026-09-25
+- Status: Accepted
+
+**Context.** Finding 7 of docs/RECONCILIATION_FINDINGS.md turned on swaps that the
+same sender undid in the same block. Applied to the whole dataset
+(docs/ROUND_TRIPS.md), the same definition covers 9.8% of all USD volume and 24.4%
+of one pool's. Either the volume keeps them or it drops them.
+
+**Decision.** Measure them and leave the volume as it is.
+`fct_round_trip_legs` holds one row per swap that is a leg of a round trip, and
+`fct_pool_daily_round_trips` has one row per pool-day of `fct_pool_daily`, with
+`volume_usd` (gross, as in `fct_pool_daily`) and `net_volume_usd` (without the legs)
+side by side. Both are MergeTree tables in `onchain_dbt`, configured like
+`fct_pool_daily`. `fct_pool_daily.volume_usd` is unchanged.
+
+**Why.** The gross figure is what an external source reports and what the
+reconciliation compares; removing the legs would open a difference with every
+source. The net figure is what a comparison of fees or market share needs. Keeping
+both lets each question use its own figure, and the difference is the measurement.
+
+**Tradeoff.** Two volume columns that a reader can confuse. The definition (same
+pool, block and `sender`, reversal within 10%) is a choice: the pair count depends
+heavily on the tolerance, the USD share much less (table in docs/ROUND_TRIPS.md).
+Round trips split across pools or protocols are not seen.
+
+**Revisit when.** A consumer needs net volume as the default, or a second source
+with per-swap rows shows how it treats these swaps.
+
+---
+
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.

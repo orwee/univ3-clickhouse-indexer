@@ -257,7 +257,7 @@ def test_the_summary_and_the_closing_block_say_what_they_promise(page):
     for link in ("docs/WALKTHROUGH.md", "DECISIONS.md", "orwee/univ3-clickhouse-indexer"):
         assert link in start.group(0), f"the closing block does not point at {link}"
     assert (
-        "Independent weekend project. Smart-money data: Powered by Nansen API. "
+        "Independent project. Smart-money data: Powered by Nansen API. "
         "Not affiliated with any company mentioned." in page
     )
 

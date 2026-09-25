@@ -1211,7 +1211,10 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         ("btn-s", AUTHOR_SITE, "Roberto Fajardo Duro"),
     ]
     a('<header class="top">')
-    a('<p class="badge"><span class="dot"></span>Independent weekend project</p>')
+    a(
+        '<p class="badge"><span class="dot"></span>'
+        "Independent project · one weekend, then one more week</p>"
+    )
     a('<h1>univ3-clickhouse-indexer<br><span class="grad">what the pipeline measured</span></h1>')
     a(f'<p class="sub">{esc(docs["one_liner"])}</p>')
     a(f'<div class="hero-figs">{tiles}</div>')
@@ -2242,7 +2245,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f'<footer>Generated {esc(stamp)} by <a href="{GH}scripts/build_dashboard.py">'
         "scripts/build_dashboard.py</a>. One file, no script, no external request: every "
         "figure was read from ClickHouse or from a file in the repository when it was "
-        "built.<br>Independent weekend project. Smart-money data: Powered by Nansen API. "
+        "built.<br>Independent project. Smart-money data: Powered by Nansen API. "
         "Not affiliated with any company mentioned.</footer>"
     )
 
