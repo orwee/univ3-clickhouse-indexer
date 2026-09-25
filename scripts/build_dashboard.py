@@ -65,12 +65,49 @@ POOL_DASH = {
     "wstETH/USDC 0.3%": "14 4 2 4",
 }
 
-# Sections that take the full width of the grid on a wide screen: the KPI row, and the last
-# section so that the grid never ends on an empty cell. The CSS rule is generated from this.
-SPAN_SECTIONS = (1, 12)
+# The sections by name, in the order the page prints and numbers them. The first four are the
+# ones a reader needs and stay open; every other one folds into a <details> under a one-line
+# summary, so the page opens short and the detail is one click away.
+SECTION_ORDER = (
+    "kpis",
+    "round_trips",
+    "cross_pool",
+    "reconciliation",
+    "volume",
+    "fee_tiers",
+    "one_day",
+    "readings",
+    "senders",
+    "clickhouse",
+    "findings",
+    "open_case",
+)
+OPEN_SECTIONS = ("kpis", "round_trips", "cross_pool", "reconciliation")
+
+
+def sec_num(key: str) -> int:
+    return SECTION_ORDER.index(key) + 1
+
+
+def sec_link(key: str) -> str:
+    return f'<a href="#s{sec_num(key)}">section {sec_num(key)}</a>'
+
+
+# Sections that take the full width of the grid on a wide screen: the KPI row, the
+# reconciliation, and every folded section (a closed card beside an open one would leave a
+# hole). Only the two week-two sections share a row, so no row ends on an empty cell. The CSS
+# rule is generated from this.
+SPAN_SECTIONS = tuple(
+    sec_num(k) for k in SECTION_ORDER if k in ("kpis", "reconciliation") or k not in OPEN_SECTIONS
+)
 
 SVG_W = 680  # every chart is drawn in this many user units wide and scaled with width:100%
-FS = 18  # tick/label size in user units: ~9 px on a 360 px phone, ~18 px on a wide screen
+FS = 18  # tick/label size in user units, the same in both drawings below
+# The phone drawing. At 390 px a card leaves about 346 px for a chart; 680 units there put an
+# 18-unit label at under 9 px. Drawn 460 units wide instead, the same label is about 13 px,
+# and still 11 px on a 320 px screen. The text is not made smaller: the canvas is.
+NARROW_W = 460
+NARROW_MAX_PX = 559  # viewports up to this width get the phone drawing
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -617,10 +654,32 @@ def _pack_labels(items: list[tuple[float, object]], gap: float, lo: float, hi: f
     return {key: y for (_, key), y in zip(ordered, ys, strict=True)}
 
 
-def line_chart_log(dates: list, series: dict, *, title: str, desc: str) -> str:
+def responsive(draw, *args, phone: dict | None = None, phone_draw=None, **kwargs) -> str:
+    """The chart drawn twice, at SVG_W for a screen and at NARROW_W for a phone. The CSS shows
+    one of the two; the other is display:none, so it is neither seen nor read aloud.
+
+    `phone` replaces keyword arguments in the phone drawing (shorter or two-line labels), and
+    `phone_draw` draws it with another function (one column instead of side by side) when
+    simpler labels are not enough. The font size is the same in both drawings.
+    """
+    wide = draw(*args, w=SVG_W, **kwargs).replace("<svg ", '<svg class="wide" ', 1)
+    narrow = (phone_draw or draw)(*args, w=NARROW_W, **{**kwargs, **(phone or {})})
+    return wide + narrow.replace("<svg ", '<svg class="narrow" ', 1)
+
+
+def _date_step(per_day: float) -> int:
+    """Days between two date ticks: the smallest whole number of weeks that leaves room for
+    a "%b %d" label (about 4.2 x FS wide once the gap to its neighbour is counted)."""
+    step = 7
+    while step * per_day < FS * 4.2:
+        step += 7
+    return step
+
+
+def line_chart_log(dates: list, series: dict, *, w: int = SVG_W, title: str, desc: str) -> str:
     """One line per pool on a base-10 log scale. Direct end labels plus the legend."""
     height, left, right, top, bottom = 372, 72, 152, 16, 44
-    x0, x1 = left, SVG_W - right
+    x0, x1 = left, w - right
     y0, y1 = top, height - bottom
     decades = [0, 2, 4, 6, 8]
     names = {0: "$1", 2: "$100", 4: "$10k", 6: "$1M", 8: "$100M"}
@@ -632,16 +691,18 @@ def line_chart_log(dates: list, series: dict, *, title: str, desc: str) -> str:
         lv = min(max(math.log10(max(v, 1.0)), 0.0), 9.0)
         return y1 - (y1 - y0) * lv / 9.0
 
-    out = _open_svg(SVG_W, height, title, desc)
+    out = _open_svg(w, height, title, desc)
     for d in decades:
         y = sy(10.0**d)
         out.append(f'<line class="gr" x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}"/>')
         out.append(_txt(x0 - 8, y + FS * 0.34, names[d], "tk", "end"))
     out.append(f'<line class="ax" x1="{x0}" y1="{y1}" x2="{x1}" y2="{y1}"/>')
-    # One date every fortnight, and always the last one: a weekly tick is narrower than the
-    # label that sits on it. The first is anchored at the start so it cannot reach back over
-    # the "$1" of the vertical axis, and the last at the end so it cannot run past the plot.
-    ticks_x = [i for i in range(0, len(dates), 14) if len(dates) - 1 - i >= 7]
+    # One date every whole number of weeks that leaves room for its label (a fortnight at
+    # full width), and always the last one. The first is anchored at the start so it cannot
+    # reach back over the "$1" of the vertical axis, and the last at the end so it cannot run
+    # past the plot.
+    step = _date_step((x1 - x0) / (len(dates) - 1))
+    ticks_x = [i for i in range(0, len(dates), step) if len(dates) - 1 - i >= step / 2]
     ticks_x.append(len(dates) - 1)
     for i in ticks_x:
         anchor = "start" if i == 0 else ("end" if i == len(dates) - 1 else "middle")
@@ -679,6 +740,7 @@ def grouped_bars(
     series: list[tuple[str, str]],
     values: list[list[float]],
     *,
+    w: int = SVG_W,
     title: str,
     desc: str,
     y_ticks: list[float],
@@ -693,7 +755,7 @@ def grouped_bars(
     # is wider than its band once there are four groups, and would run into its neighbour.
     lines_per_label = max(g.count("\n") + 1 for g in groups)
     left, right, top, bottom = 74, 16, 18, 44 + round(FS * 1.65) * (lines_per_label - 1)
-    x0, x1 = left, SVG_W - right
+    x0, x1 = left, w - right
     y0, y1 = top, height - bottom
     top_value = max(y_ticks)
     band = (x1 - x0) / len(groups)
@@ -713,7 +775,7 @@ def grouped_bars(
     def sy(v: float) -> float:
         return y1 - (y1 - y0) * (v / top_value)
 
-    out = _open_svg(SVG_W, height, title, desc)
+    out = _open_svg(w, height, title, desc)
     for t in y_ticks:
         y = sy(t)
         out.append(f'<line class="gr" x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}"/>')
@@ -744,10 +806,51 @@ def grouped_bars(
     return "".join(out)
 
 
+def grouped_hbars(
+    groups: list[str],
+    series: list[tuple[str, str]],
+    values: list[list[float]],
+    *,
+    w: int = SVG_W,
+    title: str,
+    desc: str,
+    value_fmt,
+    **_: object,
+) -> str:
+    """grouped_bars turned on its side: one block per category, its name on a line of its
+    own and one bar per series under it, the value at the end of each bar. For a width where
+    the categories side by side would leave each name less room than it needs."""
+    bar_h, pitch = FS * 1.35, FS * 1.8
+    block_h = FS * 1.5 + pitch * len(series) + FS * 0.6
+    height = int(block_h * len(groups) + 8)
+    texts = [value_fmt(v) for row in values for v in row]
+    x0 = 8
+    x1 = w - (max(len(t) for t in texts) * (FS - 1) * 0.58 + 16)
+    top = max(v for row in values for v in row) or 1.0
+    out = _open_svg(w, height, title, desc)
+    for gi, group in enumerate(groups):
+        name = group.replace("\n", " ")
+        y = 4 + gi * block_h
+        out.append(_txt(x0, y + FS, name, "lb"))
+        for si, (series_name, slot) in enumerate(series):
+            v = values[si][gi]
+            bar_y = y + FS * 1.5 + si * pitch
+            bw = max(1.0, (x1 - x0) * v / top)
+            out.append(
+                f'<rect class="bar" x="{x0}" y="{bar_y:.1f}" width="{bw:.1f}" '
+                f'height="{bar_h:.1f}" rx="3" style="fill:var(--{slot})">'
+                f"<title>{esc(name)} — {esc(series_name)}: {esc(value_fmt(v))}</title></rect>"
+            )
+            out.append(_txt(x0 + bw + 10, bar_y + FS * 1.05, value_fmt(v), "vl"))
+    out.append("</svg>")
+    return "".join(out)
+
+
 def histogram(
     buckets: list[int],
     counts: list[int],
     *,
+    w: int = SVG_W,
     threshold: float,
     title: str,
     desc: str,
@@ -757,7 +860,7 @@ def histogram(
     """Counts per 1-unit bucket, the bars at or past `threshold` in a second colour, and a
     dashed line at the threshold itself. The last bucket is open-ended when last_is_open."""
     left, right, top, bottom = 74, 16, 18, 44
-    x0, x1 = left, SVG_W - right
+    x0, x1 = left, w - right
     y0, y1 = top, height - bottom
     ticks = nice_ticks(max(counts))
     top_value = max(ticks)
@@ -767,7 +870,7 @@ def histogram(
     def sy(v: float) -> float:
         return y1 - (y1 - y0) * (v / top_value)
 
-    out = _open_svg(SVG_W, height, title, desc)
+    out = _open_svg(w, height, title, desc)
     for t in ticks:
         y = sy(t)
         out.append(f'<line class="gr" x1="{x0}" y1="{y:.1f}" x2="{x1}" y2="{y:.1f}"/>')
@@ -795,6 +898,7 @@ def histogram(
 def hbars(
     rows: list[tuple[str, float, str]],
     *,
+    w: int = SVG_W,
     title: str,
     desc: str,
     slot: str = "s1",
@@ -803,37 +907,43 @@ def hbars(
     label_w: float = 128,
 ) -> str:
     """Horizontal bars, one colour, the value written at the end of each bar."""
-    row_h = FS * 3.0 if label_above else FS * 2.4
+    # A label above its bar may hold a line break; each extra line takes FS * 1.65, the
+    # spacing measured for two-line labels in line_chart_log.
+    extra = max(label.count("\n") for label, _, _ in rows) if label_above else 0
+    row_h = (FS * 3.0 + extra * FS * 1.65) if label_above else FS * 2.4
     height = int(row_h * len(rows) + 10)
     top = max_value if max_value is not None else max(v for _, v, _ in rows)
     # Leave room for the longest value label, so the last bar's text cannot run off the edge.
     value_gutter = max(len(text) for _, _, text in rows) * (FS - 1) * 0.58 + 16
     x0 = 8 if label_above else label_w
-    x1 = SVG_W - value_gutter
-    out = _open_svg(SVG_W, height, title, desc)
+    x1 = w - value_gutter
+    out = _open_svg(w, height, title, desc)
     for i, (label, value, text) in enumerate(rows):
         y = 6 + i * row_h
-        bar_y = y + (FS * 1.4 if label_above else 0)
+        bar_y = y + (FS * 1.4 + extra * FS * 1.65 if label_above else 0)
         w = max(1.0, (x1 - x0) * (value / top if top else 0))
         if label_above:
-            out.append(_txt(x0, y + FS, label, "lb"))
+            for k, line in enumerate(label.split("\n")):
+                out.append(_txt(x0, y + FS + k * FS * 1.65, line, "lb"))
         else:
             out.append(_txt(label_w - 10, bar_y + FS * 1.05, label, "tk", "end"))
         out.append(
             f'<rect class="bar" x="{x0}" y="{bar_y:.1f}" width="{w:.1f}" '
             f'height="{FS * 1.35:.1f}" rx="3" style="fill:var(--{slot})">'
-            f"<title>{esc(label)}: {esc(text)}</title></rect>"
+            f"<title>{esc(label.replace(chr(10), ' '))}: {esc(text)}</title></rect>"
         )
         out.append(_txt(x0 + w + 10, bar_y + FS * 1.05, text, "vl"))
     out.append("</svg>")
     return "".join(out)
 
 
-def reconciliation_panels(dates: list, csv_rows: list[dict], *, clamp: float) -> str:
+def reconciliation_panels(
+    dates: list, csv_rows: list[dict], *, w: int = SVG_W, clamp: float
+) -> str:
     """One panel per pool: the daily relative difference, the threshold, what was flagged."""
     panel_h, title_h, gap, left, right = 122, 24, 16, 72, 40
     height = 10 + len(POOL_ORDER) * (panel_h + gap) + 28
-    x0, x1 = left, SVG_W - right
+    x0, x1 = left, w - right
     half = 40.0
     index = {d: i for i, d in enumerate(dates)}
 
@@ -841,7 +951,7 @@ def reconciliation_panels(dates: list, csv_rows: list[dict], *, clamp: float) ->
         return x0 + (x1 - x0) * index[d] / (len(dates) - 1)
 
     title = "Daily relative difference against the external source, one panel per pool"
-    out = _open_svg(SVG_W, height, title, f"Four panels, {len(dates)} days each.")
+    out = _open_svg(w, height, title, f"Four panels, {len(dates)} days each.")
     for pi, label in enumerate(POOL_ORDER):
         ptop = 10 + pi * (panel_h + gap)
         cy = ptop + title_h + half
@@ -890,11 +1000,11 @@ def reconciliation_panels(dates: list, csv_rows: list[dict], *, clamp: float) ->
                     f'style="fill:var(--{slot})">{tip}</circle>'
                 )
     base = height - 26
-    for i in range(0, len(dates), 7):
+    for i in range(0, len(dates), _date_step((x1 - x0) / (len(dates) - 1))):
         x = sx(dates[i])
         text = dates[i].strftime("%b %d")
         # the last tick sits on the right edge: anchor it so the label stays inside the box
-        anchor = "end" if x + len(text) * FS * 0.3 > SVG_W else "middle"
+        anchor = "end" if x + len(text) * FS * 0.3 > w else "middle"
         out.append(_txt(x, base + FS, text, "tk", anchor))
     out.append("</svg>")
     return "".join(out)
@@ -916,17 +1026,34 @@ def nonzero_hours(top3: str) -> str:
 
 
 def section(
-    num: int, title: str, body: str, shows: str, why: str, src_text: str, src_href: str
+    key: str,
+    title: str,
+    body: str,
+    shows: str,
+    why: str,
+    src_text: str,
+    src_href: str,
+    *,
+    gist: str | None = None,
 ) -> str:
     """Every section closes the same way: what the picture shows, why it matters for anyone who
-    has to trust on-chain numbers, and the file the figures came from."""
-    return (
-        f'<section id="s{num}"><h2><span class="sn">{num}</span> {esc(title)}</h2>'
+    has to trust on-chain numbers, and the file the figures came from. A section outside
+    OPEN_SECTIONS shows its title and `gist`, one line, and folds everything else."""
+    num = sec_num(key)
+    inner = (
         f"{body}"
         f'<p class="shows"><b>What this shows.</b> {shows}</p>'
         f'<p class="why"><b>Why it matters.</b> {why}</p>'
         f'<p class="src">Source: <a href="{esc(src_href)}">{esc(src_text)}</a></p>'
-        "</section>"
+    )
+    head = f'<h2><span class="sn">{num}</span> {esc(title)}</h2>'
+    if key in OPEN_SECTIONS:
+        return f'<section id="s{num}">{head}{inner}</section>'
+    if not gist:
+        raise ValueError(f"section {key} folds and needs a one-line gist")
+    return (
+        f'<section id="s{num}">{head}'
+        f'<details class="fold"><summary>{gist}</summary>{inner}</details></section>'
     )
 
 
@@ -1135,6 +1262,9 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .tall{display:block;max-height:340px;overflow-y:auto;overflow-x:hidden}
 details{margin:8px 0 2px;font-size:13px}
 summary{cursor:pointer;color:var(--ink-2);padding:4px 0}
+details.fold{font-size:inherit;margin:0}
+details.fold>summary{font-size:14px;padding:2px 0 4px}
+details.fold[open]>summary{margin-bottom:6px}
 .sbar{display:flex;height:16px;border-radius:3px;overflow:hidden;background:var(--surface-2);
 gap:2px;margin:3px 0 2px}
 .seg{display:block;min-width:2px}
@@ -1181,6 +1311,15 @@ th,td{padding:5px 6px}
 """
 
 
+def narrow_css() -> str:
+    """Show the phone drawing of each chart up to NARROW_MAX_PX, the screen drawing above."""
+    return (
+        "svg.narrow{display:none}\n"
+        f"@media (max-width:{NARROW_MAX_PX}px)"
+        "{svg.wide{display:none}svg.narrow{display:block}}\n"
+    )
+
+
 def span_css() -> str:
     ids = ",".join(f"#s{n}" for n in SPAN_SECTIONS)
     return f"@media (min-width:1100px){{{ids}{{grid-column:1/-1}}}}\n"
@@ -1211,7 +1350,10 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         ("btn-s", AUTHOR_SITE, "Roberto Fajardo Duro"),
     ]
     a('<header class="top">')
-    a('<p class="badge"><span class="dot"></span>Independent weekend project</p>')
+    a(
+        '<p class="badge"><span class="dot"></span>'
+        "Independent project · one weekend, then one more week</p>"
+    )
     a('<h1>univ3-clickhouse-indexer<br><span class="grad">what the pipeline measured</span></h1>')
     a(f'<p class="sub">{esc(docs["one_liner"])}</p>')
     a(f'<div class="hero-figs">{tiles}</div>')
@@ -1270,20 +1412,21 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             f"{GH}docs/ROUND_TRIPS.md",
             f"Round trips: {rt_total['share_of_usd'] * 100:.1f}% of all USD volume is the two "
             "legs of swaps that the same sender undid in the same block; the half that comes "
-            f"back is {undo_share * 100:.1f}% (section 10).",
+            f"back is {undo_share * 100:.1f}% (section {sec_num('round_trips')}).",
         ),
         (
             f"{GH}docs/CROSS_POOL.md",
             f"The two {liquid['pair']['pair']} pools quote within "
             f"{liquid['pair']['fee_bps']:g} bps of each other (their two fees added) at "
             f"{fint(within_fee)} of {fint(gap['swaps'])} swaps, and "
-            f"{same_block * 100:.0f}% of the divergences close in the same block (section 11).",
+            f"{same_block * 100:.0f}% of the divergences close in the same block "
+            f"(section {sec_num('cross_pool')}).",
         ),
         (
             f"{GH}docs/RECONCILIATION_FINDINGS.md#what-is-still-open",
             f"The largest open case, read from {fint(oc['transactions'])} transaction receipts: "
             "netting inside each transaction does not explain it, and it stays open "
-            "(section 12).",
+            f"(section {sec_num('open_case')}).",
         ),
         (f"{GH}CHANGELOG.md", "Every change since 18 September, by date: CHANGELOG.md."),
     ]
@@ -1353,6 +1496,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
 
     # The numbered sections share one grid: one column on a phone, two from 1100px (CSS).
     a('<main class="grid">')
+    placed: dict[str, str] = {}
 
     # ---- 1. KPIs
     kpis = [
@@ -1373,17 +1517,15 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f'<p class="note">Flagged means beyond 1% <b>and</b> beyond 1,000 USD. '
         f"Reconciliation report generated {esc(docs['recon_generated'])}.</p>"
     )
-    a(
-        section(
-            1,
-            "The numbers this page is about",
-            body,
-            "How much was indexed, how much of it could be compared with an independent "
-            "source, and that the pipeline agrees with itself exactly.",
-            "A pipeline that does not agree with itself cannot be checked against anything else, "
-            "so that is the first thing to establish and the cheapest to run on every load.",
-            *report_source("reconciliation.md"),
-        )
+    placed["kpis"] = section(
+        "kpis",
+        "The numbers this page is about",
+        body,
+        "How much was indexed, how much of it could be compared with an independent "
+        "source, and that the pipeline agrees with itself exactly.",
+        "A pipeline that does not agree with itself cannot be checked against anything else, "
+        "so that is the first thing to establish and the cheapest to run on every load.",
+        *report_source("reconciliation.md"),
     )
 
     # ---- 2. daily volume per pool
@@ -1393,7 +1535,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     whole = [i for i, d in enumerate(data["dates"]) if d not in partial]
     whole_dates = [data["dates"][i] for i in whole]
     whole_series = {k: [v[i] for i in whole] for k, v in data["volume_series"].items()}
-    chart = line_chart_log(
+    chart = responsive(
+        line_chart_log,
         whole_dates,
         whole_series,
         title="Daily USD volume per pool, logarithmic scale",
@@ -1432,19 +1575,18 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         "out of the chart and kept in the table.</p>"
         + details("Daily volume, every pool and day (USDC = USDC/WETH, wstETH = wstETH/USDC)", tbl)
     )
-    a(
-        section(
-            2,
-            "Daily USD volume per pool",
-            body,
-            "Two USDC/WETH pools carry almost all the money while the two wstETH pools live far "
-            f"below them: about {orders} orders of magnitude between the busiest pool and the "
-            "quietest on the median day.",
-            "Four pools that differ by this much break any single threshold: a few hundred "
-            "dollars is noise in one pool and the whole day in another.",
-            "onchain_dbt.fct_pool_daily — dbt/models/marts/fct_pool_daily.sql",
-            f"{GH}dbt/models/marts/fct_pool_daily.sql",
-        )
+    placed["volume"] = section(
+        "volume",
+        "Daily USD volume per pool",
+        body,
+        "Two USDC/WETH pools carry almost all the money while the two wstETH pools live far "
+        f"below them: about {orders} orders of magnitude between the busiest pool and the "
+        "quietest on the median day.",
+        "Four pools that differ by this much break any single threshold: a few hundred "
+        "dollars is noise in one pool and the whole day in another.",
+        "onchain_dbt.fct_pool_daily — dbt/models/marts/fct_pool_daily.sql",
+        f"{GH}dbt/models/marts/fct_pool_daily.sql",
+        gist="Two USDC/WETH pools carry almost all the money; the two wstETH pools live far below.",
     )
 
     # ---- 3. the same pair in two fee tiers
@@ -1461,7 +1603,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     ]
     shares_low = [lo / (lo + hi) for _, _, lo, hi, _ in metrics]
     shares_high = [hi / (lo + hi) for _, _, lo, hi, _ in metrics]
-    chart = grouped_bars(
+    chart = responsive(
+        grouped_bars,
         [m[0] for m in metrics],
         [("USDC/WETH 0.01%", "s1"), ("USDC/WETH 0.05%", "s2")],
         [shares_low, shares_high],
@@ -1495,20 +1638,19 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         "is the stablecoin leg either way (<code>fct_pool_daily.sql</code> says by how much "
         "that can be low).</p>"
     )
-    a(
-        section(
-            3,
-            "The same pair in two fee tiers",
-            body,
-            "The 0.01% pool takes three swaps in four but a third of the money and a tenth of "
-            "the fees: the cheap tier is where the small, frequent trade goes.",
-            f"{rt_lo['share_of_usd'] * 100:.1f}% of the 0.01% pool's USD is same-block round "
-            f"trips (section 10). Netted out, its share of the pair's volume is "
-            f"{net_share * 100:.1f}%, not {raw_share * 100:.1f}%: a comparison of two fee tiers "
-            "on reported volume depends on it.",
-            "onchain_dbt.fct_pool_daily — columns swaps, volume_usd, fees_usd",
-            f"{GH}dbt/models/marts/fct_pool_daily.sql",
-        )
+    placed["fee_tiers"] = section(
+        "fee_tiers",
+        "The same pair in two fee tiers",
+        body,
+        "The 0.01% pool takes three swaps in four but a third of the money and a tenth of "
+        "the fees: the cheap tier is where the small, frequent trade goes.",
+        f"{rt_lo['share_of_usd'] * 100:.1f}% of the 0.01% pool's USD is same-block round "
+        f"trips ({sec_link('round_trips')}). Netted out, its share of the pair's volume is "
+        f"{net_share * 100:.1f}%, not {raw_share * 100:.1f}%: a comparison of two fee tiers "
+        "on reported volume depends on it.",
+        "onchain_dbt.fct_pool_daily — columns swaps, volume_usd, fees_usd",
+        f"{GH}dbt/models/marts/fct_pool_daily.sql",
+        gist="The 0.01% pool takes three swaps in four but a third of the money.",
     )
 
     # ---- 4. reconciliation over time
@@ -1517,7 +1659,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         r for r in csv_rows if r["rel"] is not None and not r["excluded"] and abs(r["rel"]) > clamp
     ]
     worst = max(off_scale, key=lambda r: abs(r["rel"]))
-    chart = reconciliation_panels(data["dates"], csv_rows, clamp=clamp)
+    chart = responsive(reconciliation_panels, data["dates"], csv_rows, clamp=clamp)
     rows = [
         [
             esc(r["pool"]),
@@ -1566,17 +1708,15 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         "diamonds; they are the first and the last day of the window.</p>"
         + details("Every pool-day and its relative difference", tbl)
     )
-    a(
-        section(
-            4,
-            "Reconciliation against the external source, day by day",
-            body,
-            "Most days sit inside ±1% in the two liquid pools and the differences that "
-            "matter are a handful of located pool-days, not a drift.",
-            "An aggregate that matches over a month can still be wrong every single day. Only a "
-            "per-day comparison says which days to look at.",
-            *report_source("reconciliation.csv"),
-        )
+    placed["reconciliation"] = section(
+        "reconciliation",
+        "Reconciliation against the external source, day by day",
+        body,
+        "Most days sit inside ±1% in the two liquid pools and the differences that "
+        "matter are a handful of located pool-days, not a drift.",
+        "An aggregate that matches over a month can still be wrong every single day. Only a "
+        "per-day comparison says which days to look at.",
+        *report_source("reconciliation.csv"),
     )
 
     # ---- 5. where the difference sits
@@ -1589,7 +1729,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     ours = [h["our_usd"] for h in hours]
     theirs = [h["external_usd"] for h in hours]
     ticks = nice_ticks(max(max(ours), max(theirs)))
-    chart = grouped_bars(
+    chart = responsive(
+        grouped_bars,
         labels,
         [("this pipeline", "s1"), ("external source", "s2")],
         [ours, theirs],
@@ -1631,30 +1772,33 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f"{esc(fusd_signed(pick['day_diff'], 0))} ({esc(fpct(pick['rel']))}); the largest "
         f"three hours in the evidence report are "
         f"{esc(nonzero_hours(ev['top3'])) if ev else 'not listed'}.</p>"
-        + details("The whole day, hour by hour", tbl)
+        f'<p class="note"><b>Largest open case: {OPEN_CASE_DAY}, {OPEN_CASE_POOL}</b> '
+        f"({sec_link('open_case')}).</p>" + details("The whole day, hour by hour", tbl)
     )
-    a(
-        section(
-            5,
-            "Where the difference sits: one flagged day, hour by hour",
-            body,
-            "Every hour of this day agrees with the external source to within a dollar except "
-            "one, "
-            "so the day's difference is one event and not a systematic gap.",
-            "A difference located to one hour can be investigated; the same difference spread "
-            "over a month cannot. Locating it is most of the work of trusting a number.",
-            "sql/reconciliation/17_evidence_hourly.sql — re-run against "
-            "onchain.raw_swaps and onchain.external_hourly_volume FINAL",
-            f"{GH}sql/reconciliation/17_evidence_hourly.sql",
-        )
+    placed["one_day"] = section(
+        "one_day",
+        "Where the difference sits: one flagged day, hour by hour",
+        body,
+        "Every hour of this day agrees with the external source to within a dollar except "
+        "one, "
+        "so the day's difference is one event and not a systematic gap.",
+        "A difference located to one hour can be investigated; the same difference spread "
+        "over a month cannot. Locating it is most of the work of trusting a number.",
+        "sql/reconciliation/17_evidence_hourly.sql — re-run against "
+        "onchain.raw_swaps and onchain.external_hourly_volume FINAL",
+        f"{GH}sql/reconciliation/17_evidence_hourly.sql",
+        gist=f"{esc(pick['pool'])} on {esc(pick['date'])}, picked by rule: the difference sits "
+        f"in one hour.",
     )
 
     # ---- 6. hypotheses
     hyp = docs["hypotheses"]
-    chart = grouped_bars(
-        [h["short"] for h in hyp],
-        [("days brought inside 1%", "good"), ("days pushed outside 1%", "critical")],
-        [
+    chart = responsive(
+        grouped_bars,
+        groups=[h["short"] for h in hyp],
+        phone={"groups": [h["short"].replace(" ", "\n", 1) for h in hyp]},
+        series=[("days brought inside 1%", "good"), ("days pushed outside 1%", "critical")],
+        values=[
             [h["fixed"] / h["beyond"] for h in hyp],
             [h["broken"] / h["inside"] for h in hyp],
         ],
@@ -1704,25 +1848,26 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         "the displaced swaps and not to revaluation as such. The finding stays "
         "<b>PARTLY EXPLAINED</b>.</p>"
     )
-    a(
-        section(
-            6,
-            "Two readings of the gap, in sample, out of sample and against a placebo",
-            body,
-            "One hypothesis was tested so that it could fail, and did. The other passes the "
-            f"placebo and brings {hyp[2]['fixed']} of {hyp[2]['beyond']} hold-out days inside, "
-            "but fails the correlation criterion fixed before the hold-out, so it stays partly "
-            "explained.",
-            "An explanation fitted on the same data it explains is not evidence. A hold-out and a "
-            "placebo are what separate a real effect from a rule that was tuned until it fitted.",
-            f"{report_source('h2_out_of_sample.md')[0]} and finding 7",
-            report_source("h2_out_of_sample.md")[1],
-        )
+    placed["readings"] = section(
+        "readings",
+        "Two readings of the gap, in sample, out of sample and against a placebo",
+        body,
+        "One hypothesis was tested so that it could fail, and did. The other passes the "
+        f"placebo and brings {hyp[2]['fixed']} of {hyp[2]['beyond']} hold-out days inside, "
+        "but fails the correlation criterion fixed before the hold-out, so it stays partly "
+        "explained.",
+        "An explanation fitted on the same data it explains is not evidence. A hold-out and a "
+        "placebo are what separate a real effect from a rule that was tuned until it fitted.",
+        f"{report_source('h2_out_of_sample.md')[0]} and finding 7",
+        report_source("h2_out_of_sample.md")[1],
+        gist=f"One reading fails its test; the other brings {hyp[2]['fixed']} of "
+        f"{hyp[2]['beyond']} hold-out days inside and stays partly explained.",
     )
 
     # ---- 7. who moves the volume
     cum = data["senders"]["cumulative"]
-    chart = hbars(
+    chart = responsive(
+        hbars,
         [(f"top {r}", cum[r] * 100, f"{cum[r] * 100:.1f}%") for r in SENDER_RANKS],
         title="Share of USD volume held by the largest senders",
         desc="Cumulative share of USD volume by sender rank. No address is shown.",
@@ -1792,31 +1937,45 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f"transaction hash is republished. {first_day} to {last_day}, the "
         f"{sum(r['pool_days'] for r in data['smart'])} pool-days that were fetched.</p>"
     )
-    a(
-        section(
-            7,
-            "Who moves the volume",
-            body,
-            "Volume is extremely concentrated — one sender is a third of it and eight are "
-            "seven tenths — while the wallets Nansen calls smart money are under a tenth "
-            "of a percent of it.",
-            "Volume this concentrated means one participant can move a daily total on its own, so "
-            "any per-day check has to survive a single large trade without raising a false alarm.",
-            "docs/NANSEN.md — onchain_dbt.stg_swaps and fct_pool_daily_smart_money",
-            f"{GH}docs/NANSEN.md",
-        )
+    placed["senders"] = section(
+        "senders",
+        "Who moves the volume",
+        body,
+        "Volume is extremely concentrated — one sender is a third of it and eight are "
+        "seven tenths — while the wallets Nansen calls smart money are under a tenth "
+        "of a percent of it.",
+        "Volume this concentrated means one participant can move a daily total on its own, so "
+        "any per-day check has to survive a single large trade without raising a false alarm.",
+        "docs/NANSEN.md — onchain_dbt.stg_swaps and fct_pool_daily_smart_money",
+        f"{GH}docs/NANSEN.md",
+        gist="One sender is a third of the volume; smart money is under a tenth of a percent.",
     )
 
     # ---- 8. ClickHouse, measured
     keys = docs["sorting_keys"]
-    chart_a = hbars(
-        [(k["key"], k["rows"], f"{fint(k['rows'])} rows · {k['granules']} granules") for k in keys],
+    chart_a = responsive(
+        hbars,
+        rows=[
+            (k["key"], k["rows"], f"{fint(k['rows'])} rows · {k['granules']} granules")
+            for k in keys
+        ],
+        phone={
+            "rows": [
+                (
+                    k["key"].replace(" — ", "\n"),
+                    k["rows"],
+                    f"{fint(k['rows'])} rows · {k['granules']} granules",
+                )
+                for k in keys
+            ]
+        },
         title="Rows read for the same one-day query under two sorting keys",
         desc="The same query, two candidate sorting keys, rows read from system.query_log.",
         label_above=True,
     )
     ins = docs["inserts"]
-    chart_b = hbars(
+    chart_b = responsive(
+        hbars,
         [
             ("1 insert of 50,000 rows", ins["seconds"][0], f"{ins['seconds'][0]:g} s"),
             ("1,000 inserts of 50 rows", ins["seconds"][1], f"{ins['seconds'][1]:g} s"),
@@ -1842,19 +2001,19 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f"by writing the data {ins['amplification']} times over. Every insert creates a part; "
         "the server merges them again and again, and each merge rewrites what it touches.</p>"
     )
-    a(
-        section(
-            8,
-            "ClickHouse, measured",
-            body,
-            "Two decisions with a number behind each: the sorting key changes what a query "
-            "reads by nineteen times, and a thousand small inserts take five hundred times "
-            "as long as one.",
-            "How the data is stored decides whether a reconciliation takes seconds or minutes, "
-            "and that decides how often anyone actually runs it.",
-            "docs/SCHEMA_EXPERIMENTS.md and docs/QUERY_PERFORMANCE.md",
-            f"{GH}docs/SCHEMA_EXPERIMENTS.md",
-        )
+    placed["clickhouse"] = section(
+        "clickhouse",
+        "ClickHouse, measured",
+        body,
+        "Two decisions with a number behind each: the sorting key changes what a query "
+        "reads by nineteen times, and a thousand small inserts take five hundred times "
+        "as long as one.",
+        "How the data is stored decides whether a reconciliation takes seconds or minutes, "
+        "and that decides how often anyone actually runs it.",
+        "docs/SCHEMA_EXPERIMENTS.md and docs/QUERY_PERFORMANCE.md",
+        f"{GH}docs/SCHEMA_EXPERIMENTS.md",
+        gist="The sorting key changes the rows read nineteen times; small inserts take five "
+        "hundred times as long.",
     )
 
     # ---- 9. the findings
@@ -1882,19 +2041,18 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f'one by one under <a href="{GH}docs/RECONCILIATION_FINDINGS.md#what-is-still-open">'
         "what is still open</a>.</p>"
     )
-    a(
-        section(
-            9,
-            "The ten findings and their state",
-            body,
-            "What was measured, what was located but not settled, and what is still open — "
-            "the external source publishes no methodology, so nothing about what it does can "
-            "be more than partly explained.",
-            "The list of what is not explained is the part of a data quality report that usually "
-            "goes missing, and it is the part that says how far the numbers can be trusted.",
-            "docs/RECONCILIATION_FINDINGS.md",
-            f"{GH}docs/RECONCILIATION_FINDINGS.md",
-        )
+    placed["findings"] = section(
+        "findings",
+        "The ten findings and their state",
+        body,
+        "What was measured, what was located but not settled, and what is still open — "
+        "the external source publishes no methodology, so nothing about what it does can "
+        "be more than partly explained.",
+        "The list of what is not explained is the part of a data quality report that usually "
+        "goes missing, and it is the part that says how far the numbers can be trusted.",
+        "docs/RECONCILIATION_FINDINGS.md",
+        f"{GH}docs/RECONCILIATION_FINDINGS.md",
+        gist="What was measured, what was located but not settled, and what is still open.",
     )
 
     # ---- 10. round trips in the same block (docs/ROUND_TRIPS.md)
@@ -1919,10 +2077,12 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     row_of = {r["pool"]: r for r in by_pool}
     top_share = max(r["share_of_usd"] for r in by_pool)
     ticks = [0, 0.1, 0.2, 0.3] if top_share <= 0.3 else [0, 0.1, 0.2, 0.3, 0.4, 0.5]
-    chart = grouped_bars(
+    chart = responsive(
+        grouped_bars,
         [p.replace(" ", "\n", 1) for p in order],
         [("share of swaps", "muted"), ("share of USD volume", "accent")],
         [[row_of[p]["share_of_swaps"] for p in order], [row_of[p]["share_of_usd"] for p in order]],
+        phone_draw=grouped_hbars,
         title="How much of each pool's activity is a round trip in one block",
         desc="Per pool, the share of swaps and the share of USD volume that are legs of a "
         "same-block round trip.",
@@ -1932,7 +2092,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         value_fmt=share_pct,
         height=300,
     )
-    hour_chart = grouped_bars(
+    hour_chart = responsive(
+        grouped_bars,
         [f"{r['hour_utc']:02d}" for r in by_hour],
         [("share of the hour's USD", "accent")],
         [[r["share_of_usd"] for r in by_hour]],
@@ -1976,26 +2137,24 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         "the two legs, a shape consistent with a sandwich pattern; nothing here observes "
         "intent.</p>" + details("By hour of the day (UTC)", hour_chart)
     )
-    a(
-        section(
-            10,
-            "Round trips in one block: how much of the volume is undone at once",
-            body,
-            f"{rt_all['share_of_usd'] * 100:.1f}% of all USD volume is the two legs of swaps "
-            f"that the same sender undid in the same block ("
-            f"{sizes_all['usd_of_legs_that_undo'] / rt_all['all_usd'] * 100:.1f}% counting only "
-            f"the half that comes back), but only {rt_all['share_of_swaps'] * 100:.1f}% of "
-            f"the swaps: most legs are small, and {big_share * 100:.0f}% of their USD sits in "
-            f"legs of 100k USD or more. In the "
-            f"{esc(max(by_pool, key=lambda r: r['share_of_usd'])['pool'])} pool it is "
-            f"{top_share * 100:.1f}% of the money.",
-            "A volume figure that counts a swap and its reversal inside one block reports "
-            "activity that left little or no position behind. Anything computed from volume — "
-            "fees, "
-            "market share, a pool's ranking — inherits it unless it is netted out.",
-            "docs/ROUND_TRIPS.md and dbt/models/marts/fct_round_trip_legs.sql",
-            f"{GH}docs/ROUND_TRIPS.md",
-        )
+    placed["round_trips"] = section(
+        "round_trips",
+        "Round trips in one block: how much of the volume is undone at once",
+        body,
+        f"{rt_all['share_of_usd'] * 100:.1f}% of all USD volume is the two legs of swaps "
+        f"that the same sender undid in the same block ("
+        f"{sizes_all['usd_of_legs_that_undo'] / rt_all['all_usd'] * 100:.1f}% counting only "
+        f"the half that comes back), but only {rt_all['share_of_swaps'] * 100:.1f}% of "
+        f"the swaps: most legs are small, and {big_share * 100:.0f}% of their USD sits in "
+        f"legs of 100k USD or more. In the "
+        f"{esc(max(by_pool, key=lambda r: r['share_of_usd'])['pool'])} pool it is "
+        f"{top_share * 100:.1f}% of the money.",
+        "A volume figure that counts a swap and its reversal inside one block reports "
+        "activity that left little or no position behind. Anything computed from volume — "
+        "fees, "
+        "market share, a pool's ranking — inherits it unless it is netted out.",
+        "docs/ROUND_TRIPS.md and dbt/models/marts/fct_round_trip_legs.sql",
+        f"{GH}docs/ROUND_TRIPS.md",
     )
 
     # ---- 11. the gap between two fee tiers of the same pair (docs/CROSS_POOL.md)
@@ -2012,7 +2171,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     lo_share = gap_rows["lo"]["swaps"] / gap_all["swaps"]
     lo_fee, hi_fee = pair["lo_label"].split()[-1], pair["hi_label"].split()[-1]
     scans = liquid["explain"]["01_cross_pool_gap.sql"]
-    chart = histogram(
+    chart = responsive(
+        histogram,
         [r["bucket_bps"] for r in hist],
         [r["swaps"] for r in hist],
         threshold=pair["fee_bps"],
@@ -2054,26 +2214,24 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f"reads only its pool's granules ({kept}); a CTE is not materialised, so each pool is "
         "read twice.</p>"
     )
-    a(
-        section(
-            11,
-            "Two fee tiers of one pair: how far apart, and for how long",
-            body,
-            f"The two pools of {esc(pair['pair'])} agree to within their combined "
-            f"{pair['fee_bps']:g} bps fee at {within * 100:.1f}% "
-            f"of swaps, and when they do not, the gap is gone in the same block "
-            f"{ep['closed_in_the_same_block'] / closed * 100:.0f}% of the time. "
-            f"At the end of a block they agree at {ends['share_within_the_fee'] * 100:.1f}% of "
-            f"blocks. Neither opens divergences more often than its share of swaps predicts: "
-            f"the one that opens a divergence is "
-            f"{esc(pair['lo_label'])} {ep['opened_by_lo'] / ep['episodes'] * 100:.0f}% of the "
-            f"time, about its {lo_share * 100:.0f}% share of swaps.",
-            "Two pools of one pair are two measurements of one price. In this window they did "
-            f"not disagree beyond their fees for more than {ep['blocks_open_max']} blocks, which "
-            "is what lets each serve as a check on a price or a volume read from the other.",
-            "docs/CROSS_POOL.md and sql/analysis/03_cross_pool_episodes.sql",
-            f"{GH}docs/CROSS_POOL.md",
-        )
+    placed["cross_pool"] = section(
+        "cross_pool",
+        "Two fee tiers of one pair: how far apart, and for how long",
+        body,
+        f"The two pools of {esc(pair['pair'])} agree to within their combined "
+        f"{pair['fee_bps']:g} bps fee at {within * 100:.1f}% "
+        f"of swaps, and when they do not, the gap is gone in the same block "
+        f"{ep['closed_in_the_same_block'] / closed * 100:.0f}% of the time. "
+        f"At the end of a block they agree at {ends['share_within_the_fee'] * 100:.1f}% of "
+        f"blocks. Neither opens divergences more often than its share of swaps predicts: "
+        f"the one that opens a divergence is "
+        f"{esc(pair['lo_label'])} {ep['opened_by_lo'] / ep['episodes'] * 100:.0f}% of the "
+        f"time, about its {lo_share * 100:.0f}% share of swaps.",
+        "Two pools of one pair are two measurements of one price. In this window they did "
+        f"not disagree beyond their fees for more than {ep['blocks_open_max']} blocks, which "
+        "is what lets each serve as a check on a price or a volume read from the other.",
+        "docs/CROSS_POOL.md and sql/analysis/03_cross_pool_episodes.sql",
+        f"{GH}docs/CROSS_POOL.md",
     )
 
     # ---- 12. the largest open case, read from its transaction receipts
@@ -2085,7 +2243,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         raise SystemExit("build_dashboard: the open case is no longer a flagged pool-day")
     hour_diff = next(h["diff_usd"] for h in case["hours"] if h["hour_of_day"] == OPEN_CASE_HOUR)
     touch = oc["usd_of_transactions_that_also_touch"]
-    chart = hbars(
+    chart = responsive(
+        hbars,
         [(k, v, fusd_compact(v)) for k, v in sorted(touch.items(), key=lambda kv: -kv[1])],
         title=f"{OPEN_CASE_POOL} on {OPEN_CASE_DAY}, {OPEN_CASE_HOUR:02d}h UTC: what else the "
         "transactions touched",
@@ -2120,27 +2279,28 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         "were read once and are kept outside the repository; this page carries aggregates only."
         "</p>"
     )
-    a(
-        section(
-            12,
-            "The largest open case, read from its transaction receipts",
-            body,
-            f"The hour that holds most of the largest unexplained difference is "
-            f"{fint(oc['transactions'])} transactions from "
-            f"{fint(oc['distinct_signers'])} accounts; "
-            f"{fint(oc['transactions_with_another_swap'])} of the transactions also swapped in "
-            "another pool, "
-            "and "
-            f"{oc['usd_in_the_first_three_slots'] / oc['gross_usd'] * 100:.0f}% of the hour's USD "
-            "sits in transactions in the first three positions of their block. The case stays "
-            "open.",
-            "A difference that survives every reading of the pool's own logs has to be looked "
-            "for in the transactions around them. This is where a second source with per-swap "
-            "rows would settle it, and what to ask that source for.",
-            *report_source(OPEN_CASE_RECEIPTS.replace(".json", ".md")),
-        )
+    placed["open_case"] = section(
+        "open_case",
+        "The largest open case, read from its transaction receipts",
+        body,
+        f"The hour that holds most of the largest unexplained difference is "
+        f"{fint(oc['transactions'])} transactions from "
+        f"{fint(oc['distinct_signers'])} accounts; "
+        f"{fint(oc['transactions_with_another_swap'])} of the transactions also swapped in "
+        "another pool, "
+        "and "
+        f"{oc['usd_in_the_first_three_slots'] / oc['gross_usd'] * 100:.0f}% of the hour's USD "
+        "sits in transactions in the first three positions of their block. The case stays "
+        "open.",
+        "A difference that survives every reading of the pool's own logs has to be looked "
+        "for in the transactions around them. This is where a second source with per-swap "
+        "rows would settle it, and what to ask that source for.",
+        *report_source(OPEN_CASE_RECEIPTS.replace(".json", ".md")),
+        gist=f"{fint(oc['transactions'])} transactions from {fint(oc['distinct_signers'])} "
+        "accounts in one hour, read from their receipts; the case stays open.",
     )
 
+    parts.extend(placed[key] for key in SECTION_ORDER)
     a("</main>")
 
     # ---- glossary: the technical words used above, one line each, folded away
@@ -2153,7 +2313,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         (
             "Sorting key",
             "the order rows are stored in. It decides how much of a table a query "
-            "has to read, which is what section 8 measures.",
+            f"has to read, which is what section {sec_num('clickhouse')} measures.",
         ),
         (
             "Sparse index",
@@ -2242,7 +2402,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f'<footer>Generated {esc(stamp)} by <a href="{GH}scripts/build_dashboard.py">'
         "scripts/build_dashboard.py</a>. One file, no script, no external request: every "
         "figure was read from ClickHouse or from a file in the repository when it was "
-        "built.<br>Independent weekend project. Smart-money data: Powered by Nansen API. "
+        "built.<br>Independent project. Smart-money data: Powered by Nansen API. "
         "Not affiliated with any company mentioned.</footer>"
     )
 
@@ -2252,7 +2412,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
         "<title>univ3-clickhouse-indexer — measurements</title>\n"
         f'<meta name="description" content="{esc(docs["one_liner"])}">\n'
-        f"<style>{CSS}{span_css()}</style>\n</head>\n<body>\n"
+        f"<style>{CSS}{span_css()}{narrow_css()}</style>\n</head>\n<body>\n"
         f'<div class="wrap">\n{"".join(parts)}\n</div>\n</body>\n</html>\n'
     )
 

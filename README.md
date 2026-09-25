@@ -19,9 +19,9 @@ ClickHouse, modelled with dbt, and reconciled against an independent source. 1,2
 **[10-minute walkthrough](docs/WALKTHROUGH.md)** — what to open and in what order
 
 > Built over one weekend (18–21 September 2026) as a hands-on way to learn
-> ClickHouse on real on-chain data. It is tested and reconciled, but it has
-> never run in production and it may contain mistakes. Issues and
-> corrections are welcome.
+> ClickHouse, and extended in the following week (see [CHANGELOG](CHANGELOG.md)).
+> It is tested and reconciled, but it has never run in production and it may
+> contain mistakes. Issues and corrections are welcome.
 
 A third source, the Nansen API, adds what a Swap log cannot carry: a classification of the
 account that signed the transaction. **Smart-money data: Powered by Nansen API** — the repository publishes only

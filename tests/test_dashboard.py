@@ -7,11 +7,15 @@ network, no ClickHouse. Run `make dashboard` after changing the generator or the
 
 import html.parser
 import re
+import sys
 
 import pytest
 
 from univ3_indexer import config
 from univ3_indexer.config import REPO_ROOT
+
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+import build_dashboard  # noqa: E402
 
 PAGE = REPO_ROOT / "docs" / "index.html"
 NOJEKYLL = REPO_ROOT / "docs" / ".nojekyll"
@@ -257,7 +261,7 @@ def test_the_summary_and_the_closing_block_say_what_they_promise(page):
     for link in ("docs/WALKTHROUGH.md", "DECISIONS.md", "orwee/univ3-clickhouse-indexer"):
         assert link in start.group(0), f"the closing block does not point at {link}"
     assert (
-        "Independent weekend project. Smart-money data: Powered by Nansen API. "
+        "Independent project. Smart-money data: Powered by Nansen API. "
         "Not affiliated with any company mentioned." in page
     )
 
@@ -392,9 +396,54 @@ def test_whats_new_is_dated_and_every_line_links_to_what_it_summarises(page):
 
 
 def test_the_week_two_sections_each_carry_a_chart_and_their_source(page):
-    for number, source in ((10, "docs/ROUND_TRIPS.md"), (11, "docs/CROSS_POOL.md"),
+    for number, source in ((2, "docs/ROUND_TRIPS.md"), (3, "docs/CROSS_POOL.md"),
                            (12, "receipts_2026-08-19_15h.md")):  # fmt: skip
         sec = re.search(rf'<section id="s{number}">.*?</section>', page, re.S)
         assert sec, f"section {number} is missing"
         assert "<svg " in sec.group(0), f"section {number} has no chart"
         assert source in sec.group(0), f"section {number} does not point at {source}"
+
+
+def test_every_chart_has_a_phone_drawing_with_the_same_font(page):
+    """On a 390 px phone a card leaves about 346 px for a chart (measured in Chromium). Drawn
+    680 units wide there, an 18-unit label renders under 9 px; each chart is therefore drawn a
+    second time, narrower, and the CSS shows that one on a phone. The font is not touched."""
+    wide = re.findall(r'<svg class="wide" viewBox="0 0 (\d+) ', page)
+    narrow = re.findall(r'<svg class="narrow" viewBox="0 0 (\d+) ', page)
+    assert len(wide) >= 6 and len(wide) == len(narrow), "a chart without its phone drawing"
+    assert len(re.findall(r"<svg ", page)) == len(wide) + len(narrow), "a chart drawn once"
+    assert set(wide) == {str(build_dashboard.SVG_W)}
+    assert set(narrow) == {str(build_dashboard.NARROW_W)}
+    assert f"@media (max-width:{build_dashboard.NARROW_MAX_PX}px)" in page
+    css = page.replace(" ", "")
+    for cls, size in ((".tk", 18), (".lb", 18), (".vl", 17)):
+        assert f"{cls}{{fill:" in css and f"font-size:{size}px" in css
+        assert size * 346 / build_dashboard.NARROW_W >= 11, f"{cls} under 11 px on a phone"
+
+
+def test_the_headline_sections_stay_open_and_the_rest_fold_under_one_line(page):
+    """The page opens on the KPIs, round trips, cross-pool and the reconciliation; every other
+    section shows its title and one line, and folds the chart, the text and the source."""
+    sections = re.findall(r'<section id="s(\d+)"><h2>.*?</h2>(.*?)</section>', page, re.S)
+    assert len(sections) == len(build_dashboard.SECTION_ORDER)
+    open_ones = [n for n, body in sections if not body.startswith('<details class="fold">')]
+    assert open_ones == ["1", "2", "3", "4"], f"open sections: {open_ones}"
+    for source, number in (("docs/ROUND_TRIPS.md", "2"), ("docs/CROSS_POOL.md", "3")):
+        assert source in dict(sections)[number]
+    assert "Reconciliation against the external source" in page.split('<section id="s4">')[1][:120]
+    for number, body in sections[4:]:
+        gist = re.match(r'<details class="fold"><summary>(.*?)</summary>', body, re.S)
+        assert gist, f"section {number} does not fold"
+        text = re.sub(r"<[^>]+>", "", gist.group(1))
+        assert 20 <= len(text) <= 110 and "<br" not in gist.group(1), f"section {number}: {text}"
+
+
+def test_the_rule_picked_day_points_at_the_largest_open_case(page):
+    one_day = f"s{build_dashboard.sec_num('one_day')}"
+    case = f"s{build_dashboard.sec_num('open_case')}"
+    sec = re.search(rf'<section id="{one_day}">.*?</section>', page, re.S).group(0)
+    assert "Picked by rule, not by hand" in sec, "the rule that picks the day is gone"
+    line = re.search(r"Largest open case: 2026-08-19, USDC/WETH 0\.05%.*?</p>", sec, re.S)
+    assert line, "the line pointing at the largest open case is missing"
+    assert f'<a href="#{case}">' in line.group(0)
+    assert "receipts_2026-08-19_15h.md" in page.split(f'<section id="{case}">')[1]
