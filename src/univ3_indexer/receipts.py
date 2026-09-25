@@ -29,6 +29,7 @@ import argparse
 import datetime
 import json
 import logging
+import math
 import os
 import statistics
 import sys
@@ -50,6 +51,9 @@ from univ3_indexer.pools import load_pools
 log = logging.getLogger(__name__)
 
 DEFAULT_MAX_CALLS = 1000
+# What a transaction is labelled when it emitted no other Swap (v2, v3-style, v4) and no WETH
+# wrap: it may still carry other protocols' events, which are not classified here.
+NO_OTHER_SWAP = "no other swap, and no WETH wrap or unwrap"
 DATABASE = "onchain"
 
 # One row per transaction that holds at least one Swap of the pool in the hour, with what
@@ -129,6 +133,22 @@ def fetch(rpc, txs: list[str], cache_dir: Path, max_calls: int) -> dict:
     }
 
 
+def verified_token(symbol: str) -> str:
+    """A token address as the on-chain verification of the pools recorded it
+    (docs/verification/pools-*.json: symbol() and the address it was read from). Never typed:
+    AGENTS.md forbids writing a token address anywhere. Refuses if the files disagree."""
+    found = set()
+    for path in sorted((config.REPO_ROOT / "docs" / "verification").glob("pools-*.json")):
+        for pool in json.loads(path.read_text(encoding="utf-8")).get("pools", []):
+            for side in ("token0", "token1"):
+                token = pool.get(side) or {}
+                if isinstance(token, dict) and token.get("symbol") == symbol:
+                    found.add(normalize(token["address"]))
+    if len(found) != 1:
+        raise ReceiptsError(f"{symbol}: {len(found)} verified addresses, expected exactly one")
+    return found.pop()
+
+
 def _addr(value: str | None) -> str:
     """An address from a receipt, comparable; '' for none (a contract creation has no `to`)."""
     return normalize(value) if value else ""
@@ -148,15 +168,23 @@ def _pct(part: float, whole: float) -> float:
 
 
 def _quantile(values: list[float], q: float) -> float:
+    """The median for q = 0.5 (the mean of the two middle values when n is even); otherwise
+    the nearest-rank quantile, which is what the report calls a percentile."""
     if not values:
         return 0.0
+    if q == 0.5:
+        return statistics.median(values)
     ordered = sorted(values)
-    return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
+    return ordered[min(len(ordered) - 1, math.ceil(q * len(ordered)) - 1)]
 
 
-def summarize(pool: str, rows: list[dict], receipts: dict, tracked: dict[str, str]) -> dict:
-    """Aggregates only. ``tracked`` maps the addresses of pools.yml to their labels."""
+def summarize(
+    pool: str, rows: list[dict], receipts: dict, tracked: dict[str, str], weth: str = ""
+) -> dict:
+    """Aggregates only. ``tracked`` maps the addresses of pools.yml to their labels; ``weth``
+    is the WETH9 contract, the only emitter whose Deposit and Withdrawal count as a wrap."""
     pool = normalize(pool)
+    weth = normalize(weth) if weth else ""
     tracked = {normalize(k): v for k, v in tracked.items()}
     by_tx = {r["tx"]: r for r in rows}
     missing = [tx for tx in by_tx if tx not in receipts]
@@ -208,10 +236,10 @@ def summarize(pool: str, rows: list[dict], receipts: dict, tracked: dict[str, st
                 kinds.add("a v2-style pair")
             elif topic == TOPIC_V4_SWAP:
                 kinds.add("the v4 pool manager")
-            elif topic in (TOPIC_WETH_DEPOSIT, TOPIC_WETH_WITHDRAWAL):
+            elif topic in (TOPIC_WETH_DEPOSIT, TOPIC_WETH_WITHDRAWAL) and where == weth:
                 kinds.add("a WETH wrap or unwrap")
         if not kinds:
-            kinds.add("nothing but this pool and token transfers")
+            kinds.add(NO_OTHER_SWAP)
         for kind in kinds:
             touches[kind] += 1
             touches_usd[kind] += row["gross_usd"]
@@ -346,7 +374,7 @@ account and no transaction. {fetch_note}
 
 ## What else each transaction touched
 
-Uniswap v3 Swap logs per transaction, any pool (5+ grouped):
+Swap logs with the Uniswap v3 event signature per transaction, any emitter (5+ grouped):
 
 | logs | transactions |
 |---|---|
@@ -422,7 +450,7 @@ def main(argv: list[str] | None = None) -> int:
         receipts = {r["tx"]: cached(cache_dir, r["tx"]) for r in rows}
         receipts = {k: v for k, v in receipts.items() if v is not None}
         try:
-            summary = summarize(pool, rows, receipts, pools)
+            summary = summarize(pool, rows, receipts, pools, verified_token("WETH"))
         except ReceiptsError as exc:
             log.error("%s", exc)
             return 3

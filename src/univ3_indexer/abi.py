@@ -58,7 +58,8 @@ RECEIPT_TOPICS = {
     "Transfer(address,address,uint256)": (
         "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
     ),
-    # WETH9 wrap and unwrap
+    # WETH9 wrap and unwrap. The signatures are not unique to WETH9: other contracts emit
+    # the same topics, so receipts.py counts one as a wrap only when WETH9 emitted it.
     "Deposit(address,uint256)": (
         "0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c"
     ),

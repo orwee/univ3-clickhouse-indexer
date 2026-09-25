@@ -62,38 +62,53 @@ ROWS = [
     {"tx": tx(0), "swaps": 1, "gross_usd": 100.0, "net_usd": 100.0, "swap_senders": [ROUTER]},
     {"tx": tx(1), "swaps": 2, "gross_usd": 300.0, "net_usd": 10.0, "swap_senders": [BOT]},
     {"tx": tx(2), "swaps": 1, "gross_usd": 600.0, "net_usd": 600.0, "swap_senders": [ROUTER]},
+    {"tx": tx(3), "swaps": 1, "gross_usd": 50.0, "net_usd": 50.0, "swap_senders": [ROUTER]},
 ]
+WETH = receipts.verified_token("WETH")
 RECEIPTS = {
     tx(0): receipt(0, ALICE, ROUTER, [(POOL, SWAP_TOPIC0)], index=0),
     tx(1): receipt(1, BOB, BOT, [(POOL, SWAP_TOPIC0), (POOL, SWAP_TOPIC0),
                                  (SIBLING, SWAP_TOPIC0), ("0x" + "77" * 20, TOPIC_V2_SWAP)]),
-    tx(2): receipt(2, ALICE, ROUTER, [(POOL, SWAP_TOPIC0), ("0x" + "88" * 20, TOPIC_WETH_DEPOSIT)],
-                   index=1),
+    tx(2): receipt(2, ALICE, ROUTER, [(POOL, SWAP_TOPIC0), (WETH, TOPIC_WETH_DEPOSIT)], index=1),
+    # a Deposit(address,uint256) from a contract that is NOT WETH9: the same topic, no wrap
+    tx(3): receipt(3, BOB, ROUTER, [(POOL, SWAP_TOPIC0), ("0x" + "88" * 20, TOPIC_WETH_DEPOSIT)]),
 }  # fmt: skip
 
 
 def test_the_summary_counts_what_the_receipts_show():
-    s = receipts.summarize(POOL, ROWS, RECEIPTS, {POOL: "A 0.05%", SIBLING: "A 0.01%"})
-    assert s["transactions"] == 3 and s["swaps_in_this_pool"] == 4
-    assert s["gross_usd"] == 1000.0 and s["net_usd_within_each_transaction"] == 710.0
+    s = receipts.summarize(POOL, ROWS, RECEIPTS, {POOL: "A 0.05%", SIBLING: "A 0.01%"}, WETH)
+    assert s["transactions"] == 4 and s["swaps_in_this_pool"] == 5
+    assert s["gross_usd"] == 1050.0 and s["net_usd_within_each_transaction"] == 760.0
     assert s["transactions_with_more_than_one_swap_here"] == 1
     assert (s["their_gross_usd"], s["their_net_usd"]) == (300.0, 10.0)
     assert s["distinct_signers"] == 2
-    assert s["top1_signer_share_of_usd"] == pytest.approx(70.0)  # ALICE: 100 + 600 of 1,000
-    assert s["top1_signer_share_of_transactions"] == pytest.approx(200 / 3)
-    assert s["contract_called_is_the_swap_sender"] == 3
-    assert s["v3_swap_logs_per_transaction"] == {"1": 2, "3": 1}
-    assert s["swaps_of_this_pool_per_transaction"] == {"1": 2, "2": 1}
+    assert s["top1_signer_share_of_usd"] == pytest.approx(700 / 1050 * 100)  # ALICE: 100 + 600
+    assert s["top1_signer_share_of_transactions"] == pytest.approx(50.0)
+    assert s["contract_called_is_the_swap_sender"] == 4
+    assert s["v3_swap_logs_per_transaction"] == {"1": 3, "3": 1}
+    assert s["swaps_of_this_pool_per_transaction"] == {"1": 3, "2": 1}
     touched = s["transactions_that_also_touch"]
     assert touched["another tracked pool"] == 1 and touched["a v2-style pair"] == 1
-    assert touched["a WETH wrap or unwrap"] == 1
-    assert touched["nothing but this pool and token transfers"] == 1
+    assert touched["a WETH wrap or unwrap"] == 1, "only the Deposit emitted by WETH9 is a wrap"
+    assert touched[receipts.NO_OTHER_SWAP] == 2  # tx 0, and tx 3 whose Deposit is not WETH9's
     usd = s["usd_of_transactions_that_also_touch"]
     assert usd["another tracked pool"] == 300.0 and usd["a WETH wrap or unwrap"] == 600.0
-    assert usd["nothing but this pool and token transfers"] == 100.0
-    assert s["usd_in_the_first_three_slots"] == 700.0  # positions 0 and 1: tx 0 and tx 2
+    assert usd[receipts.NO_OTHER_SWAP] == 150.0
     assert s["transactions_in_the_first_three_slots"] == 2
-    assert s["fees_paid_eth"] == pytest.approx(3 * 100_000 * 2e9 / 1e18)
+    assert s["usd_in_the_first_three_slots"] == 700.0  # positions 0 and 1: tx 0 and tx 2
+    assert s["fees_paid_eth"] == pytest.approx(4 * 100_000 * 2e9 / 1e18)
+
+
+def test_a_median_is_the_median():
+    assert receipts._quantile([1, 2, 3, 10], 0.5) == 2.5
+    assert receipts._quantile([1, 2, 3, 10], 0.9) == 10
+    assert receipts._quantile(list(range(1, 11)), 0.9) == 9, "nearest rank: ceil(0.9 * 10) = 9th"
+
+
+def test_weth_comes_from_the_on_chain_verification_and_is_unique():
+    assert receipts.verified_token("WETH") == receipts.normalize(receipts.verified_token("WETH"))
+    with pytest.raises(receipts.ReceiptsError):
+        receipts.verified_token("NOT-A-TOKEN")
 
 
 def test_the_summary_refuses_a_transaction_without_its_receipt():
@@ -104,7 +119,7 @@ def test_the_summary_refuses_a_transaction_without_its_receipt():
 def test_the_report_names_no_account_and_no_transaction():
     import datetime
 
-    s = receipts.summarize(POOL, ROWS, RECEIPTS, {POOL: "A 0.05%", SIBLING: "A 0.01%"})
+    s = receipts.summarize(POOL, ROWS, RECEIPTS, {POOL: "A 0.05%", SIBLING: "A 0.01%"}, WETH)
     text = receipts.render("A 0.05%", datetime.date(2026, 8, 19), 15, s, "note")
     assert not re.search(r"0x[0-9a-fA-F]{8,}", text), "an address or a hash reached the report"
     assert "A 0.05%, 2026-08-19, 15:00-16:00 UTC" in text
