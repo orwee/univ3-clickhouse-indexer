@@ -1,0 +1,338 @@
+"""Analyses that go beyond reconciliation, run from sql/analysis/ and written to one report.
+
+Two questions, each answered by SQL files that can be read on their own:
+
+* Round trips (10_ to 12_): how much of the reported activity is a swap undone by the same
+  sender in the same block. Reads the dbt marts built from the definition in
+  sql/reconciliation/16_evidence_round_trips.sql. Documented in docs/ROUND_TRIPS.md.
+* Cross-pool (01_ to 03_): the price gap between the two pools of the same pair, how long a
+  gap wider than the combined fee survives, and which pool moves first. ASOF JOIN on chain
+  position. Documented in docs/CROSS_POOL.md.
+
+Every query runs with the query condition cache OFF, so the rows it reports as read are what
+the sorting key prunes and not what an earlier run left in the cache. For the cross-pool
+queries the report also keeps `EXPLAIN indexes = 1`: granules selected by the primary key for
+each scan.
+
+Nothing is fetched and nothing is written to ClickHouse. The pair of pools is found in
+pools.yml, never typed: two pools with the same token0 and token1 and different fees.
+
+    PYTHONPATH=src uv run python -m univ3_indexer.analysis            # -> reports/analysis.md
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import logging
+import math
+import re
+import sys
+from pathlib import Path
+
+from univ3_indexer import clickhouse as ch
+from univ3_indexer import config
+from univ3_indexer.pools import load_pools
+
+log = logging.getLogger(__name__)
+
+RAW_DB = "onchain"
+DBT_DB = "onchain_dbt"
+ANALYSIS_DIR = ch.SQL_DIR / "analysis"
+SETTINGS = {"use_query_condition_cache": 0}
+
+CROSS_POOL = (
+    "01_cross_pool_gap.sql",
+    "02_cross_pool_gap_histogram.sql",
+    "03_cross_pool_episodes.sql",
+    "04_cross_pool_block_ends.sql",
+)
+ROUND_TRIPS = (
+    "10_round_trips_by_pool.sql",
+    "11_round_trips_by_hour.sql",
+    "12_round_trips_concentration.sql",
+    "13_round_trips_tolerance.sql",
+    "14_round_trips_leg_sizes.sql",
+    "15_round_trips_what_sits_between.sql",
+)
+# 13_ recomputes the pairs from the raw table instead of reading the dbt marts; it takes the
+# stable-leg parameters, the others the dbt database.
+FROM_RAW = {"13_round_trips_tolerance.sql", "15_round_trips_what_sits_between.sql"}
+DEFINITION_TOLERANCE = 0.10
+
+
+class AnalysisError(RuntimeError):
+    pass
+
+
+def fee_tier_pairs(pools=None) -> list[dict]:
+    """Every two pools of pools.yml that hold the same tokens in the same order at different
+    fees, lower fee first. Refuses if there is none, or if a pair of tokens has three pools
+    (the queries compare exactly two)."""
+    pools = list(pools if pools is not None else load_pools())
+    by_tokens: dict[tuple[str, str], list] = {}
+    for p in pools:
+        by_tokens.setdefault((p.token0, p.token1), []).append(p)
+    if any(len(ps) > 2 for ps in by_tokens.values()):
+        raise AnalysisError("a pair of tokens has more than two pools in pools.yml")
+    out = []
+    for ps in by_tokens.values():
+        if len(ps) != 2:
+            continue
+        lo, hi = sorted(ps, key=lambda p: p.fee)
+        out.append(
+            {
+                "lo": lo.key,
+                "hi": hi.key,
+                "lo_label": lo.label,
+                "hi_label": hi.label,
+                "pair": f"{lo.token0}/{lo.token1}",
+                # fee is in hundredths of a basis point: 100 is 0.01% = 1 bp
+                "fee_bps": (lo.fee + hi.fee) / 100.0,
+            }
+        )
+    if not out:
+        raise AnalysisError("no pair of tokens has two fee tiers in pools.yml")
+    return sorted(out, key=lambda d: d["pair"])
+
+
+def sql_of(name: str) -> str:
+    return (
+        ch.strip_sql_comments((ANALYSIS_DIR / name).read_text(encoding="utf-8")).strip().rstrip(";")
+    )
+
+
+def run(client, name: str, parameters: dict, database: str = RAW_DB) -> dict:
+    """One query: its rows as dicts, and what ClickHouse says it read."""
+    result = client.query(
+        sql_of(name), parameters=parameters, settings={**SETTINGS, "database": database}
+    )
+    rows = [dict(zip(result.column_names, row, strict=True)) for row in result.result_rows]
+    summary = result.summary or {}
+    return {
+        "name": name,
+        "rows": rows,
+        "read_rows": int(summary.get("read_rows", 0)),
+        "read_bytes": int(summary.get("read_bytes", 0)),
+        "memory_usage": int(summary.get("memory_usage", 0)),
+        "elapsed_ms": int(summary.get("elapsed_ns", 0)) // 1_000_000,
+    }
+
+
+def granules(client, name: str, parameters: dict, database: str = RAW_DB) -> list[dict]:
+    """For every table scan in the plan: the granules the primary key kept, out of how many."""
+    result = client.query(
+        "EXPLAIN indexes = 1 " + sql_of(name),
+        parameters=parameters,
+        settings={**SETTINGS, "database": database},
+    )
+    lines = [row[0] for row in result.result_rows]
+    scans, table, in_pk = [], None, False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("ReadFromMergeTree"):
+            table = re.search(r"\((.*)\)", stripped).group(1)
+            in_pk = False
+        elif stripped == "PrimaryKey":
+            in_pk = True
+        elif in_pk and stripped.startswith("Condition:"):
+            condition = stripped[len("Condition: ") :]
+        elif in_pk and stripped.startswith("Granules:"):
+            kept, total = (int(x) for x in stripped.split(":")[1].strip().split("/"))
+            scans.append({"table": table, "condition": condition, "kept": kept, "total": total})
+            in_pk = False
+    return scans
+
+
+JOIN_ALGORITHMS = ("hash", "full_sorting_merge")
+REPEATS = 3
+
+
+def join_algorithms(client, pair: dict, database: str = RAW_DB) -> list[dict]:
+    """The gap query under each join algorithm, REPEATS times: median time, memory, and
+    whether the answers are identical. ClickHouse 26.3 runs an ASOF JOIN with either."""
+    params = {"lo": pair["lo"], "hi": pair["hi"], "fee_bps": pair["fee_bps"]}
+    out, answers = [], {}
+    for algorithm in JOIN_ALGORITHMS:
+        runs = []
+        for _ in range(REPEATS):
+            result = client.query(
+                sql_of(CROSS_POOL[0]),
+                parameters=params,
+                settings={**SETTINGS, "database": database, "join_algorithm": algorithm},
+            )
+            runs.append(result.summary or {})
+            answers[algorithm] = result.result_rows
+        elapsed = sorted(int(r.get("elapsed_ns", 0)) // 1_000_000 for r in runs)
+        memory = sorted(int(r.get("memory_usage", 0)) for r in runs)
+        out.append(
+            {
+                "join_algorithm": algorithm,
+                "runs": REPEATS,
+                "median_ms": elapsed[len(elapsed) // 2],
+                "median_memory_bytes": memory[len(memory) // 2],
+                "read_rows": int(runs[-1].get("read_rows", 0)),
+            }
+        )
+    base = answers[JOIN_ALGORITHMS[0]]
+    for row in out:
+        row["same_answer_as_hash"] = same_rows(base, answers[row["join_algorithm"]])
+    return out
+
+
+def same_rows(a: list, b: list, rel: float = 1e-9) -> bool:
+    """Equal row by row: exactly for integers and text, to a relative 1e-9 for floats. Two
+    join algorithms add the same floats in a different order, so an average can differ in
+    its last bits without the answer being different."""
+    if len(a) != len(b):
+        return False
+    for ra, rb in zip(a, b, strict=True):
+        if len(ra) != len(rb):
+            return False
+        for x, y in zip(ra, rb, strict=True):
+            if isinstance(x, float) or isinstance(y, float):
+                if not math.isclose(x, y, rel_tol=rel, abs_tol=1e-12):
+                    return False
+            elif x != y:
+                return False
+    return True
+
+
+def cross_pool(client) -> dict:
+    """The three cross-pool queries for every pair of fee tiers; EXPLAIN for the first."""
+    out = {}
+    for pair in fee_tier_pairs():
+        params = {"lo": pair["lo"], "hi": pair["hi"], "fee_bps": pair["fee_bps"]}
+        out[pair["pair"]] = {
+            "pair": pair,
+            "queries": {name: run(client, name, params) for name in CROSS_POOL},
+            "explain": {CROSS_POOL[0]: granules(client, CROSS_POOL[0], params)},
+            "join_algorithms": join_algorithms(client, pair),
+        }
+    return out
+
+
+def round_trips(client) -> dict:
+    from univ3_indexer import reconcile
+
+    stable = reconcile.stable_leg_parameters(load_pools(), reconcile.stablecoin_symbols())
+    queries = {
+        name: run(client, name, stable if name in FROM_RAW else {"dbt": DBT_DB})
+        for name in ROUND_TRIPS
+    }
+    check_tolerance_against_the_marts(queries)
+    return {"queries": queries}
+
+
+def check_tolerance_against_the_marts(queries: dict) -> None:
+    """At the tolerance of the definition, the recomputation from the raw table must give the
+    marts' pairs, legs and USD. A difference means one of the two copies drifted."""
+    marts = next(r for r in queries["10_round_trips_by_pool.sql"]["rows"] if not r["pool"])
+    raw = next(
+        r
+        for r in queries["13_round_trips_tolerance.sql"]["rows"]
+        if abs(r["tolerance"] - DEFINITION_TOLERANCE) < 1e-9
+    )
+    same = (
+        raw["pairs"] == marts["pairs"]
+        and raw["legs"] == marts["legs"]
+        and abs(raw["legs_usd"] - marts["legs_usd"]) <= 1e-6 * max(marts["legs_usd"], 1.0)
+    )
+    if not same:
+        raise AnalysisError(
+            f"round trips at {DEFINITION_TOLERANCE:.0%}: raw {raw['pairs']} pairs, "
+            f"{raw['legs']} legs, {raw['legs_usd']:,.2f} USD; marts {marts['pairs']}, "
+            f"{marts['legs']}, {marts['legs_usd']:,.2f}"
+        )
+
+
+def _fmt(v) -> str:
+    if isinstance(v, float):
+        return f"{v:,.6g}" if abs(v) < 1 else f"{v:,.2f}"
+    if isinstance(v, int):
+        return f"{v:,}"
+    return str(v)
+
+
+def _table(rows: list[dict]) -> str:
+    if not rows:
+        return "(no rows)\n"
+    head = list(rows[0])
+    out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
+    out += ["| " + " | ".join(_fmt(r[h]) for h in head) + " |" for r in rows]
+    return "\n".join(out) + "\n"
+
+
+def render(result: dict, generated_at: datetime.datetime, max_block: int, rows: int) -> str:
+    cp, rt = result["cross_pool"], result["round_trips"]
+    parts = [
+        "# Analysis report\n",
+        f"Database `{RAW_DB}` ({rows:,} swaps, through block {max_block:,}) and the dbt marts "
+        f"in `{DBT_DB}`, generated {generated_at:%Y-%m-%d %H:%M} UTC by `make analysis`. "
+        "Numbers only; what they mean is in docs/ROUND_TRIPS.md and docs/CROSS_POOL.md. "
+        "Every query ran with the query condition cache off.\n",
+        "## Round trips in the same block\n",
+    ]
+    for name in ROUND_TRIPS:
+        q = rt["queries"][name]
+        parts.append(f"### {name}\n\nRead {q['read_rows']:,} rows in {q['elapsed_ms']:,} ms.\n")
+        parts.append(_table(q["rows"]))
+    for name_of_pair, one in cp.items():
+        pair = one["pair"]
+        parts.append(
+            f"## Cross-pool: {pair['lo_label']} against {pair['hi_label']}\n\n"
+            f"Combined fee: {pair['fee_bps']:g} bps. `lo` is {pair['lo_label']}, `hi` is "
+            f"{pair['hi_label']}.\n"
+        )
+        for name in CROSS_POOL:
+            q = one["queries"][name]
+            parts.append(
+                f"### {name_of_pair}: {name}\n\nRead {q['read_rows']:,} rows "
+                f"({q['read_bytes']:,} bytes) in {q['elapsed_ms']:,} ms, "
+                f"{q['memory_usage']:,} bytes of memory.\n"
+            )
+            parts.append(_table(q["rows"]))
+        parts.append(
+            f"### {name_of_pair}: what the primary key kept, per scan of {CROSS_POOL[0]}\n"
+        )
+        parts.append(_table(one["explain"][CROSS_POOL[0]]))
+        parts.append(f"### {name_of_pair}: {CROSS_POOL[0]} under each join algorithm\n")
+        parts.append(_table(one["join_algorithms"]))
+    return "\n".join(parts)
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--report", type=Path, default=config.REPO_ROOT / "reports" / "analysis.md")
+    ap.add_argument("--generated-at", default=None, help="ISO timestamp, default now (UTC)")
+    args = ap.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    now = (
+        datetime.datetime.fromisoformat(args.generated_at)
+        if args.generated_at
+        else datetime.datetime.now(datetime.UTC)
+    )
+    client = ch.connect(RAW_DB)
+    rows, max_block = client.query(
+        "SELECT count(), max(block_number) FROM raw_swaps", settings={"database": RAW_DB}
+    ).result_rows[0]
+    try:
+        result = {"round_trips": round_trips(client), "cross_pool": cross_pool(client)}
+    except AnalysisError as exc:
+        log.error("%s", exc)
+        return 2
+    result["generated_at"] = now.strftime("%Y-%m-%d %H:%M UTC")
+    result["raw_swaps"] = rows
+    result["max_block"] = max_block
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    args.report.write_text(render(result, now, max_block, rows), encoding="utf-8")
+    args.report.with_suffix(".json").write_text(
+        json.dumps(result, indent=2, sort_keys=True, default=str), encoding="utf-8"
+    )
+    log.info("wrote %s and %s", args.report, args.report.with_suffix(".json"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

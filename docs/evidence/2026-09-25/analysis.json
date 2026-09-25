@@ -1,0 +1,930 @@
+{
+  "cross_pool": {
+    "USDC/WETH": {
+      "explain": {
+        "01_cross_pool_gap.sql": [
+          {
+            "condition": "(pool_address in ['0xe0554a476a092703abdb3ef35c80e0d76d32939f', '0xe0554a476a092703abdb3ef35c80e0d76d32939f'])",
+            "kept": 117,
+            "table": "onchain.raw_swaps",
+            "total": 153
+          },
+          {
+            "condition": "(pool_address in ['0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640', '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640'])",
+            "kept": 42,
+            "table": "onchain.raw_swaps",
+            "total": 153
+          },
+          {
+            "condition": "(pool_address in ['0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640', '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640'])",
+            "kept": 42,
+            "table": "onchain.raw_swaps",
+            "total": 153
+          },
+          {
+            "condition": "(pool_address in ['0xe0554a476a092703abdb3ef35c80e0d76d32939f', '0xe0554a476a092703abdb3ef35c80e0d76d32939f'])",
+            "kept": 117,
+            "table": "onchain.raw_swaps",
+            "total": 153
+          }
+        ]
+      },
+      "join_algorithms": [
+        {
+          "join_algorithm": "hash",
+          "median_memory_bytes": 214367582,
+          "median_ms": 228,
+          "read_rows": 2576810,
+          "runs": 3,
+          "same_answer_as_hash": true
+        },
+        {
+          "join_algorithm": "full_sorting_merge",
+          "median_memory_bytes": 185672436,
+          "median_ms": 637,
+          "read_rows": 2576810,
+          "runs": 3,
+          "same_answer_as_hash": true
+        }
+      ],
+      "pair": {
+        "fee_bps": 6.0,
+        "hi": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+        "hi_label": "USDC/WETH 0.05%",
+        "lo": "0xe0554a476a092703abdb3ef35c80e0d76d32939f",
+        "lo_label": "USDC/WETH 0.01%",
+        "pair": "USDC/WETH"
+      },
+      "queries": {
+        "01_cross_pool_gap.sql": {
+          "elapsed_ms": 257,
+          "memory_usage": 209256970,
+          "name": "01_cross_pool_gap.sql",
+          "read_bytes": 115541274,
+          "read_rows": 2576810,
+          "rows": [
+            {
+              "abs_gap_max_bps": 14355.458341111365,
+              "abs_gap_p50_bps": 3.0038431237238936,
+              "abs_gap_p95_bps": 7.137210298301441,
+              "abs_gap_p99_bps": 16.925273503113036,
+              "beyond_combined_fee": 23249,
+              "mean_signed_gap_bps": 0.27363505593935405,
+              "moved": "hi",
+              "swaps": 307171
+            },
+            {
+              "abs_gap_max_bps": 16029.466017694764,
+              "abs_gap_p50_bps": 2.792767102246524,
+              "abs_gap_p95_bps": 6.10337307477754,
+              "abs_gap_p99_bps": 11.145688914444609,
+              "beyond_combined_fee": 49579,
+              "mean_signed_gap_bps": 0.21199330416162965,
+              "moved": "lo",
+              "swaps": 926413
+            },
+            {
+              "abs_gap_max_bps": 16029.466017694764,
+              "abs_gap_p50_bps": 2.8459857026562667,
+              "abs_gap_p95_bps": 6.299689827339147,
+              "abs_gap_p99_bps": 12.63906714685331,
+              "beyond_combined_fee": 72828,
+              "mean_signed_gap_bps": 0.22734252929369636,
+              "moved": "",
+              "swaps": 1233584
+            }
+          ]
+        },
+        "02_cross_pool_gap_histogram.sql": {
+          "elapsed_ms": 157,
+          "memory_usage": 112699321,
+          "name": "02_cross_pool_gap_histogram.sql",
+          "read_bytes": 115541274,
+          "read_rows": 2576810,
+          "rows": [
+            {
+              "bucket_bps": 0,
+              "swaps": 209281
+            },
+            {
+              "bucket_bps": 1,
+              "swaps": 213653
+            },
+            {
+              "bucket_bps": 2,
+              "swaps": 231092
+            },
+            {
+              "bucket_bps": 3,
+              "swaps": 296840
+            },
+            {
+              "bucket_bps": 4,
+              "swaps": 156257
+            },
+            {
+              "bucket_bps": 5,
+              "swaps": 53633
+            },
+            {
+              "bucket_bps": 6,
+              "swaps": 27150
+            },
+            {
+              "bucket_bps": 7,
+              "swaps": 13093
+            },
+            {
+              "bucket_bps": 8,
+              "swaps": 7886
+            },
+            {
+              "bucket_bps": 9,
+              "swaps": 5138
+            },
+            {
+              "bucket_bps": 10,
+              "swaps": 3570
+            },
+            {
+              "bucket_bps": 11,
+              "swaps": 2447
+            },
+            {
+              "bucket_bps": 12,
+              "swaps": 1763
+            },
+            {
+              "bucket_bps": 13,
+              "swaps": 1378
+            },
+            {
+              "bucket_bps": 14,
+              "swaps": 1051
+            },
+            {
+              "bucket_bps": 15,
+              "swaps": 809
+            },
+            {
+              "bucket_bps": 16,
+              "swaps": 639
+            },
+            {
+              "bucket_bps": 17,
+              "swaps": 567
+            },
+            {
+              "bucket_bps": 18,
+              "swaps": 424
+            },
+            {
+              "bucket_bps": 19,
+              "swaps": 392
+            },
+            {
+              "bucket_bps": 20,
+              "swaps": 6521
+            }
+          ]
+        },
+        "03_cross_pool_episodes.sql": {
+          "elapsed_ms": 418,
+          "memory_usage": 264187014,
+          "name": "03_cross_pool_episodes.sql",
+          "read_bytes": 156287424,
+          "read_rows": 2576810,
+          "rows": [
+            {
+              "blocks_open_max": 6,
+              "blocks_open_p50": 0,
+              "blocks_open_p90": 1,
+              "blocks_open_p99": 2,
+              "closed_by_hi": 8037,
+              "closed_by_lo": 21437,
+              "closed_by_the_other_pool": 12529,
+              "closed_by_the_same_pool": 16945,
+              "closed_in_the_same_block": 23829,
+              "closed_one_block_later": 5008,
+              "closed_two_or_more_blocks_later": 637,
+              "episodes": 29474,
+              "never_left_one_transaction": 3874,
+              "opened_by_hi": 6822,
+              "opened_by_hi_closed_by_lo": 5657,
+              "opened_by_lo": 22652,
+              "opened_by_lo_closed_by_hi": 6872,
+              "peak_gap_p50_bps": 8.009472693658674,
+              "peak_gap_p99_bps": 187.02847754593813,
+              "still_open_at_the_end": 0
+            }
+          ]
+        },
+        "04_cross_pool_block_ends.sql": {
+          "elapsed_ms": 176,
+          "memory_usage": 149355317,
+          "name": "04_cross_pool_block_ends.sql",
+          "read_bytes": 115541274,
+          "read_rows": 2576810,
+          "rows": [
+            {
+              "blocks": 290270,
+              "blocks_ending_within_the_fee": 284248,
+              "end_gap_p50_bps": 2.678885075932748,
+              "end_gap_p99_bps": 6.783153125572252,
+              "share_within_the_fee": 0.979253798187894
+            }
+          ]
+        }
+      }
+    },
+    "wstETH/USDC": {
+      "explain": {
+        "01_cross_pool_gap.sql": [
+          {
+            "condition": "(pool_address in ['0x4622df6fb2d9bee0dcdacf545acdb6a2b2f4f863', '0x4622df6fb2d9bee0dcdacf545acdb6a2b2f4f863'])",
+            "kept": 6,
+            "table": "onchain.raw_swaps",
+            "total": 153
+          },
+          {
+            "condition": "(pool_address in ['0x173821f6ad4c5324cd35753a9fd12d92f2eaab29', '0x173821f6ad4c5324cd35753a9fd12d92f2eaab29'])",
+            "kept": 6,
+            "table": "onchain.raw_swaps",
+            "total": 153
+          },
+          {
+            "condition": "(pool_address in ['0x173821f6ad4c5324cd35753a9fd12d92f2eaab29', '0x173821f6ad4c5324cd35753a9fd12d92f2eaab29'])",
+            "kept": 6,
+            "table": "onchain.raw_swaps",
+            "total": 153
+          },
+          {
+            "condition": "(pool_address in ['0x4622df6fb2d9bee0dcdacf545acdb6a2b2f4f863', '0x4622df6fb2d9bee0dcdacf545acdb6a2b2f4f863'])",
+            "kept": 6,
+            "table": "onchain.raw_swaps",
+            "total": 153
+          }
+        ]
+      },
+      "join_algorithms": [
+        {
+          "join_algorithm": "hash",
+          "median_memory_bytes": 6509654,
+          "median_ms": 15,
+          "read_rows": 191148,
+          "runs": 3,
+          "same_answer_as_hash": true
+        },
+        {
+          "join_algorithm": "full_sorting_merge",
+          "median_memory_bytes": 6204657,
+          "median_ms": 18,
+          "read_rows": 191148,
+          "runs": 3,
+          "same_answer_as_hash": true
+        }
+      ],
+      "pair": {
+        "fee_bps": 35.0,
+        "hi": "0x173821f6ad4c5324cd35753a9fd12d92f2eaab29",
+        "hi_label": "wstETH/USDC 0.3%",
+        "lo": "0x4622df6fb2d9bee0dcdacf545acdb6a2b2f4f863",
+        "lo_label": "wstETH/USDC 0.05%",
+        "pair": "wstETH/USDC"
+      },
+      "queries": {
+        "01_cross_pool_gap.sql": {
+          "elapsed_ms": 15,
+          "memory_usage": 9343763,
+          "name": "01_cross_pool_gap.sql",
+          "read_bytes": 4953540,
+          "read_rows": 191148,
+          "rows": [
+            {
+              "abs_gap_max_bps": 1082968.4827995729,
+              "abs_gap_p50_bps": 20.51599154646957,
+              "abs_gap_p95_bps": 177.40373852697354,
+              "abs_gap_p99_bps": 3157.6574257805505,
+              "beyond_combined_fee": 220,
+              "mean_signed_gap_bps": -3492.827240838422,
+              "moved": "hi",
+              "swaps": 931
+            },
+            {
+              "abs_gap_max_bps": 1083042.8796794396,
+              "abs_gap_p50_bps": 29.042116883233206,
+              "abs_gap_p95_bps": 378.5576200502287,
+              "abs_gap_p99_bps": 1082649.3663543276,
+              "beyond_combined_fee": 2526,
+              "mean_signed_gap_bps": -34484.78899407598,
+              "moved": "lo",
+              "swaps": 6026
+            },
+            {
+              "abs_gap_max_bps": 1083042.8796794396,
+              "abs_gap_p50_bps": 27.279093972846766,
+              "abs_gap_p95_bps": 340.7622427273207,
+              "abs_gap_p99_bps": 1082639.791326591,
+              "beyond_combined_fee": 2746,
+              "mean_signed_gap_bps": -30337.381146977496,
+              "moved": "",
+              "swaps": 6957
+            }
+          ]
+        },
+        "02_cross_pool_gap_histogram.sql": {
+          "elapsed_ms": 13,
+          "memory_usage": 5761520,
+          "name": "02_cross_pool_gap_histogram.sql",
+          "read_bytes": 4953540,
+          "read_rows": 191148,
+          "rows": [
+            {
+              "bucket_bps": 0,
+              "swaps": 151
+            },
+            {
+              "bucket_bps": 1,
+              "swaps": 135
+            },
+            {
+              "bucket_bps": 2,
+              "swaps": 133
+            },
+            {
+              "bucket_bps": 3,
+              "swaps": 136
+            },
+            {
+              "bucket_bps": 4,
+              "swaps": 131
+            },
+            {
+              "bucket_bps": 5,
+              "swaps": 153
+            },
+            {
+              "bucket_bps": 6,
+              "swaps": 134
+            },
+            {
+              "bucket_bps": 7,
+              "swaps": 146
+            },
+            {
+              "bucket_bps": 8,
+              "swaps": 123
+            },
+            {
+              "bucket_bps": 9,
+              "swaps": 117
+            },
+            {
+              "bucket_bps": 10,
+              "swaps": 91
+            },
+            {
+              "bucket_bps": 11,
+              "swaps": 122
+            },
+            {
+              "bucket_bps": 12,
+              "swaps": 104
+            },
+            {
+              "bucket_bps": 13,
+              "swaps": 128
+            },
+            {
+              "bucket_bps": 14,
+              "swaps": 114
+            },
+            {
+              "bucket_bps": 15,
+              "swaps": 124
+            },
+            {
+              "bucket_bps": 16,
+              "swaps": 124
+            },
+            {
+              "bucket_bps": 17,
+              "swaps": 135
+            },
+            {
+              "bucket_bps": 18,
+              "swaps": 121
+            },
+            {
+              "bucket_bps": 19,
+              "swaps": 150
+            },
+            {
+              "bucket_bps": 20,
+              "swaps": 4385
+            }
+          ]
+        },
+        "03_cross_pool_episodes.sql": {
+          "elapsed_ms": 36,
+          "memory_usage": 9146351,
+          "name": "03_cross_pool_episodes.sql",
+          "read_bytes": 6684580,
+          "read_rows": 191148,
+          "rows": [
+            {
+              "blocks_open_max": 11043,
+              "blocks_open_p50": 38,
+              "blocks_open_p90": 429,
+              "blocks_open_p99": 1360,
+              "closed_by_hi": 171,
+              "closed_by_lo": 435,
+              "closed_by_the_other_pool": 181,
+              "closed_by_the_same_pool": 425,
+              "closed_in_the_same_block": 106,
+              "closed_one_block_later": 24,
+              "closed_two_or_more_blocks_later": 476,
+              "episodes": 606,
+              "never_left_one_transaction": 30,
+              "opened_by_hi": 52,
+              "opened_by_hi_closed_by_lo": 31,
+              "opened_by_lo": 554,
+              "opened_by_lo_closed_by_hi": 150,
+              "peak_gap_p50_bps": 63.92894945825893,
+              "peak_gap_p99_bps": 6971.4550470370505,
+              "still_open_at_the_end": 0
+            }
+          ]
+        },
+        "04_cross_pool_block_ends.sql": {
+          "elapsed_ms": 14,
+          "memory_usage": 7988580,
+          "name": "04_cross_pool_block_ends.sql",
+          "read_bytes": 4953540,
+          "read_rows": 191148,
+          "rows": [
+            {
+              "blocks": 5820,
+              "blocks_ending_within_the_fee": 3687,
+              "end_gap_p50_bps": 25.66833684632212,
+              "end_gap_p99_bps": 1082640.1092923072,
+              "share_within_the_fee": 0.6335051546391752
+            }
+          ]
+        }
+      }
+    }
+  },
+  "generated_at": "2026-09-25 00:40 UTC",
+  "max_block": 26050795,
+  "raw_swaps": 1240618,
+  "round_trips": {
+    "queries": {
+      "10_round_trips_by_pool.sql": {
+        "elapsed_ms": 3,
+        "memory_usage": 4603496,
+        "name": "10_round_trips_by_pool.sql",
+        "read_bytes": 29279,
+        "read_rows": 188,
+        "rows": [
+          {
+            "all_swaps": 307171,
+            "all_usd": 3709409985.819138,
+            "largest_daily_share_of_usd": 0.11184123688459263,
+            "legs": 3616,
+            "legs_in_one_transaction_pairs": 2003,
+            "legs_usd": 35691714.935995,
+            "median_daily_share_of_usd": 0.0005797529969296751,
+            "net_usd": 3673718270.883143,
+            "pairs": 2065,
+            "pool": "USDC/WETH 0.05%",
+            "pool_days": 48,
+            "pool_days_with_any": 47,
+            "share_of_swaps": 0.011771944617167636,
+            "share_of_usd": 0.009621938548837248
+          },
+          {
+            "all_swaps": 926420,
+            "all_usd": 2256005098.412575,
+            "largest_daily_share_of_usd": 0.49419081176308755,
+            "legs": 5759,
+            "legs_in_one_transaction_pairs": 344,
+            "legs_usd": 551362564.9703959,
+            "median_daily_share_of_usd": 0.24812781482997687,
+            "net_usd": 1704642533.442179,
+            "pairs": 3147,
+            "pool": "USDC/WETH 0.01%",
+            "pool_days": 48,
+            "pool_days_with_any": 47,
+            "share_of_swaps": 0.006216402927397941,
+            "share_of_usd": 0.2443977477525911
+          },
+          {
+            "all_swaps": 6096,
+            "all_usd": 26398379.598026,
+            "largest_daily_share_of_usd": 0.9106096939342092,
+            "legs": 162,
+            "legs_in_one_transaction_pairs": 2,
+            "legs_usd": 106758.875499,
+            "median_daily_share_of_usd": 0.16214605632758627,
+            "net_usd": 26291620.722526997,
+            "pairs": 81,
+            "pool": "wstETH/USDC 0.05%",
+            "pool_days": 47,
+            "pool_days_with_any": 36,
+            "share_of_swaps": 0.0265748031496063,
+            "share_of_usd": 0.00404414502422653
+          },
+          {
+            "all_swaps": 931,
+            "all_usd": 92811.679081,
+            "largest_daily_share_of_usd": 0.906658087014133,
+            "legs": 12,
+            "legs_in_one_transaction_pairs": 0,
+            "legs_usd": 5340.192590000001,
+            "median_daily_share_of_usd": 0.0,
+            "net_usd": 87471.486491,
+            "pairs": 6,
+            "pool": "wstETH/USDC 0.3%",
+            "pool_days": 45,
+            "pool_days_with_any": 5,
+            "share_of_swaps": 0.01288936627282492,
+            "share_of_usd": 0.057537937497493474
+          },
+          {
+            "all_swaps": 1240618,
+            "all_usd": 5991906275.50882,
+            "largest_daily_share_of_usd": 0.9106096939342092,
+            "legs": 9549,
+            "legs_in_one_transaction_pairs": 2349,
+            "legs_usd": 587166378.97448,
+            "median_daily_share_of_usd": 0.01586244543527925,
+            "net_usd": 5404739896.534341,
+            "pairs": 5299,
+            "pool": "",
+            "pool_days": 188,
+            "pool_days_with_any": 135,
+            "share_of_swaps": 0.007696970380890814,
+            "share_of_usd": 0.09799325155909905
+          }
+        ]
+      },
+      "11_round_trips_by_hour.sql": {
+        "elapsed_ms": 169,
+        "memory_usage": 45966998,
+        "name": "11_round_trips_by_hour.sql",
+        "read_bytes": 85956981,
+        "read_rows": 1250171,
+        "rows": [
+          {
+            "hour_swaps": 53435,
+            "hour_usd": 221454062.23201498,
+            "hour_utc": 0,
+            "leg_swaps": 406,
+            "leg_usd": 14575026.690247,
+            "share_of_usd": 0.06581512456058225
+          },
+          {
+            "hour_swaps": 53972,
+            "hour_usd": 234974643.812655,
+            "hour_utc": 1,
+            "leg_swaps": 433,
+            "leg_usd": 23403780.414575,
+            "share_of_usd": 0.09960130180358867
+          },
+          {
+            "hour_swaps": 51421,
+            "hour_usd": 210803046.08027998,
+            "hour_utc": 2,
+            "leg_swaps": 446,
+            "leg_usd": 21404574.782943998,
+            "share_of_usd": 0.10153826133419584
+          },
+          {
+            "hour_swaps": 48519,
+            "hour_usd": 169067939.45589402,
+            "hour_utc": 3,
+            "leg_swaps": 422,
+            "leg_usd": 18539112.073857,
+            "share_of_usd": 0.10965480583439316
+          },
+          {
+            "hour_swaps": 45689,
+            "hour_usd": 149308658.36641902,
+            "hour_utc": 4,
+            "leg_swaps": 322,
+            "leg_usd": 14247386.879368,
+            "share_of_usd": 0.09542237560264875
+          },
+          {
+            "hour_swaps": 48828,
+            "hour_usd": 216320498.679397,
+            "hour_utc": 5,
+            "leg_swaps": 470,
+            "leg_usd": 36569320.690146,
+            "share_of_usd": 0.16905157353739483
+          },
+          {
+            "hour_swaps": 47128,
+            "hour_usd": 161549156.3496,
+            "hour_utc": 6,
+            "leg_swaps": 369,
+            "leg_usd": 14520433.446041001,
+            "share_of_usd": 0.08988244676820285
+          },
+          {
+            "hour_swaps": 46009,
+            "hour_usd": 165793446.045123,
+            "hour_utc": 7,
+            "leg_swaps": 321,
+            "leg_usd": 12453781.18309,
+            "share_of_usd": 0.07511624542565168
+          },
+          {
+            "hour_swaps": 49206,
+            "hour_usd": 230323373.06010997,
+            "hour_utc": 8,
+            "leg_swaps": 326,
+            "leg_usd": 27507830.82904,
+            "share_of_usd": 0.1194313476030111
+          },
+          {
+            "hour_swaps": 49112,
+            "hour_usd": 243031540.647955,
+            "hour_utc": 9,
+            "leg_swaps": 356,
+            "leg_usd": 18264503.513956,
+            "share_of_usd": 0.0751528112987325
+          },
+          {
+            "hour_swaps": 48250,
+            "hour_usd": 188714425.136314,
+            "hour_utc": 10,
+            "leg_swaps": 401,
+            "leg_usd": 13226255.350511,
+            "share_of_usd": 0.07008608558120177
+          },
+          {
+            "hour_swaps": 49505,
+            "hour_usd": 182219022.657483,
+            "hour_utc": 11,
+            "leg_swaps": 370,
+            "leg_usd": 17332740.898234,
+            "share_of_usd": 0.09512037023057873
+          },
+          {
+            "hour_swaps": 53185,
+            "hour_usd": 304739992.0543,
+            "hour_utc": 12,
+            "leg_swaps": 365,
+            "leg_usd": 20955248.869402,
+            "share_of_usd": 0.06876435458352344
+          },
+          {
+            "hour_swaps": 56585,
+            "hour_usd": 409217882.307252,
+            "hour_utc": 13,
+            "leg_swaps": 389,
+            "leg_usd": 50953556.537919,
+            "share_of_usd": 0.12451449152376404
+          },
+          {
+            "hour_swaps": 58419,
+            "hour_usd": 468399680.93136,
+            "hour_utc": 14,
+            "leg_swaps": 519,
+            "leg_usd": 51018152.577159,
+            "share_of_usd": 0.10892012666557575
+          },
+          {
+            "hour_swaps": 56101,
+            "hour_usd": 444494832.49168503,
+            "hour_utc": 15,
+            "leg_swaps": 408,
+            "leg_usd": 39251472.181508,
+            "share_of_usd": 0.0883058009054408
+          },
+          {
+            "hour_swaps": 55504,
+            "hour_usd": 372253867.64003,
+            "hour_utc": 16,
+            "leg_swaps": 486,
+            "leg_usd": 54259395.093899,
+            "share_of_usd": 0.14575911712586395
+          },
+          {
+            "hour_swaps": 53238,
+            "hour_usd": 250634309.985461,
+            "hour_utc": 17,
+            "leg_swaps": 436,
+            "leg_usd": 17165246.25463,
+            "share_of_usd": 0.06848721651726668
+          },
+          {
+            "hour_swaps": 53950,
+            "hour_usd": 265096448.018314,
+            "hour_utc": 18,
+            "leg_swaps": 438,
+            "leg_usd": 29335171.6459,
+            "share_of_usd": 0.11065848624223512
+          },
+          {
+            "hour_swaps": 53936,
+            "hour_usd": 225539708.805989,
+            "hour_utc": 19,
+            "leg_swaps": 385,
+            "leg_usd": 18144698.938933,
+            "share_of_usd": 0.08045013020098031
+          },
+          {
+            "hour_swaps": 52225,
+            "hour_usd": 238032922.03770798,
+            "hour_utc": 20,
+            "leg_swaps": 368,
+            "leg_usd": 20140137.105522,
+            "share_of_usd": 0.0846107207906791
+          },
+          {
+            "hour_swaps": 54429,
+            "hour_usd": 260419268.30041897,
+            "hour_utc": 21,
+            "leg_swaps": 372,
+            "leg_usd": 25411526.717237,
+            "share_of_usd": 0.09757928775040689
+          },
+          {
+            "hour_swaps": 51342,
+            "hour_usd": 221844089.594378,
+            "hour_utc": 22,
+            "leg_swaps": 414,
+            "leg_usd": 19389875.565696,
+            "share_of_usd": 0.08740316499370639
+          },
+          {
+            "hour_swaps": 50630,
+            "hour_usd": 157673460.818679,
+            "hour_utc": 23,
+            "leg_swaps": 327,
+            "leg_usd": 9097150.734666,
+            "share_of_usd": 0.05769614421749467
+          }
+        ]
+      },
+      "12_round_trips_concentration.sql": {
+        "elapsed_ms": 5,
+        "memory_usage": 6314597,
+        "name": "12_round_trips_concentration.sql",
+        "read_bytes": 744822,
+        "read_rows": 9549,
+        "rows": [
+          {
+            "senders": 124,
+            "senders_with_one_pair_at_most": 49,
+            "top10_share_of_legs": 0.31196983977379833,
+            "top10_share_of_usd": 0.9746812324357195,
+            "top1_share_of_legs": 0.05613153209760184,
+            "top1_share_of_usd": 0.25301905577609374,
+            "top3_share_of_usd": 0.6976032522961737,
+            "total_legs": 9549,
+            "total_usd": 587166378.9744802
+          }
+        ]
+      },
+      "13_round_trips_tolerance.sql": {
+        "elapsed_ms": 1676,
+        "memory_usage": 952857051,
+        "name": "13_round_trips_tolerance.sql",
+        "read_bytes": 898221160,
+        "read_rows": 9924950,
+        "rows": [
+          {
+            "legs": 226,
+            "legs_usd": 7224566.3372140005,
+            "pairs": 113,
+            "share_of_swaps": 0.00018216727469696554,
+            "share_of_usd": 0.0012057208516000207,
+            "tolerance": 0.0
+          },
+          {
+            "legs": 3239,
+            "legs_usd": 437463798.8225497,
+            "pairs": 1841,
+            "share_of_swaps": 0.002610795587360493,
+            "share_of_usd": 0.07300911908629636,
+            "tolerance": 0.01
+          },
+          {
+            "legs": 5558,
+            "legs_usd": 547587345.4757657,
+            "pairs": 3126,
+            "share_of_swaps": 0.004480025277724489,
+            "share_of_usd": 0.09138783557312334,
+            "tolerance": 0.05
+          },
+          {
+            "legs": 9549,
+            "legs_usd": 587166378.9744799,
+            "pairs": 5299,
+            "share_of_swaps": 0.007696970380890814,
+            "share_of_usd": 0.09799325155909906,
+            "tolerance": 0.1
+          },
+          {
+            "legs": 13488,
+            "legs_usd": 611523041.4017237,
+            "pairs": 7676,
+            "share_of_swaps": 0.010872000889879076,
+            "share_of_usd": 0.10205817869702823,
+            "tolerance": 0.2
+          },
+          {
+            "legs": 24316,
+            "legs_usd": 639276541.4393587,
+            "pairs": 15089,
+            "share_of_swaps": 0.019599909077572628,
+            "share_of_usd": 0.10669001016459874,
+            "tolerance": 0.5
+          }
+        ]
+      },
+      "14_round_trips_leg_sizes.sql": {
+        "elapsed_ms": 8,
+        "memory_usage": 5642239,
+        "name": "14_round_trips_leg_sizes.sql",
+        "read_bytes": 706626,
+        "read_rows": 19098,
+        "rows": [
+          {
+            "leg_size_usd": "1. under 1k",
+            "legs": 5509,
+            "share_of_round_trip_usd": 0.0015565017966887404,
+            "usd": 913925.5238290001,
+            "usd_of_legs_that_undo": 465177.1375520002
+          },
+          {
+            "leg_size_usd": "2. 1k to 10k",
+            "legs": 1068,
+            "share_of_round_trip_usd": 0.005982135454313298,
+            "usd": 3512508.8132439954,
+            "usd_of_legs_that_undo": 1792358.177187002
+          },
+          {
+            "leg_size_usd": "3. 10k to 100k",
+            "legs": 1526,
+            "share_of_round_trip_usd": 0.11866834509606913,
+            "usd": 69678062.4889529,
+            "usd_of_legs_that_undo": 34662400.10428203
+          },
+          {
+            "leg_size_usd": "4. 100k to 1M",
+            "legs": 1352,
+            "share_of_round_trip_usd": 0.6017076844549931,
+            "usd": 353302522.2825573,
+            "usd_of_legs_that_undo": 175589884.88385996
+          },
+          {
+            "leg_size_usd": "5. 1M and more",
+            "legs": 94,
+            "share_of_round_trip_usd": 0.27208533319793604,
+            "usd": 159759359.865897,
+            "usd_of_legs_that_undo": 79751393.27871102
+          },
+          {
+            "leg_size_usd": "",
+            "legs": 9549,
+            "share_of_round_trip_usd": 1.0000000000000004,
+            "usd": 587166378.9744803,
+            "usd_of_legs_that_undo": 292261213.581592
+          }
+        ]
+      },
+      "15_round_trips_what_sits_between.sql": {
+        "elapsed_ms": 1219,
+        "memory_usage": 286682328,
+        "name": "15_round_trips_what_sits_between.sql",
+        "read_bytes": 1094245382,
+        "read_rows": 12406180,
+        "rows": [
+          {
+            "kind": "1. two transactions, a swap of someone else between",
+            "pairs": 2228,
+            "share_of_pair_usd": 0.9501160723633679,
+            "usd": 558409370.5471228
+          },
+          {
+            "kind": "2. two transactions, nobody between",
+            "pairs": 1799,
+            "share_of_pair_usd": 0.04510807426753341,
+            "usd": 26511256.983234003
+          },
+          {
+            "kind": "3. inside one transaction",
+            "pairs": 1272,
+            "share_of_pair_usd": 0.004775853369098456,
+            "usd": 2806900.494831001
+          }
+        ]
+      }
+    }
+  }
+}

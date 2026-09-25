@@ -32,9 +32,11 @@ table (<https://docs.nansen.ai/getting-started/credits.md>, "Endpoint Credit Cos
 | Probe: WETH, one day | `tgm/dex-trades` | 1 | 1 | 1 |
 | Probe: USDC, one day | `tgm/dex-trades` | 1 | 1 | 1 |
 | USDC, 2026-08-21 to 2026-09-19, smart money only | `tgm/dex-trades` | 1 | 2 | 2 |
-| **Total** | | | **5** | **9** |
+| USDC, 2026-09-20 to 2026-09-24, smart money only (run of 2026-09-25) | `tgm/dex-trades` | 1 | 1 | 1 |
+| **Total** | | | **6** | **10** |
 
-Balance: 100 trial credits at the start, **91 left**. The Free plan is 100 one-time trial
+Balance: 100 trial credits at the start, 91 left on 2026-09-20, **90 left** on 2026-09-25 (the
+response of that call: documented 1, quoted 1, used 1). The Free plan is 100 one-time trial
 credits and, once they are gone, a daily top-up back to a 10-credit balance: that steady
 state is the "10 credits a day" of DECISIONS.md #4 and AGENTS.md, written before the trial
 credits were known to be intact. The ceiling for the `tgm/dex-trades` campaign, 40 credits,
@@ -75,6 +77,22 @@ by `fct_pool_daily`. 30 complete days, 120 pool-days, 2026-08-21 to 2026-09-19:
 Of the 1,498 transactions Nansen lists, 666 pool-transactions are in `raw_swaps` (a
 transaction routed through two of the pools counts once in each). What these shares mean is
 not decided here.
+
+**Five more days (2026-09-25).** One more call, for the five days the landing gained: 329
+trades in one page, the window closed (newest trade 23:53 UTC on 2026-09-24), cached like the
+others and crossed the same way. 20 pool-days, 2026-09-20 to 2026-09-24:
+
+| Pool | Our swaps | In smart-money transactions | Our USD | Smart-money USD | Share of swaps | Share of USD | Days with any | Highest daily share of USD |
+|---|---|---|---|---|---|---|---|---|
+| USDC/WETH 0.01% | 110,804 | 145 | 414,591,114 | 602,432 | 0.131% | 0.145% | 5 of 5 | 0.31% |
+| USDC/WETH 0.05% | 34,124 | 42 | 341,467,959 | 545,946 | 0.123% | 0.160% | 5 of 5 | 0.43% |
+| wstETH/USDC 0.3% | 273 | 0 | 35,372 | 0 | 0% | 0% | 0 of 5 | 0% |
+| wstETH/USDC 0.05% | 469 | 1 | 22,490 | 5 | 0.213% | 0.022% | 1 of 5 | 0.38% |
+| **All four** | 145,670 | 188 | 756,116,935 | 1,148,383 | 0.129% | 0.152% | | |
+
+Over the 35 days now fetched (2026-08-21 to 2026-09-24, 140 pool-days): 865 of 1,005,361 swaps
+(0.086%) and 4,172,105 of 4,589,492,820 USD (0.091%). The five new days are higher than the
+thirty before them in both pools of USDC/WETH; five days are too few to say more.
 
 What this measures and what it does not:
 

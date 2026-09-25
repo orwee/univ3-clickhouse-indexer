@@ -52,8 +52,8 @@ test that pins it.
 
 [docs/RECONCILIATION_FINDINGS.md](RECONCILIATION_FINDINGS.md). *Questions answered: does the
 pipeline agree with itself (exactly), does it agree with an independent source (12 of 120
-pool-days flagged; 17 of 163 after ten more days were added), and what was done about each
-difference?* Read finding 7: a hypothesis that was tested so that it could fail, and did, next
+pool-days flagged; 17 of 163 after ten more days were added; 18 of 183 after five more, on
+2026-09-25), and what was done about each difference?* Read finding 7: a hypothesis that was tested so that it could fail, and did, next
 to one that fits, which was then tested again on days it had not been fitted on, with the
 protocol committed first ([docs/H2_PREREGISTRATION.md](H2_PREREGISTRATION.md)); the result is
 mixed and is reported as such. The numbers behind every sentence are in
@@ -72,12 +72,16 @@ that says what counts as a dollar?* (`stablecoin_symbols` in
 [dbt/dbt_project.yml](../dbt/dbt_project.yml).) The singular tests in
 [dbt/tests/](../dbt/tests/assert_mart_accounts_for_every_raw_swap.sql) are worth a glance, and
 so is `make dbt-prove`: it breaks the data on purpose in throw-away databases and shows every
-one of the 24 dbt tests failing, because a test that cannot fail checks nothing
+one of the 29 dbt tests failing, because a test that cannot fail checks nothing
 ([scripts/prove_dbt_tests_can_fail.py](../scripts/prove_dbt_tests_can_fail.py)).
 
 ## 7. If there is time left
 
-- [docs/NANSEN.md](NANSEN.md): what a Swap log cannot tell you (who signed), what 9 API
+- The second week, in [CHANGELOG.md](../CHANGELOG.md): [docs/ROUND_TRIPS.md](ROUND_TRIPS.md)
+  (how much of the volume is swaps undone in the same block, and how much that figure depends
+  on its definition) and [docs/CROSS_POOL.md](CROSS_POOL.md) (the gap between two fee tiers of
+  one pair, with an ASOF JOIN and what ClickHouse reads for it).
+- [docs/NANSEN.md](NANSEN.md): what a Swap log cannot tell you (who signed), what 10 API
   credits bought, and the production design that was deliberately not run.
 - [docs/EXTERNAL_SOURCE.md](EXTERNAL_SOURCE.md): what the external source documents, what was
   only observed, and what is unknown.

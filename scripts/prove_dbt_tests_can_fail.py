@@ -58,6 +58,13 @@ SMART_ROW = ("INSERT INTO {dbt}.fct_pool_daily_smart_money SELECT pool_address, 
              "swaps, volume_usd, swaps + 5, swaps + 5, 1.0, 5.0, NULL, 'USDC', now() "
              "FROM {dbt}.fct_pool_daily LIMIT 1")  # fmt: skip
 
+# The first swap of the staging model, written into the legs mart as if it were a leg. It is
+# not one in the fixtures' raw table (the second scenario that uses it checks that), and
+# inserting it twice also duplicates its key.
+LEG_ROW = ("INSERT INTO {dbt}.fct_round_trip_legs SELECT pool_address, block_number, log_index, "
+           "block_timestamp, block_date, tx_hash, sender, 1, 0, 0, volume_usd "
+           "FROM {dbt}.stg_swaps ORDER BY block_number, log_index LIMIT 1")  # fmt: skip
+
 SCENARIOS: list[tuple[str, list[str], set[str]]] = [
     (
         "a swap of a pool that is not in pools.yml reaches the raw table",
@@ -150,6 +157,31 @@ SCENARIOS: list[tuple[str, list[str], set[str]]] = [
             "assert_smart_money_is_a_part_of_the_pool_day",
             "not_null_fct_pool_daily_smart_money_smart_money_share_of_volume_usd",
             "unique_combination_fct_pool_daily_smart_money_pool_address__block_date",
+        },
+    ),
+    (
+        "a round trip reaches the raw table after the round-trip marts were built",
+        [copy(amount0="-amount0", amount1="-amount1")],
+        {"assert_round_trip_legs_match_their_definition"},
+    ),
+    (
+        "the round-trip legs hold a swap that is no round trip, listed twice",
+        [LEG_ROW, LEG_ROW],
+        {
+            "assert_round_trip_legs_match_their_definition",
+            "unique_combination_fct_round_trip_legs_pool_address__block_number__log_index",
+        },
+    ),
+    (
+        "the round-trip mart loses a label, a part exceeds its whole, and a pool-day appears twice",
+        [
+            "ALTER TABLE {dbt}.fct_pool_daily_round_trips UPDATE pool_label = '', round_trip_swaps = swaps + 1 WHERE swaps > 0",
+            "INSERT INTO {dbt}.fct_pool_daily_round_trips SELECT * FROM {dbt}.fct_pool_daily_round_trips LIMIT 1",
+        ],
+        {
+            "not_default_fct_pool_daily_round_trips_pool_label",
+            "unique_combination_fct_pool_daily_round_trips_pool_address__block_date",
+            "assert_round_trips_are_a_part_of_the_pool_day",
         },
     ),
 ]

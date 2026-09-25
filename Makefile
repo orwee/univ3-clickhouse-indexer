@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 DEMO = docker compose -f docker-compose.demo.yml
 
-.PHONY: help demo up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check dbt-seed dbt-build dbt-test dbt-prove dashboard
+.PHONY: help demo up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis dbt-seed dbt-build dbt-test dbt-prove dashboard
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -71,6 +71,9 @@ mv-setup: ## create the daily materialized view in the raw database and backfill
 
 mv-check: ## swaps_daily (through the view) against a direct GROUP BY; non-zero exit on mismatch
 	PYTHONPATH=src uv run python -m univ3_indexer.mv --check
+
+analysis: ## round trips and cross-pool analysis from sql/analysis/, read-only, into reports/analysis.md
+	PYTHONPATH=src uv run python -m univ3_indexer.analysis
 
 fetch-external: ## daily volume per pool from the public GeckoTerminal API (no key) into ClickHouse
 	PYTHONPATH=src uv run python -m univ3_indexer.external --fetch
