@@ -393,7 +393,7 @@ def test_whats_new_is_dated_and_every_line_links_to_what_it_summarises(page):
 
 def test_the_week_two_sections_each_carry_a_chart_and_their_source(page):
     for number, source in ((10, "docs/ROUND_TRIPS.md"), (11, "docs/CROSS_POOL.md"),
-                           (12, "docs/RECONCILIATION_FINDINGS.md")):  # fmt: skip
+                           (12, "receipts_2026-08-19_15h.md")):  # fmt: skip
         sec = re.search(rf'<section id="s{number}">.*?</section>', page, re.S)
         assert sec, f"section {number} is missing"
         assert "<svg " in sec.group(0), f"section {number} has no chart"

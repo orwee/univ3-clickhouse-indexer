@@ -903,6 +903,18 @@ def reconciliation_panels(dates: list, csv_rows: list[dict], *, clamp: float) ->
 # --------------------------------------------------------------------------- page assembly
 
 
+def share_pct(v: float) -> str:
+    """A share with one decimal, or two under 1%, where one decimal would round 0.96 to 1.0."""
+    return f"{v * 100:.2f}%" if v < 0.01 else f"{v * 100:.1f}%"
+
+
+def nonzero_hours(top3: str) -> str:
+    """The evidence lists the three largest hours even when the second and third round to
+    +0 or -0 USD; those say nothing and read like a bug."""
+    kept = [h for h in top3.split(", ") if not re.search(r":\s*[+-]?0$", h)]
+    return ", ".join(kept) or top3
+
+
 def section(
     num: int, title: str, body: str, shows: str, why: str, src_text: str, src_href: str
 ) -> str:
@@ -1236,6 +1248,14 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     gap = liquid["queries"]["01_cross_pool_gap.sql"]["rows"][-1]
     eps = liquid["queries"]["03_cross_pool_episodes.sql"]["rows"][0]
     within_fee = gap["swaps"] - gap["beyond_combined_fee"]
+    undo_share = (
+        next(
+            r["usd_of_legs_that_undo"]
+            for r in an["round_trips"]["queries"]["14_round_trips_leg_sizes.sql"]["rows"]
+            if not r["leg_size_usd"]
+        )
+        / rt_total["all_usd"]
+    )
     same_block = eps["closed_in_the_same_block"] / (eps["episodes"] - eps["still_open_at_the_end"])
     oc = docs["open_case"]
     news = [
@@ -1248,13 +1268,15 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         ),
         (
             f"{GH}docs/ROUND_TRIPS.md",
-            f"Round trips: {rt_total['share_of_usd'] * 100:.1f}% of all USD volume is swaps "
-            "that the same sender undid in the same block (section 10).",
+            f"Round trips: {rt_total['share_of_usd'] * 100:.1f}% of all USD volume is the two "
+            "legs of swaps that the same sender undid in the same block; the half that comes "
+            f"back is {undo_share * 100:.1f}% (section 10).",
         ),
         (
             f"{GH}docs/CROSS_POOL.md",
-            f"Two fee tiers of {liquid['pair']['pair']}: {fint(within_fee)} of "
-            f"{fint(gap['swaps'])} swaps sit within the combined fee, and "
+            f"The two {liquid['pair']['pair']} pools quote within "
+            f"{liquid['pair']['fee_bps']:g} bps of each other (their two fees added) at "
+            f"{fint(within_fee)} of {fint(gap['swaps'])} swaps, and "
             f"{same_block * 100:.0f}% of the divergences close in the same block (section 11).",
         ),
         (
@@ -1274,19 +1296,6 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         + "</ul></div>"
     )
 
-    # ---- reading this page: five lines for a reader who does not work with this data
-    a(
-        '<div class="take"><h2>Reading this page</h2><p class="read">'
-        "A <b>pool</b> is one trading pair held in one contract; a <b>swap</b> is one trade "
-        "against it, written to the chain as a log. A <b>fee tier</b> is what that pool charges "
-        "per trade — the same pair often has one pool at 0.01% and another at 0.05%, and they "
-        "behave differently. To <b>reconcile</b> here means two things: check that the pipeline "
-        "agrees with itself, and compare its daily totals with a source that indexed the same "
-        "chain independently. Every difference below is in US dollars of volume, per pool, "
-        "per day."
-        "</p></div>"
-    )
-
     # ---- key takeaways: four lines, every figure computed from the same data as the section
     # that backs it, never typed in. Not numbered: it summarises the sections, it is not one.
     hyp_t = {h["name"]: h for h in docs["hypotheses"]}
@@ -1295,6 +1304,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     largest = max(
         (r for r in csv_rows if r["flagged"]), key=lambda r: abs(r["abs_usd"])
     )  # the biggest difference of the project, still in the open list
+    smart_first = min(r["first_day"] for r in data["smart"])
+    smart_last = max(r["last_day"] for r in data["smart"])
     smart_share = sum(r["smart_volume_usd"] for r in data["smart"]) / sum(
         r["volume_usd"] for r in data["smart"]
     )
@@ -1305,19 +1316,37 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f"<b>About nine in ten compared pool-days match an independent source.</b> "
         f"{agreeing} of {docs['compared']} agree within 1% or 1,000 USD; each of the other "
         f"{docs['flagged']} is located to a pool, a day and usually an hour.",
-        f"<b>Most large gaps coincide with same-block round trips valued differently.</b> That "
-        f"reading brings {h2_in['fixed']} of the {h2_in['beyond']} days beyond 1% inside it, "
-        f"{h2_out['fixed']} of {h2_out['beyond']} on a hold-out it was not fitted on, and "
-        f"{placebo['fixed']} of {placebo['beyond']} under a placebo — and the largest gap of "
-        f"the project, {esc(fusd(abs(largest['abs_usd'])))} on one day, is not one of them.",
-        f"<b>A handful of senders move most of the volume.</b> The top eight are "
+        f"<b>Part of the gap fits one reading: that the source values same-block round trips "
+        f"differently.</b> On the run of 2026-09-20 it brings {h2_in['fixed']} of the "
+        f"{h2_in['beyond']} days beyond 1% inside; on a hold-out committed beforehand, "
+        f"{h2_out['fixed']} of {h2_out['beyond']}, but the correlation fixed beforehand falls "
+        f"from {h2_in['r']:+.2f} to {h2_out['r']:+.2f}; a placebo brings {placebo['fixed']} of "
+        f"{placebo['beyond']}. The largest gap of the project, "
+        f"{esc(fusd(abs(largest['abs_usd'])))} on one day, is not one of them.",
+        f"<b>A handful of contracts route most of the volume.</b> The top eight "
+        f"<code>sender</code> contracts (routers and bots, not people) carry "
         f"{data['senders']['cumulative'][8] * 100:.0f}% of it; the wallets Nansen calls smart "
-        f"money are {smart_share * 100:.2f}% of it.",
+        f"money are {smart_share * 100:.2f}% of it over the days fetched ({smart_first} to "
+        f"{smart_last}).",
     ]
     a(
         '<div class="take"><h2>Key takeaways</h2><ul>'
         + "".join(f"<li>{t}</li>" for t in takeaways)
         + "</ul></div>"
+    )
+
+    # ---- reading this page: five lines for a reader who does not work with this data
+    a(
+        '<div class="take"><h2>Reading this page</h2><p class="read">'
+        "A <b>pool</b> is one trading pair held in one contract; a <b>swap</b> is one trade "
+        "against it, written to the chain as a log. A <b>fee tier</b> is what that pool charges "
+        "per trade — the same pair often has one pool at 0.01% and another at 0.05%, and they "
+        "behave differently. To <b>reconcile</b> here means two things: check that the pipeline "
+        "agrees with itself, and compare its daily totals with GeckoTerminal, a public source "
+        "that indexed the same "
+        "chain independently. Every difference below is in US dollars of volume, per pool, "
+        "per day."
+        "</p></div>"
     )
 
     a("</div>")
@@ -1358,18 +1387,24 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     )
 
     # ---- 2. daily volume per pool
+    # A partial first or last day (the window starts and ends inside a day) is not a day of
+    # volume: it would draw every line plunging at the edge. It stays in the table below.
+    partial = {r["day"] for r in csv_rows if r.get("partial_day") == "1"}
+    whole = [i for i, d in enumerate(data["dates"]) if d not in partial]
+    whole_dates = [data["dates"][i] for i in whole]
+    whole_series = {k: [v[i] for i in whole] for k, v in data["volume_series"].items()}
     chart = line_chart_log(
-        data["dates"],
-        data["volume_series"],
+        whole_dates,
+        whole_series,
         title="Daily USD volume per pool, logarithmic scale",
         desc=(
-            f"{len(data['dates'])} days, four pools, from about one dollar to about "
+            f"{len(whole_dates)} whole days, four pools, from about one dollar to about "
             "300 million dollars a day."
         ),
     )
     # One measured figure for how far apart the pools are, written into both the note under
     # the chart and the summary of the section, so the two cannot say different things.
-    orders = f"{median_spread_orders(data['volume_series'], data['dates']):.1f}"
+    orders = f"{median_spread_orders(whole_series, whole_dates):.1f}"
     rows = []
     for i, d in enumerate(data["dates"]):
         cells = [f'<td class="n">{d.strftime("%m-%d")}</td>']
@@ -1393,7 +1428,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         + '<p class="note">The vertical scale is <b>logarithmic</b>: each gridline is a '
         f"hundred times the one below it. On the median day the busiest pool moves about "
         f"{orders} orders of magnitude more than the quietest, which is why a linear scale "
-        "would show three flat lines.</p>"
+        "would show three flat lines. The partial first and last days of the window are left "
+        "out of the chart and kept in the table.</p>"
         + details("Daily volume, every pool and day (USDC = USDC/WETH, wstETH = wstETH/USDC)", tbl)
     )
     a(
@@ -1412,6 +1448,11 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     )
 
     # ---- 3. the same pair in two fee tiers
+    rt_rows = {r["pool"]: r for r in docs["analysis"]["round_trips"]["queries"][
+        "10_round_trips_by_pool.sql"]["rows"]}  # fmt: skip
+    rt_lo, rt_hi = rt_rows["USDC/WETH 0.01%"], rt_rows["USDC/WETH 0.05%"]
+    raw_share = rt_lo["all_usd"] / (rt_lo["all_usd"] + rt_hi["all_usd"])
+    net_share = rt_lo["net_usd"] / (rt_lo["net_usd"] + rt_hi["net_usd"])
     low, high = data["pool_totals"]["USDC/WETH 0.01%"], data["pool_totals"]["USDC/WETH 0.05%"]
     metrics = [
         ("swaps", "swaps", low["swaps"], high["swaps"], fint),
@@ -1461,9 +1502,10 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             body,
             "The 0.01% pool takes three swaps in four but a third of the money and a tenth of "
             "the fees: the cheap tier is where the small, frequent trade goes.",
-            "Two pools of the same pair are a free control. A mistake in decoding or in pricing "
-            "would not land on both in the same proportion, so agreement between them is "
-            "evidence.",
+            f"{rt_lo['share_of_usd'] * 100:.1f}% of the 0.01% pool's USD is same-block round "
+            f"trips (section 10). Netted out, its share of the pair's volume is "
+            f"{net_share * 100:.1f}%, not {raw_share * 100:.1f}%: a comparison of two fee tiers "
+            "on reported volume depends on it.",
             "onchain_dbt.fct_pool_daily — columns swaps, volume_usd, fees_usd",
             f"{GH}dbt/models/marts/fct_pool_daily.sql",
         )
@@ -1481,7 +1523,9 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             esc(r["pool"]),
             esc(r["date"]),
             f"{esc(fpct(r['rel'])) if r['rel'] is not None else ''}",
-            "excluded"
+            ("external only" if r["presence"] == "only_external" else "ours only")
+            if r["rel"] is None
+            else "excluded"
             if r["excluded"]
             else (
                 "flagged" if r["flagged"] else ("beyond 1% only" if r["rel_only"] else "compared")
@@ -1586,7 +1630,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f"source omits count as zero on its side. This day's difference is "
         f"{esc(fusd_signed(pick['day_diff'], 0))} ({esc(fpct(pick['rel']))}); the largest "
         f"three hours in the evidence report are "
-        f"{esc(ev['top3']) if ev else 'not listed'}.</p>"
+        f"{esc(nonzero_hours(ev['top3'])) if ev else 'not listed'}.</p>"
         + details("The whole day, hour by hour", tbl)
     )
     a(
@@ -1665,8 +1709,10 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             6,
             "Two readings of the gap, in sample, out of sample and against a placebo",
             body,
-            "One hypothesis was tested so that it could fail and did; the other fits, "
-            "survives a hold-out and a placebo, and still does not explain everything.",
+            "One hypothesis was tested so that it could fail, and did. The other passes the "
+            f"placebo and brings {hyp[2]['fixed']} of {hyp[2]['beyond']} hold-out days inside, "
+            "but fails the correlation criterion fixed before the hold-out, so it stays partly "
+            "explained.",
             "An explanation fitted on the same data it explains is not evidence. A hold-out and a "
             "placebo are what separate a real effect from a rule that was tuned until it fitted.",
             f"{report_source('h2_out_of_sample.md')[0]} and finding 7",
@@ -1727,7 +1773,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f"{esc(fusd(data['senders']['total']['total']))} over the window. Ranks only: the page "
         "carries no address, and <code>sender</code> in a Swap log is usually a router, not "
         "the person who signed.</p>"
-        "<h3>Smart money, as a share of the same totals</h3>"
+        f"<h3>Smart money, over the days fetched from Nansen ({first_day} to {last_day})</h3>"
         + table(
             ["pool", "swaps in smart-money tx", "share of swaps", "share of USD"],
             smart_rows,
@@ -1859,6 +1905,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     conc = rt_q["12_round_trips_concentration.sql"]["rows"][0]
     by_hour = rt_q["11_round_trips_by_hour.sql"]["rows"]
     sizes = rt_q["14_round_trips_leg_sizes.sql"]["rows"]
+    between = rt_q["15_round_trips_what_sits_between.sql"]["rows"]
+    sandwich_share = next(r["share_of_pair_usd"] for r in between if r["kind"].startswith("1."))
     sizes_all = next(r for r in sizes if not r["leg_size_usd"])
     big_share = sum(
         r["share_of_round_trip_usd"] for r in sizes if r["leg_size_usd"][:1] in ("4", "5")
@@ -1881,7 +1929,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         y_ticks=ticks,
         y_fmt=lambda v: f"{v * 100:.0f}%",
         value_labels=True,
-        value_fmt=lambda v: f"{v * 100:.1f}%",
+        value_fmt=share_pct,
         height=300,
     )
     hour_chart = grouped_bars(
@@ -1905,7 +1953,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
                 f"{row_of[p]['pool_days_with_any']} of {row_of[p]['pool_days']}",
                 fint(row_of[p]["pairs"]),
                 fint(row_of[p]["legs"]),
-                f"{row_of[p]['share_of_usd'] * 100:.1f}%",
+                share_pct(row_of[p]["share_of_usd"]),
             ]
             for p in order
         ],
@@ -1918,26 +1966,29 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         + f'<p class="note">A round trip is two swaps of one pool in one block by the same '
         f"sender, the second undoing 90% to 110% of the first. Over the whole window: "
         f"{fint(rt_all['pairs'])} pairs, {fint(rt_all['legs'])} swaps, "
-        f"{esc(fusd_compact(rt_all['legs_usd']))} of {esc(fusd_compact(rt_all['all_usd']))}, "
+        f"{esc(fusd_compact(rt_all['legs_usd']))} of ${rt_all['all_usd'] / 1e9:.2f}B, "
         f"of which the second legs, the part that comes back, are "
         f"{esc(fusd_compact(sizes_all['usd_of_legs_that_undo']))}. How much this depends on "
         f"the 10% tolerance: {tol_text}. {fint(conc['senders'])} contracts called the pool for "
         f"them (a sender is a contract, not the account that signed); the largest ten account "
-        f"for {conc['top10_share_of_usd'] * 100:.0f}% of their USD. They are same-block round "
-        "trips consistent with a sandwich pattern; nothing here observes intent.</p>"
-        + details("By hour of the day (UTC)", hour_chart)
+        f"for {conc['top10_share_of_usd'] * 100:.0f}% of their USD. "
+        f"{sandwich_share * 100:.0f}% of their USD is in pairs with somebody else's swap between "
+        "the two legs, a shape consistent with a sandwich pattern; nothing here observes "
+        "intent.</p>" + details("By hour of the day (UTC)", hour_chart)
     )
     a(
         section(
             10,
             "Round trips in one block: how much of the volume is undone at once",
             body,
-            f"{rt_all['share_of_usd'] * 100:.1f}% of all USD volume is swaps that the same "
-            f"sender undid in the same block, but only {rt_all['share_of_swaps'] * 100:.1f}% of "
+            f"{rt_all['share_of_usd'] * 100:.1f}% of all USD volume is the two legs of swaps "
+            f"that the same sender undid in the same block ("
+            f"{sizes_all['usd_of_legs_that_undo'] / rt_all['all_usd'] * 100:.1f}% counting only "
+            f"the half that comes back), but only {rt_all['share_of_swaps'] * 100:.1f}% of "
             f"the swaps: most legs are small, and {big_share * 100:.0f}% of their USD sits in "
             f"legs of 100k USD or more. In the "
             f"{esc(max(by_pool, key=lambda r: r['share_of_usd'])['pool'])} pool it is "
-            f"{top_share * 100:.0f}% of the money.",
+            f"{top_share * 100:.1f}% of the money.",
             "A volume figure that counts a swap and its reversal inside one block reports "
             "activity that left little or no position behind. Anything computed from volume — "
             "fees, "
@@ -1959,6 +2010,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     ep = liquid["queries"]["03_cross_pool_episodes.sql"]["rows"][0]
     ends = liquid["queries"]["04_cross_pool_block_ends.sql"]["rows"][0]
     lo_share = gap_rows["lo"]["swaps"] / gap_all["swaps"]
+    lo_fee, hi_fee = pair["lo_label"].split()[-1], pair["hi_label"].split()[-1]
     scans = liquid["explain"]["01_cross_pool_gap.sql"]
     chart = histogram(
         [r["bucket_bps"] for r in hist],
@@ -1993,7 +2045,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         'style="background:var(--warning)"></i>wider than the combined fee</span>'
         '<span class="lg"><i class="sw dash"></i>combined fee</span></p>'
         + tbl
-        + f'<p class="note">The gap is 10,000 × ln(P<sub>lo</sub> / P<sub>hi</sub>) in basis '
+        + f'<p class="note">The gap is 10,000 × ln(P<sub>{esc(lo_fee)}</sub> / '
+        f"P<sub>{esc(hi_fee)}</sub>) in basis "
         f"points, from an ASOF JOIN of each swap to the other pool's last swap before it in "
         f"chain order. Median {gap_all['abs_gap_p50_bps']:.1f} bps, 95th percentile "
         f"{gap_all['abs_gap_p95_bps']:.1f}, 99th {gap_all['abs_gap_p99_bps']:.1f}, over "
@@ -2011,7 +2064,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             f"of swaps, and when they do not, the gap is gone in the same block "
             f"{ep['closed_in_the_same_block'] / closed * 100:.0f}% of the time. "
             f"At the end of a block they agree at {ends['share_within_the_fee'] * 100:.1f}% of "
-            f"blocks. Neither pool leads: the one that opens a divergence is "
+            f"blocks. Neither opens divergences more often than its share of swaps predicts: "
+            f"the one that opens a divergence is "
             f"{esc(pair['lo_label'])} {ep['opened_by_lo'] / ep['episodes'] * 100:.0f}% of the "
             f"time, about its {lo_share * 100:.0f}% share of swaps.",
             "Two pools of one pair are two measurements of one price. In this window they did "
@@ -2055,7 +2109,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         ("their USD", esc(fusd(oc["usd_in_the_first_three_slots"]))),
         ("with two or more swaps of the Uniswap v3 signature", fint(multi_swap)),
     ]
-    tbl = table(["", "value"], [[k, v] for k, v in facts], widths=[64, 36])
+    tbl = table(["measure", "value"], [[k, v] for k, v in facts], widths=[64, 36])
     body = (
         f'<div class="split"><div>{chart}</div><div>{tbl}</div></div>'
         + f'<p class="note">The day differs from the external source by '
@@ -2074,7 +2128,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             f"The hour that holds most of the largest unexplained difference is "
             f"{fint(oc['transactions'])} transactions from "
             f"{fint(oc['distinct_signers'])} accounts; "
-            f"{fint(oc['transactions_with_another_swap'])} of them also swapped in another pool, "
+            f"{fint(oc['transactions_with_another_swap'])} of the transactions also swapped in "
+            "another pool, "
             "and "
             f"{oc['usd_in_the_first_three_slots'] / oc['gross_usd'] * 100:.0f}% of the hour's USD "
             "sits in transactions in the first three positions of their block. The case stays "
@@ -2082,8 +2137,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
             "A difference that survives every reading of the pool's own logs has to be looked "
             "for in the transactions around them. This is where a second source with per-swap "
             "rows would settle it, and what to ask that source for.",
-            "docs/RECONCILIATION_FINDINGS.md",
-            f"{GH}docs/RECONCILIATION_FINDINGS.md#what-is-still-open",
+            *report_source(OPEN_CASE_RECEIPTS.replace(".json", ".md")),
         )
     )
 
@@ -2118,8 +2172,13 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         ),
         (
             "Round trip",
-            "a buy and a sell of the same pair in the same block, often by the same "
-            "sender. Section 6 tests whether these explain the large differences.",
+            "two swaps of one pool in one block by the same sender, the second undoing 90% to "
+            "110% of the first. Section 10 measures them over the whole dataset.",
+        ),
+        (
+            "Displaced swap",
+            "a swap whose price, before or after it, is more than 100 ticks (about 1%) from the "
+            "median of the 21 swaps around it. Section 6 revalues them.",
         ),
         (
             "Hold-out",
@@ -2174,7 +2233,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f'<li><a href="{GH}DECISIONS.md">DECISIONS.md</a> — every decision, what it cost and '
         "what was retracted.</li>"
         '<li><a href="https://github.com/orwee/univ3-clickhouse-indexer">The repository</a> — '
-        "<code>make demo</code> runs the whole thing with Docker and no API key.</li>"
+        "<code>make demo</code> runs the pipeline end to end on 242 committed swaps, with "
+        "Docker and no API key.</li>"
         "</ol></div>"
     )
 
