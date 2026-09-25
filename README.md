@@ -1,14 +1,14 @@
 # univ3-clickhouse-indexer
 
 Uniswap v3 `Swap` events from an Ethereum JSON-RPC node, landed as raw JSONL, loaded into
-ClickHouse, modelled with dbt, and reconciled against an independent source. 1,110,676 swaps,
-4 pools, 43 days (2026-08-09 to 2026-09-20).
+ClickHouse, modelled with dbt, and reconciled against an independent source. 1,240,618 swaps,
+4 pools, 48 days (2026-08-09 to 2026-09-25, up to the node's finalized block).
 
 - **The pipeline agrees with itself exactly.** A recomputation from `raw_swaps` and the
-  materialized view match on all 170 pool-days, in raw integer units: 0 differences.
-- **It does not agree with the outside, and the gap is measured.** Of those 170 pool-days,
-  163 are compared, 17 differ by more than 1% *and* 1,000 USD, 18 more by over 1% but less
-  than 1,000 USD, 7 are excluded as incomplete and 1 exists on one side only. Each difference
+  materialized view match on all 188 pool-days, in raw integer units: 0 differences.
+- **It does not agree with the outside, and the gap is measured.** Of those 188 pool-days,
+  183 are compared, 18 differ by more than 1% *and* 1,000 USD, 19 more by over 1% but less
+  than 1,000 USD, 5 are excluded as incomplete and 2 exist on one side only. Each difference
   is located to a pool, a day and usually an hour; [the findings](docs/RECONCILIATION_FINDINGS.md)
   say which are explained and which are not.
 - **Main limitation:** the external source publishes no methodology, so a difference can be
@@ -35,8 +35,10 @@ it, and what went wrong is kept where it happened instead of being cleaned up: t
 in [docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md), the measurements spoiled by a cache
 in [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md), and a dated list of every
 correction in [Agent corrections](DECISIONS.md#agent-corrections). Figures above are of
-2026-09-21; some documents were measured on earlier states of the same table (863,587, 881,187
-and 898,404 rows) and say which.
+2026-09-25; some documents were measured on earlier states of the same table (863,587, 881,187,
+898,404 and 1,110,676 rows) and say which. What changed and when is in
+[CHANGELOG.md](CHANGELOG.md); the second week added [round trips](docs/ROUND_TRIPS.md), [the
+gap between two fee tiers](docs/CROSS_POOL.md) and the receipts of the largest open case.
 
 ## Architecture
 
@@ -223,7 +225,7 @@ flowchart LR
 **Rigour.** A decision is only written down once a number from this repository supports it, and
 when a measurement later contradicted one, the entry was corrected in place and the retraction
 kept (entry 10 is the clearest case). Tests are held to the same standard: `make dbt-prove`
-breaks the data on purpose in throw-away databases and fails unless each of the 24 dbt tests
+breaks the data on purpose in throw-away databases and fails unless each of the 29 dbt tests
 fails at least once, because about 30 of the previous 55 could not fail at all on ClickHouse.
 `make demo` runs the whole pipeline from a clean clone with no API key. An independent review
 pass, given only the repository and no history, found 14 objective errors and 10 claims the
@@ -239,8 +241,8 @@ on `main` is the barrier that matters, because local hooks are a convention an a
 skip with one flag, not a barrier — [AGENTS.md](AGENTS.md) ends with a table saying, rule by
 rule, which is which, and it is honest about the ones that have no barrier at all.
 
-**Numbers of the process.** 37 pull requests merged, none by an agent. 361 Python tests and 24
-dbt tests, each of the latter demonstrated capable of failing. 30,102 provider calls for the
+**Numbers of the process.** 42 pull requests merged, none by an agent. 422 Python tests and 29
+dbt tests, each of the latter demonstrated capable of failing. 33,256 provider calls for the
 whole backfill (10 blocks per call is the free tier's limit). 9 Nansen credits spent of 100,
 with a hard budget check before every call and no retries.
 
@@ -250,8 +252,9 @@ with a hard budget check before every call and no retries.
 
 ## Reconciliation findings
 
-Current run, 2026-09-21: 1,110,676 swaps, 43 days, 163 pool-days compared, 17 flagged beyond
-1% and 1,000 USD ([snapshot](docs/evidence/2026-09-21/README.md)). Each finding below was made
+Current run, 2026-09-25: 1,240,618 swaps, 48 days, 183 pool-days compared, 18 flagged beyond
+1% and 1,000 USD ([snapshot](docs/evidence/2026-09-25/README.md)); none of the pool-days
+compared on 2026-09-21 changed. Each finding below was made
 on the run of 2026-09-20 (898,404 swaps, 120 compared, 12 flagged,
 [snapshot](docs/evidence/2026-09-20/reconciliation.md)) and quotes that run's figures, so that
 the number in the text is the number that produced the conclusion; where the current run
@@ -300,15 +303,22 @@ located to one to three hours, listed at the end of the draft.
   run by hand.
 - **"`onchain` is read-only for agents" is a rule without a barrier**: there is one ClickHouse
   user and it can drop anything.
-- **Weekend scale.** 1,110,676 rows. What [DECISIONS.md](DECISIONS.md) and
+- **Weekend scale.** 1,240,618 rows. What [DECISIONS.md](DECISIONS.md) and
   [docs/QUERY_PERFORMANCE.md](docs/QUERY_PERFORMANCE.md) conclude about `ORDER BY`,
-  partitions, projections and indexes was measured at that size.
+  partitions, projections and indexes was measured at under 1.2 million rows, before the last
+  five days were added.
 - **Nansen on the free tier.** Labels for the main counterparties exist only as a design.
 
 ## What I would build next
 
 This is a batch pipeline on one chain, at weekend scale. What it is missing, in the order I
 would build it.
+
+**Status on 2026-09-25:** none of the nine is built yet. The second week went into depth on
+the data rather than into infrastructure: more days up to the finalized block, round trips
+([docs/ROUND_TRIPS.md](docs/ROUND_TRIPS.md)), the gap between two fee tiers
+([docs/CROSS_POOL.md](docs/CROSS_POOL.md)) and the receipts of the largest open case; see
+[CHANGELOG.md](CHANGELOG.md).
 
 1. **Streaming ingestion.** A tailing ingester at the finalized head
    ([`safe_head`](src/univ3_indexer/cli.py) already resolves it) writing to Kafka or
@@ -359,6 +369,10 @@ the one decision that is expensive to change once the table is large.
 | [docs/evidence/2026-09-20/](docs/evidence/2026-09-20/reconciliation_evidence.md) | Snapshot of one run: report, evidence (12 sections of numbers) and the per-day CSV |
 | [docs/H2_PREREGISTRATION.md](docs/H2_PREREGISTRATION.md) | What was going to be tested out of sample, committed before the data was fetched |
 | [docs/evidence/2026-09-21/](docs/evidence/2026-09-21/README.md) | Snapshot of the run with ten more days: the out-of-sample test and placebo, and the reconciliation over 43 days |
+| [docs/evidence/2026-09-25/](docs/evidence/2026-09-25/README.md) | Snapshot of the run with five more days, up to the finalized block: reconciliation over 48 days, the analysis report, the receipts of the largest open case |
+| [docs/ROUND_TRIPS.md](docs/ROUND_TRIPS.md) | How much of the volume is swaps undone in the same block by the same sender, and how much that depends on the definition |
+| [docs/CROSS_POOL.md](docs/CROSS_POOL.md) | The price gap between the two USDC/WETH fee tiers, with ASOF JOIN: how wide, how long, who crosses first, and what ClickHouse reads |
+| [CHANGELOG.md](CHANGELOG.md) | What changed, by date |
 | [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md) | The provider's limits and the size of the data, measured |
 | [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md) | Candidate schemas measured on the real data, before the decision |
 | [docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md) | A materialized view is an insert trigger: procedure and observations |
