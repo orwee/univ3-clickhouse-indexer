@@ -74,7 +74,27 @@ def test_an_episode_opens_with_one_pool_and_closes_with_the_other(clickhouse, pl
     assert row["blocks_open_max"] == 2
     assert (row["opened_by_lo"], row["opened_by_hi"]) == (1, 1)
     assert (row["closed_by_lo"], row["closed_by_hi"]) == (1, 1)
-    assert row["closed_by_the_other_pool"] == 2
+    assert row["closed_by_the_other_pool"] == 2 and row["closed_by_the_same_pool"] == 0
+    assert (row["opened_by_lo_closed_by_hi"], row["opened_by_hi_closed_by_lo"]) == (1, 1)
+    assert row["never_left_one_transaction"] == 0, "every planted swap is its own transaction"
+
+
+def test_a_divergence_opened_and_closed_inside_one_transaction_is_counted(
+    clickhouse, temp_database
+):
+    ch.apply_ddl(clickhouse, temp_database)
+    one_tx = swap(LO, 101, 0, 1.01)[:3] + [b"\x77" * 32] + swap(LO, 101, 0, 1.01)[4:]
+    back = swap(HI, 101, 1, 1.01)[:3] + [b"\x77" * 32] + swap(HI, 101, 1, 1.01)[4:]
+    rows = [swap(HI, 100, 0, 1.0), swap(LO, 100, 1, 1.0), one_tx, back]
+    clickhouse.insert(ch.qualified(temp_database), rows, column_names=loader.COLUMNS)
+    (row,) = analysis.run(clickhouse, "03_cross_pool_episodes.sql", params(), temp_database)["rows"]
+    assert (row["episodes"], row["never_left_one_transaction"]) == (1, 1)
+
+
+def test_the_gap_is_also_measured_where_each_block_ends(clickhouse, planted):
+    (row,) = analysis.run(clickhouse, "04_cross_pool_block_ends.sql", params(), planted)["rows"]
+    # blocks 100, 101, 103, 104; only 101 ends with lo 21 bps above hi
+    assert (row["blocks"], row["blocks_ending_within_the_fee"]) == (4, 3)
 
 
 def test_an_episode_still_open_at_the_last_swap_is_counted_apart(clickhouse, temp_database):

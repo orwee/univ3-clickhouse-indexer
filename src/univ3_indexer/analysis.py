@@ -45,6 +45,7 @@ CROSS_POOL = (
     "01_cross_pool_gap.sql",
     "02_cross_pool_gap_histogram.sql",
     "03_cross_pool_episodes.sql",
+    "04_cross_pool_block_ends.sql",
 )
 ROUND_TRIPS = (
     "10_round_trips_by_pool.sql",

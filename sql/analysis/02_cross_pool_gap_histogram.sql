@@ -4,14 +4,14 @@
 WITH
     lo AS
     (
-        SELECT block_number * 100000 + log_index AS pos, toUInt8(1) AS pair,
+        SELECT bitShiftLeft(block_number, 32) + log_index AS pos, toUInt8(1) AS pair,
                toFloat64(sqrt_price_x96) AS sp
         FROM raw_swaps
         WHERE pool_address = {lo:String}
     ),
     hi AS
     (
-        SELECT block_number * 100000 + log_index AS pos, toUInt8(1) AS pair,
+        SELECT bitShiftLeft(block_number, 32) + log_index AS pos, toUInt8(1) AS pair,
                toFloat64(sqrt_price_x96) AS sp
         FROM raw_swaps
         WHERE pool_address = {hi:String}
