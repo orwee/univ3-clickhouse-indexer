@@ -178,6 +178,18 @@ def test_parse_refuses_what_it_cannot_read_faithfully():
             fixture.parse("t", bad)
 
 
+def test_sums_keep_every_digit_of_a_decimal256():
+    """The default arithmetic context has 28 digits; a Decimal(76, 18) can hold 76."""
+    big = "1234567890123456789012345678901234567890123456789012345678.123456789012345678"
+    table = fixture.parse("t", f"volume_usd\nDecimal(76, 18)\n{big}\n{big}\n0.5\n".encode())
+    doubled = "2469135780246913578024691357802469135780246913578024691356.746913578024691356"
+    assert fixture.fingerprint_of(table) == {"rows": 3, "sum_volume_usd": doubled}
+    assert fixture.decimal_text(Decimal(big)) == big
+    assert fixture.decimal_text(Decimal("6.802048000000000000")) == "6.802048"
+    assert fixture.decimal_text(Decimal("0E-18")) == "0"
+    assert fixture.decimal_text(Decimal("1E+3")) == "1000"
+
+
 def test_load_refuses_a_database_name_that_is_not_an_identifier():
     with pytest.raises(ValueError, match="not a plain SQL identifier"):
         fixture.load(client=None, database="test_x; DROP DATABASE onchain")

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from pathlib import Path
 
 from univ3_indexer import clickhouse as ch
@@ -106,7 +106,15 @@ def statements(directory: Path = FIXTURE_DIR) -> dict[str, str]:
 
 
 def decimal_text(value: Decimal) -> str:
-    return format(value.normalize(), "f")
+    """A Decimal in plain notation without trailing zeros, every digit kept.
+
+    Not ``normalize()``: that rounds to the precision of the arithmetic context, 28
+    digits by default, and a Decimal(76, 18) can hold 76.
+    """
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return "0" if text in ("-0", "") else text
 
 
 def fingerprint_of(table: Table) -> dict:
@@ -119,7 +127,9 @@ def fingerprint_of(table: Table) -> dict:
         out["first_date"], out["last_date"] = min(dates), max(dates)
     for name in ("swaps", "volume_usd"):
         if name in table.columns:
-            total = sum((Decimal(v) for v in table.column(name) if v is not None), Decimal(0))
+            with localcontext() as exact:
+                exact.prec = 200  # a Decimal(76, 18) sum must not be rounded to 28 digits
+                total = sum((Decimal(v) for v in table.column(name) if v is not None), Decimal(0))
             out[f"sum_{name}"] = decimal_text(total)
     return out
 
