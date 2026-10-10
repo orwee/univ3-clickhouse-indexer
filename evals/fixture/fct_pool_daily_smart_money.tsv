@@ -1,0 +1,2 @@
+pool_address	block_date	pool_label	swaps	volume_usd	smart_money_swaps	smart_money_transactions	smart_money_volume_usd	smart_money_share_of_swaps	smart_money_share_of_volume_usd	fetched_by_token	computed_at
+LowCardinality(String)	Date	String	UInt64	Nullable(Decimal(76, 18))	UInt64	UInt64	Float64	Float64	Nullable(Float64)	LowCardinality(String)	DateTime(\'UTC\')

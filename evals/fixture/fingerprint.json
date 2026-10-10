@@ -1,0 +1,43 @@
+{
+  "exported_on": "2026-10-10",
+  "source_database": "onchain_dbt",
+  "format": "TabSeparatedWithNamesAndTypes",
+  "built_from_commit": "14d5c41438d4c4618c17ecb77c278ff5aa96bb48",
+  "built_from_commit_rule": "the last commit that changed dbt/; every mart was created on the server after it (marts_built_at). dbt does not record the commit itself",
+  "marts_built_at": "2026-09-25T01:19:13Z",
+  "tables": {
+    "dim_pools": {
+      "order_by": "pool_address, pool_label, token0, token1, decimals0, decimals1, fee, fee_fraction, fee_percent",
+      "rows": 4
+    },
+    "fct_pool_daily": {
+      "order_by": "pool_address, block_date",
+      "rows": 188,
+      "first_date": "2026-08-09",
+      "last_date": "2026-09-25",
+      "sum_swaps": "1240618",
+      "sum_volume_usd": "5991906275.50882"
+    },
+    "fct_pool_daily_round_trips": {
+      "order_by": "pool_address, block_date",
+      "rows": 188,
+      "first_date": "2026-08-09",
+      "last_date": "2026-09-25",
+      "sum_swaps": "1240618",
+      "sum_volume_usd": "5991906275.50882"
+    },
+    "fct_pool_daily_smart_money": {
+      "order_by": "pool_address, block_date",
+      "rows": 0,
+      "schema_only": true,
+      "why": "Not published. A pool-day that holds a single smart-money swap gives its USD amount to six decimals; the swaps are public on chain, so pool, day and amount identify the transaction and through it the wallet Nansen classifies. Nansen's redistribution guidelines require that published output cannot be reverse-engineered to their classification."
+    },
+    "fct_round_trip_legs": {
+      "order_by": "pool_address, block_number, log_index",
+      "rows": 9549,
+      "first_date": "2026-08-09",
+      "last_date": "2026-09-24",
+      "sum_volume_usd": "587166378.97448"
+    }
+  }
+}
