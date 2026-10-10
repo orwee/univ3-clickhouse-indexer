@@ -1,0 +1,9 @@
+# Opt-in override: adds the read-only user (docs/AGENT_ACCESS.md) to the real server.
+# Used only by `make up-reader`; plain `make up` never reads this file.
+#
+# It needs AGENT_READER_PASSWORD_SHA256 in clickhouse.env: with this mount and without
+# that variable the server does not start.
+services:
+  clickhouse:
+    volumes:
+      - ./clickhouse/users.d/agent_reader.xml:/etc/clickhouse-server/users.d/agent_reader.xml:ro

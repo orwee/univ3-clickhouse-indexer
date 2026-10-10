@@ -1,9 +1,10 @@
 """The read-only user: its definition, a connection as that user, and what it must refuse.
 
-The user is declared in ``clickhouse/users.d/agent_reader.xml``, which both compose files
-mount into the server. Nothing here creates or changes it: this module reads the file, connects
-with the credentials of ``agent-reader.env`` and lists the statements that tell whether the
-server enforces what the file says.
+The user is declared in ``clickhouse/users.d/agent_reader.xml``, which the demo always mounts
+into its server and the real server mounts only under ``make up-reader``. Nothing here creates
+or changes it: this module reads the file, connects with the credentials of
+``agent-reader.env`` and lists the statements that tell whether the server enforces what the
+file says.
 
 The statements come in two lists. ``harmless_checks`` would do no damage if the server
 accepted them, so the tests run them against the real server. ``destructive_checks`` would,

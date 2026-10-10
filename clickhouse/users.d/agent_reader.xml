@@ -3,11 +3,13 @@
   server can create a user with SQL, so this file is the whole definition, it is versioned,
   and `make demo` mounts the very same file. See docs/AGENT_ACCESS.md.
 
-  Both compose files mount it at /etc/clickhouse-server/users.d/agent_reader.xml, read-only.
+  Mounted read-only at /etc/clickhouse-server/users.d/agent_reader.xml by the demo, always,
+  and by the real server only when it is started with `make up-reader`
+  (docker-compose.reader.yml). Plain `make up` does not mount it.
 
   No password lives here. The server reads the SHA-256 of the password from its environment
-  (AGENT_READER_PASSWORD_SHA256, in clickhouse.env). If that variable is unset the server
-  does not start at all: set it BEFORE `make up`.
+  (AGENT_READER_PASSWORD_SHA256, in clickhouse.env). With this file mounted and that variable
+  unset the server does not start at all: set it BEFORE `make up-reader`.
 
   readonly = 1 also means the user cannot change any setting, these limits included.
   max_result_rows must stay above the row count of system.settings (1,550 on 26.3.33.24):

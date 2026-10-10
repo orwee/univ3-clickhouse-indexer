@@ -33,7 +33,6 @@ MARTS = (
 # the largest mart has 9,549 rows. With the limit at 1,000 the client cannot even connect.
 RESULT_ROWS_FLOOR = 10_000
 DEMO_ENV = config.REPO_ROOT / "demo" / "demo.env"
-COMPOSE_FILES = ("docker-compose.yml", "docker-compose.demo.yml")
 
 
 # --- no server needed ------------------------------------------------------------------
@@ -118,12 +117,23 @@ def _users_mounts(compose_file: str) -> list[tuple[str, str]]:
     ]
 
 
-def test_both_compose_files_mount_the_same_file_at_the_same_path_read_only():
+def test_the_demo_and_the_opt_in_override_mount_the_same_file_at_the_same_path_read_only():
     source = "./" + str(agent_reader.USERS_FILE.relative_to(config.REPO_ROOT))
     expected = f"{source}:{agent_reader.MOUNT_TARGET}:ro"
-    real, demo = (_users_mounts(f) for f in COMPOSE_FILES)
-    assert real == [("clickhouse", expected)]
-    assert demo == [("clickhouse-demo", expected)]
+    assert _users_mounts("docker-compose.demo.yml") == [("clickhouse-demo", expected)]
+    assert _users_mounts("docker-compose.reader.yml") == [("clickhouse", expected)]
+
+
+def test_plain_make_up_does_not_mount_the_reader():
+    """On the real server the reader is opt-in: `make up` must work without the hash."""
+    assert _users_mounts("docker-compose.yml") == []
+    makefile = (config.REPO_ROOT / "Makefile").read_text()
+    recipes = dict(re.findall(r"^([a-z-]+):.*\n\t(.+)$", makefile, flags=re.MULTILINE))
+    assert "reader" not in recipes["up"]
+    assert recipes["up-reader"].split() == [
+        *"docker compose -f docker-compose.yml -f docker-compose.reader.yml".split(),
+        *"up -d --wait".split(),
+    ]
 
 
 def test_the_demo_hash_is_the_hash_of_the_demo_password():
@@ -134,10 +144,13 @@ def test_the_demo_hash_is_the_hash_of_the_demo_password():
     assert set(config.AGENT_READER_NAMES.values()) <= set(demo)
 
 
-def test_the_hash_variable_is_documented_before_make_up():
+def test_the_hash_variable_is_documented_before_make_up_reader():
     assert agent_reader.PASSWORD_HASH_VARIABLE in (config.REPO_ROOT / ".env.example").read_text()
     doc = (config.REPO_ROOT / "docs" / "AGENT_ACCESS.md").read_text()
-    assert 0 < doc.index(agent_reader.PASSWORD_HASH_VARIABLE) < doc.index("make up")
+    # The warning comes before the steps, and in the steps the hash comes before the start.
+    steps = doc.index("## What the owner does")
+    assert 0 < doc.index(agent_reader.PASSWORD_HASH_VARIABLE) < steps
+    assert steps < doc.index("**Add the hash", steps) < doc.index("**`make up-reader`.**", steps)
 
 
 def test_run_checks_reports_what_did_not_hold(capsys):

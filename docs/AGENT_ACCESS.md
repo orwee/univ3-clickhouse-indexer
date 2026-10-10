@@ -5,8 +5,18 @@ else. The server enforces it; no rule has to be followed for it to hold.
 
 It is not created with SQL. No account on this server can create a user: `indexer` is the
 only one, it has no access management, and that stays so. The user is declared in
-[`clickhouse/users.d/agent_reader.xml`](../clickhouse/users.d/agent_reader.xml), which both
-compose files mount read-only at `/etc/clickhouse-server/users.d/agent_reader.xml`.
+[`clickhouse/users.d/agent_reader.xml`](../clickhouse/users.d/agent_reader.xml), mounted
+read-only at `/etc/clickhouse-server/users.d/agent_reader.xml`:
+
+- by the demo, always (`docker-compose.demo.yml`): `make demo` exercises the reader every
+  time;
+- by the real server **only when asked**: `make up-reader`, which adds the override
+  `docker-compose.reader.yml`. Plain `make up` does not mount the file and behaves exactly
+  as before.
+
+**On the real server the reader is defined, not in force.** On 2026-10-10 the real server
+runs without the mount and has no `agent_reader`; the owner has decided not to recreate the
+container for now.
 
 | | |
 |---|---|
@@ -18,26 +28,27 @@ compose files mount read-only at `/etc/clickhouse-server/users.d/agent_reader.xm
 The grants are per table and by name. A new mart is invisible to the reader until a line
 is added to the file; a mart that is rebuilt under the same name stays readable.
 
-## Read this first: the server will not start without the hash
+## Read this first: with the mount, the server will not start without the hash
 
 The file takes the password hash from the server's environment:
-`AGENT_READER_PASSWORD_SHA256`, in `clickhouse.env`. Once the file is mounted, a server
-started without that variable does not start at all ("Password hash for the
-'SHA256_PASSWORD' authentication type has length 0", as the owner saw on a clean
-26.3.33.24). From the moment this change is on `main`, **every `make up` needs the variable
-in `clickhouse.env`**, including one that has nothing to do with the reader.
+`AGENT_READER_PASSWORD_SHA256`, in `clickhouse.env`. A server started with the file mounted
+and that variable unset does not start at all ("Password hash for the 'SHA256_PASSWORD'
+authentication type has length 0", seen on a clean 26.3.33.24 in the review session
+described under Results). So the variable goes into `clickhouse.env` **before**
+`make up-reader`. It is needed for `make up-reader` only: `make up` neither mounts the file
+nor needs the variable.
 
-## What the owner does, in order
+## What the owner does to turn the reader on, in order
 
-All of it needs Docker, which the agent user does not have.
+All of it needs Docker, and so root.
 
-1. **`make demo`**, as root. The demo server mounts the same file with a demo password and
-   step 7 connects as `agent_reader` and tries everything in the table below, the
-   destructive statements included. It must end in `DEMO OK`. Nothing real is touched.
+1. **`make demo`.** The demo server mounts the same file with a demo password and step 7
+   connects as `agent_reader` and tries everything in the table below, the destructive
+   statements included. It must end in `DEMO OK`. Nothing real is touched.
 
-2. **Add the hash to `clickhouse.env`, before any `make up`.** This generates a password,
-   writes its hash where the server reads it and the password where the reader reads it,
-   and prints neither:
+2. **Add the hash to `clickhouse.env`, before `make up-reader`.** This generates a
+   password, writes its hash where the server reads it and the password where the reader
+   reads it, and prints neither:
 
    ```sh
    umask 077
@@ -55,15 +66,19 @@ All of it needs Docker, which the agent user does not have.
    runs the tests and by the reader, and by nobody else. `clickhouse.env` only ever holds
    the hash.
 
-3. **`make up`**, as root. Compose recreates the container with the new mount and the new
+3. **`make up-reader`.** Compose recreates the container with the mount and the new
    variable; the named volume, and so the data, is kept. If it does not come up healthy,
    `make logs`: the message quoted above means step 2 did not reach the file compose reads.
 
 4. **`make test`**, as the user that can read `agent-reader.env`. The server tests in
    `tests/test_agent_reader.py` stop skipping and run as the reader.
 
+Once the reader is on, keep starting the server with `make up-reader`: a plain `make up`
+recreates the container without the mount, and the reader is gone until the next
+`make up-reader`. `make down` is the same for both.
+
 To change the password later: repeat step 2 with the old line removed from
-`clickhouse.env`, then `make up`.
+`clickhouse.env`, then `make up-reader`.
 
 ## What is checked, and where
 
@@ -90,9 +105,9 @@ only ever sees statements that would change nothing if it accepted them. `DROP`,
 
 Without a server, `make test` also checks the definition itself: the XML parses, the grants
 are exactly the five marts and each is `SELECT` on one table, the database they name is the
-one `scripts/run_dbt.py` and `demo/demo.env` build into, both compose files mount the same
-file at the same path read-only, the file holds no password, and `max_result_rows` is at
-least 10,000.
+one `scripts/run_dbt.py` and `demo/demo.env` build into, the demo and the opt-in override
+mount the same file at the same path read-only, `docker-compose.yml` and `make up` do not
+mount it, the file holds no password, and `max_result_rows` is at least 10,000.
 
 That floor is not arbitrary. clickhouse-connect reads `system.settings` while connecting,
 1,550 rows on 26.3.33.24, and the limit throws: at 1,000 the client cannot connect at all.
@@ -101,20 +116,35 @@ mart that outgrows the limit can still be queried, but not fetched whole.
 
 ## Results
 
-**2026-10-10, by the agent, on the real server, without Docker.**
+Three parties, kept apart: what the session that wrote this saw, what a separate review
+session saw, and what nobody has run yet.
+
+**2026-10-10, the session that wrote the code.** It ran as root, with Docker available, and
+did not use Docker: no container was started, recreated or touched, and `make demo` was not
+run. Against the real server:
 
 - The checks that need no server: pass (`make test`).
 - `system.settings` has 1,550 rows on this server, below the limit: pass.
-- The server tests as the reader: **skipped, not run.** `agent-reader.env` does not exist and
-  the server has no `agent_reader` user: it is still running without the mount, and
-  recreating the container needs Docker.
-- `make demo`: **not run.** It needs Docker. Step 7 of `scripts/demo.py` has never been
-  executed.
+- As `indexer`, with the same limits written into the statement: 396 for a result over
+  10,000 rows, 159 for a query past its time limit.
+- The server tests as the reader: **skipped, not run.** `agent-reader.env` does not exist
+  and the real server has no `agent_reader`.
 
-The expected codes in the table above are the ones the owner observed on a clean
-26.3.33.24. The agent reproduced two of them on the real server as `indexer`, with the same
-settings written into the statement: 396 for a result over 10,000 rows and 159 for a query
-past its time limit. Nothing else in the table has been seen by the agent.
+**A separate review session, on a clean 26.3.33.24, without Docker.** Not this session's
+result, recorded here as reported:
+
+- The expected results and error codes in the table above were observed there, with the
+  package's default `config.xml` and the user layout the image's entrypoint writes. So was
+  the failure to start without the hash, and the failure of clickhouse-connect 1.8.0 to
+  connect with `max_result_rows` at 1,000.
+- `scripts/demo.py` from commit `418987c` was run there and ended in `DEMO OK`, with all 32
+  lines of step 7 `ok`.
+
+**Not run by anyone yet.**
+
+- `make demo` under Docker: the compose mount, the image's entrypoint and the runner
+  container together.
+- `make up-reader` on the real server, and with it the server tests as the reader.
 
 **To be filled in by the owner after steps 1 to 4:** the date, the last lines of
 `make demo`, and the `make test` summary line.
