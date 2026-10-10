@@ -651,11 +651,11 @@ mounts it only when started with `make up-reader`, so the reader is opt-in there
 `readonly = 1`. `SELECT` on five tables of the dbt database, by name, and on nothing else:
 `dim_pools`, `fct_pool_daily`, `fct_pool_daily_round_trips`,
 `fct_pool_daily_smart_money`, `fct_round_trip_legs`. No grant on the database, on
-`stg_swaps`, on the seed, or on the raw database. Three limits, proposed values for me to
-fix: `max_execution_time` [10 s], `max_result_rows` [10,000] with
-`result_overflow_mode = 'throw'`, `max_memory_usage` [500,000,000 bytes]. The password
-hash reaches the server through `clickhouse.env`; the password lives in a third file,
-`agent-reader.env`, with variable names of its own.
+`stg_swaps`, on the seed, or on the raw database. Three limits: `max_execution_time`
+10 s, `max_result_rows` 10,000 with `result_overflow_mode = 'throw'`,
+`max_memory_usage` 500,000,000 bytes. The password hash reaches the server through
+`clickhouse.env`; the password lives in a third file, `agent-reader.env`, with
+variable names of its own.
 
 **Why.** A rule the server enforces does not depend on the agent following it.
 Declarative, not `CREATE USER`, because giving any account the right to create users
