@@ -634,6 +634,56 @@ with per-swap rows shows how it treats these swaps.
 
 ---
 
+## 19. A read-only user limited to the marts, for readers and agents
+
+- Date: 2026-10-10
+- Status: Accepted
+
+**Context.** There is one ClickHouse user, `indexer`, and it can create, alter and drop
+anything. `AGENTS.md` says `onchain` is read-only for agents and admits that nothing
+enforces it. An agent that turns questions into SQL is coming, and it will run queries
+nobody has read first. No account on the server can create a user with SQL: `indexer` has
+no access management, on purpose.
+
+**Decision.** A second user, `agent_reader`, declared in
+`clickhouse/users.d/agent_reader.xml`. The demo always mounts the file; the real server
+mounts it only when started with `make up-reader`, so the reader is opt-in there.
+`readonly = 1`. `SELECT` on five tables of the dbt database, by name, and on nothing else:
+`dim_pools`, `fct_pool_daily`, `fct_pool_daily_round_trips`,
+`fct_pool_daily_smart_money`, `fct_round_trip_legs`. No grant on the database, on
+`stg_swaps`, on the seed, or on the raw database. Three limits, proposed values for me to
+fix: `max_execution_time` [10 s], `max_result_rows` [10,000] with
+`result_overflow_mode = 'throw'`, `max_memory_usage` [500,000,000 bytes]. The password
+hash reaches the server through `clickhouse.env`; the password lives in a third file,
+`agent-reader.env`, with variable names of its own.
+
+**Why.** A rule the server enforces does not depend on the agent following it.
+Declarative, not `CREATE USER`, because giving any account the right to create users
+would give the agents' own user a way to grant itself anything. The definition is
+versioned and reviewed like code, and the demo mounts the very same file, so every
+refusal, the destructive ones included, is tried on a throw-away server before the real
+one sees the file. Opt-in on the real server because a mounted file without its hash
+stops the server from starting, and `make up` must not depend on that. Grants per table
+mean a new model is invisible until somebody decides otherwise. The limits are fixed
+because a query written by a model can be a full scan or a cross join, and the server
+has 3 GB.
+
+**Tradeoff.** Two ways to start the server, and the wrong one silently removes the
+reader: after `make up-reader`, a plain `make up` recreates the container without it.
+With the mount, the server does not start if the hash variable is missing. Changing the
+user means editing a file and recreating the container. Every new mart needs a line. The
+grants name `onchain_dbt` literally, so the demo had to build into that name. The reader
+cannot see `stg_swaps` or the raw table, so some questions have no answer for it, and a
+legitimate large result fails instead of being cut. `max_result_rows` cannot go below
+the row count of `system.settings`, or clickhouse-connect cannot connect.
+
+**Revisit when.** A reader needs swap-level rows, more than one kind of reader exists
+(then one profile and several users, not copies of the grants), a mart outgrows the row
+limit, the limits reject queries that should have run, or the reader becomes something
+other work depends on (then the mount moves into `docker-compose.yml`).
+
+---
+
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.
@@ -687,6 +737,9 @@ The list is kept because the mistakes are part of the record, not in spite of it
 - 2026-09-21: A findings draft called one difference "larger than every other
   difference in the project put together". It was not. Corrected to "by far the
   largest single difference" before PR #33 was opened.
+- 2026-10-10: The docs and the AGENTS.md row of PR #45 said the checks ran "as
+  the agent user" with "no Docker", while the session ran as root with Docker
+  available. Corrected in the same pull request before it was merged.
 
 ## Owner mistakes
 
