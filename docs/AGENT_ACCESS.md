@@ -46,25 +46,40 @@ All of it needs Docker, and so root.
    connects as `agent_reader` and tries everything in the table below, the destructive
    statements included. It must end in `DEMO OK`. Nothing real is touched.
 
-2. **Add the hash to `clickhouse.env`, before `make up-reader`.** This generates a
-   password, writes its hash where the server reads it and the password where the reader
-   reads it, and prints neither:
+2. **Add the hash to `clickhouse.env`, before `make up-reader`.** Run as root. As root
+   `~` is `/root`, which is not where these files live, so the paths are written out
+   instead of using `~`. `CH_ENV` must be the file compose actually reads:
+   `CLICKHOUSE_ENV_FILE` in the repo's `.env` if it is set there, otherwise
+   `$HOME/secrets/clickhouse.env` of whoever runs `make up-reader`. A hash appended to any
+   other file never reaches the server, and the server then does not start.
+
+   This generates a password, writes its hash where the server reads it and the password
+   where the reader reads it, and prints neither:
 
    ```sh
+   CH_ENV=/path/to/clickhouse.env          # the file compose reads, see above
+   READER_ENV=/path/to/agent-reader.env    # where the tests will look for it, see below
+   TEST_USER=the-user-that-runs-make-test
+
    umask 077
    pw=$(openssl rand -hex 24)
+   # Appending to a file whose last line has no newline would glue the variable onto it.
+   [ -z "$(tail -c 1 "$CH_ENV")" ] || echo >> "$CH_ENV"
    printf 'AGENT_READER_PASSWORD_SHA256=%s\n' \
-     "$(printf '%s' "$pw" | sha256sum | cut -d' ' -f1)" >> ~/secrets/clickhouse.env
+     "$(printf '%s' "$pw" | sha256sum | cut -d' ' -f1)" >> "$CH_ENV"
    printf '%s\n' \
      'AGENT_READER_HOST=127.0.0.1' 'AGENT_READER_PORT=8123' 'AGENT_READER_DB=onchain_dbt' \
-     'AGENT_READER_USER=agent_reader' "AGENT_READER_PASSWORD=$pw" > ~/secrets/agent-reader.env
+     'AGENT_READER_USER=agent_reader' "AGENT_READER_PASSWORD=$pw" > "$READER_ENV"
+   chown "$TEST_USER": "$READER_ENV"
+   chmod 600 "$READER_ENV"
    unset pw
    ```
 
-   Use the real paths if the files live elsewhere (`CLICKHOUSE_ENV_FILE`,
-   `AGENT_READER_ENV_FILE` in `.env`). `agent-reader.env` has to be readable by whoever
-   runs the tests and by the reader, and by nobody else. `clickhouse.env` only ever holds
-   the hash.
+   `READER_ENV` is found by `config.py` through `AGENT_READER_ENV_FILE` (environment, then
+   the repo's `.env`), and otherwise at `~/secrets/agent-reader.env` of the user running
+   the tests, which is that user's home, not root's. Written by root, the file belongs to
+   root and nobody else can read it: hence the `chown` to the user that runs `make test`.
+   `clickhouse.env` only ever holds the hash.
 
 3. **`make up-reader`.** Compose recreates the container with the mount and the new
    variable; the named volume, and so the data, is kept. If it does not come up healthy,
