@@ -1,0 +1,21 @@
+# The only thing the agent is told about this warehouse: where it is, which tables it may
+# describe, and its limits. Names and numbers only. What the tables mean is not written
+# here or anywhere in src/agent/: the agent reads column names and types from the database.
+#
+# The table list is what describe_schema shows. What can actually be read is decided by the
+# grants of the read-only user (clickhouse/users.d/agent_reader.xml); a test keeps the two
+# lists equal.
+
+database: onchain_dbt
+
+tables:
+  - dim_pools
+  - fct_pool_daily
+  - fct_pool_daily_round_trips
+  - fct_pool_daily_smart_money
+  - fct_round_trip_legs
+
+limits:
+  row_cap: 200          # rows of one result handed to the model; the rest is cut and flagged
+  max_iterations: 6     # model calls per question
+  max_usd: 0.25         # dollars per question
