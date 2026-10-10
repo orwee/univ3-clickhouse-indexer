@@ -29,3 +29,17 @@ def temp_database(clickhouse):
         yield name
     finally:
         clickhouse.command(f"DROP DATABASE IF EXISTS {name}")
+
+
+@pytest.fixture(scope="session")
+def marts_database(clickhouse):
+    """The marts fixture (evals/fixture) loaded into a throw-away `test_*` database."""
+    from evalkit import fixture
+
+    name = f"test_{uuid.uuid4().hex[:12]}"
+    clickhouse.command(f"CREATE DATABASE {name}")
+    try:
+        fixture.load(clickhouse, name)
+        yield name
+    finally:
+        clickhouse.command(f"DROP DATABASE IF EXISTS {name}")

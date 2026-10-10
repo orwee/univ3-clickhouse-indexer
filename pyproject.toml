@@ -14,6 +14,9 @@ dependencies = [
 ]
 
 [dependency-groups]
+agent = [
+    "anthropic>=1.13.0",
+]
 dbt = [
     "dbt-adapters==1.24.5",
     "dbt-clickhouse==1.10.3",

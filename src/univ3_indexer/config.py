@@ -4,7 +4,7 @@ Secrets live in three files OUTSIDE the repo (see .env.example and DECISIONS.md)
 
 * ``clickhouse.env``    database credentials. Required by anything that touches
   ClickHouse, including the tests.
-* ``api-keys.env``      Alchemy / Nansen keys. Optional: it is only read when a
+* ``api-keys.env``      Alchemy / Nansen / Anthropic keys. Optional: it is only read when a
   caller asks for a key, so a process that has no business with the APIs (and
   no permission to read the file) can still import this module and run.
 * ``agent-reader.env``  credentials of the read-only ClickHouse user. Optional:
@@ -61,7 +61,9 @@ API_KEYS_DEFAULT = "~/secrets/api-keys.env"
 AGENT_READER_POINTER = "AGENT_READER_ENV_FILE"
 AGENT_READER_DEFAULT = "~/secrets/agent-reader.env"
 
-API_KEY_NAMES = ("ALCHEMY_API_KEY", "NANSEN_API_KEY")
+# ANTHROPIC_API_KEY is for the agent (src/agent). It is not stored on this server: where the
+# agent runs for real, the variable is in the process environment, which wins over the file.
+API_KEY_NAMES = ("ALCHEMY_API_KEY", "NANSEN_API_KEY", "ANTHROPIC_API_KEY")
 
 
 class ConfigError(RuntimeError):
