@@ -17,8 +17,12 @@ services:
       - "127.0.0.1:8123:8123" # HTTP interface (clickhouse-connect, dbt)
       - "127.0.0.1:9000:9000" # native protocol (clickhouse-client)
 
+    # The second mount defines the read-only user (docs/AGENT_ACCESS.md). It needs
+    # AGENT_READER_PASSWORD_SHA256 in the env_file above: without it the server
+    # does not start.
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/users.d/agent_reader.xml:/etc/clickhouse-server/users.d/agent_reader.xml:ro
 
     # memswap_limit is RAM + swap. Equal to mem_limit means no swap at all;
     # left unset, Docker allows another 3g of swap on top. See DECISIONS.md #6.

@@ -153,7 +153,7 @@ def load_clickhouse_config() -> ClickHouseConfig:
 
 
 def load_agent_reader_config() -> ClickHouseConfig:
-    """The read-only user (sql/access/001_agent_reader.sql), from agent-reader.env only."""
+    """The read-only user (clickhouse/users.d/agent_reader.xml), from agent-reader.env only."""
     return _load_clickhouse(AGENT_READER_POINTER, AGENT_READER_DEFAULT, AGENT_READER_NAMES)
 
 

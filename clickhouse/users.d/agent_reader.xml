@@ -1,0 +1,45 @@
+<!--
+  The read-only user for readers and agents. Declarative on purpose: no account on the
+  server can create a user with SQL, so this file is the whole definition, it is versioned,
+  and `make demo` mounts the very same file. See docs/AGENT_ACCESS.md.
+
+  Both compose files mount it at /etc/clickhouse-server/users.d/agent_reader.xml, read-only.
+
+  No password lives here. The server reads the SHA-256 of the password from its environment
+  (AGENT_READER_PASSWORD_SHA256, in clickhouse.env). If that variable is unset the server
+  does not start at all: set it BEFORE `make up`.
+
+  readonly = 1 also means the user cannot change any setting, these limits included.
+  max_result_rows must stay above the row count of system.settings (1,550 on 26.3.33.24):
+  clickhouse-connect reads that table while connecting, and the limit throws.
+  tests/test_agent_reader.py pins the floor.
+
+  The grants are per table and by name. A new model is invisible to this user until it is
+  added here; the database is named literally, so it must be the one dbt writes to.
+-->
+<clickhouse>
+  <profiles>
+    <agent_reader>
+      <readonly>1</readonly>
+      <max_execution_time>10</max_execution_time>
+      <max_result_rows>10000</max_result_rows>
+      <result_overflow_mode>throw</result_overflow_mode>
+      <max_memory_usage>500000000</max_memory_usage>
+    </agent_reader>
+  </profiles>
+  <users>
+    <agent_reader>
+      <password_sha256_hex from_env="AGENT_READER_PASSWORD_SHA256"/>
+      <networks><ip>::/0</ip></networks>
+      <profile>agent_reader</profile>
+      <quota>default</quota>
+      <grants>
+        <query>GRANT SELECT ON onchain_dbt.dim_pools</query>
+        <query>GRANT SELECT ON onchain_dbt.fct_pool_daily</query>
+        <query>GRANT SELECT ON onchain_dbt.fct_pool_daily_round_trips</query>
+        <query>GRANT SELECT ON onchain_dbt.fct_pool_daily_smart_money</query>
+        <query>GRANT SELECT ON onchain_dbt.fct_round_trip_legs</query>
+      </grants>
+    </agent_reader>
+  </users>
+</clickhouse>
