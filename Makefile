@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 DEMO = docker compose -f docker-compose.demo.yml
 
-.PHONY: help demo up down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis dbt-seed dbt-build dbt-test dbt-prove dashboard
+.PHONY: help demo up up-reader down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis dbt-seed dbt-build dbt-test dbt-prove dashboard
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -12,6 +12,12 @@ demo: ## the whole pipeline on the committed fixtures: only Docker needed, no AP
 
 up: ## start ClickHouse and wait until it is healthy
 	docker compose up -d --wait
+
+# Opt-in. Needs AGENT_READER_PASSWORD_SHA256 in clickhouse.env first: without it the
+# server does not start. A later plain `make up` recreates the container without the
+# reader. See docs/AGENT_ACCESS.md.
+up-reader: ## start ClickHouse with the read-only user agent_reader mounted
+	docker compose -f docker-compose.yml -f docker-compose.reader.yml up -d --wait
 
 down: ## stop ClickHouse (the named volume, and so the data, is kept)
 	docker compose down

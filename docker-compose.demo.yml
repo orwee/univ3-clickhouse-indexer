@@ -8,6 +8,9 @@ services:
   clickhouse-demo:
     image: clickhouse/clickhouse-server:26.3.33.24
     env_file: demo/demo.env
+    # The same definition of the read-only user as the real server (docs/AGENT_ACCESS.md).
+    volumes:
+      - ./clickhouse/users.d/agent_reader.xml:/etc/clickhouse-server/users.d/agent_reader.xml:ro
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:

@@ -1,17 +1,20 @@
 """Configuration loading.
 
-Secrets live in two files OUTSIDE the repo (see .env.example and DECISIONS.md):
+Secrets live in three files OUTSIDE the repo (see .env.example and DECISIONS.md):
 
-* ``clickhouse.env``  database credentials. Required by anything that touches
+* ``clickhouse.env``    database credentials. Required by anything that touches
   ClickHouse, including the tests.
-* ``api-keys.env``    Alchemy / Nansen keys. Optional: it is only read when a
+* ``api-keys.env``      Alchemy / Nansen keys. Optional: it is only read when a
   caller asks for a key, so a process that has no business with the APIs (and
   no permission to read the file) can still import this module and run.
+* ``agent-reader.env``  credentials of the read-only ClickHouse user. Optional:
+  it is only read by ``load_agent_reader_config()``, so a reader can be given
+  this file and neither of the other two.
 
 Where each file lives is resolved in this order:
 
 1. the pointer variable in the process environment
-   (``CLICKHOUSE_ENV_FILE`` / ``API_KEYS_ENV_FILE``),
+   (``CLICKHOUSE_ENV_FILE`` / ``API_KEYS_ENV_FILE`` / ``AGENT_READER_ENV_FILE``),
 2. the same pointer in the git-ignored ``.env`` at the repo root,
 3. ``~/secrets/<file name>``.
 
@@ -55,6 +58,8 @@ CLICKHOUSE_POINTER = "CLICKHOUSE_ENV_FILE"
 CLICKHOUSE_DEFAULT = "~/secrets/clickhouse.env"
 API_KEYS_POINTER = "API_KEYS_ENV_FILE"
 API_KEYS_DEFAULT = "~/secrets/api-keys.env"
+AGENT_READER_POINTER = "AGENT_READER_ENV_FILE"
+AGENT_READER_DEFAULT = "~/secrets/agent-reader.env"
 
 API_KEY_NAMES = ("ALCHEMY_API_KEY", "NANSEN_API_KEY")
 
@@ -102,23 +107,54 @@ def _require(name: str, file_values: dict[str, str], path: Path, problem: str | 
     return value
 
 
-def load_clickhouse_config() -> ClickHouseConfig:
-    path = _resolve_path(CLICKHOUSE_POINTER, CLICKHOUSE_DEFAULT)
+def _load_clickhouse(pointer: str, default: str, names: dict[str, str]) -> ClickHouseConfig:
+    """One credentials file into a ``ClickHouseConfig``. ``names`` maps field to variable."""
+    path = _resolve_path(pointer, default)
     values, problem = _read_env_file(path)
 
-    def req(name: str) -> str:
-        return _require(name, values, path, problem)
+    def req(field_name: str) -> str:
+        return _require(names[field_name], values, path, problem)
 
-    port = req("CH_PORT")
+    port = req("port")
     if not port.isdigit():
-        raise ConfigError(f"CH_PORT must be an integer (set in {path})")
+        raise ConfigError(f"{names['port']} must be an integer (set in {path})")
     return ClickHouseConfig(
-        host=req("CH_HOST"),
+        host=req("host"),
         port=int(port),
-        database=req("CLICKHOUSE_DB"),
-        user=req("CLICKHOUSE_USER"),
-        password=req("CLICKHOUSE_PASSWORD"),
+        database=req("database"),
+        user=req("user"),
+        password=req("password"),
     )
+
+
+CLICKHOUSE_NAMES = {
+    "host": "CH_HOST",
+    "port": "CH_PORT",
+    "database": "CLICKHOUSE_DB",
+    "user": "CLICKHOUSE_USER",
+    "password": "CLICKHOUSE_PASSWORD",
+}
+
+# Every name is its own on purpose, the host and the port included. A variable in the
+# process environment wins over the file, and `make dbt-build` exports the whole of
+# clickhouse.env: with shared names a reader started from such a shell would connect as
+# the user that can drop anything, and nothing would say so.
+AGENT_READER_NAMES = {
+    "host": "AGENT_READER_HOST",
+    "port": "AGENT_READER_PORT",
+    "database": "AGENT_READER_DB",
+    "user": "AGENT_READER_USER",
+    "password": "AGENT_READER_PASSWORD",
+}
+
+
+def load_clickhouse_config() -> ClickHouseConfig:
+    return _load_clickhouse(CLICKHOUSE_POINTER, CLICKHOUSE_DEFAULT, CLICKHOUSE_NAMES)
+
+
+def load_agent_reader_config() -> ClickHouseConfig:
+    """The read-only user (clickhouse/users.d/agent_reader.xml), from agent-reader.env only."""
+    return _load_clickhouse(AGENT_READER_POINTER, AGENT_READER_DEFAULT, AGENT_READER_NAMES)
 
 
 def require_api_key(name: str) -> str:

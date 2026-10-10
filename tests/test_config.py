@@ -19,6 +19,16 @@ GOOD_CH = {
 }
 
 
+READER_VARS = tuple(config.AGENT_READER_NAMES.values())
+GOOD_READER = {
+    "AGENT_READER_HOST": "127.0.0.1",
+    "AGENT_READER_PORT": "8123",
+    "AGENT_READER_DB": "onchain_dbt",
+    "AGENT_READER_USER": "agent_reader",
+    "AGENT_READER_PASSWORD": FAKE_PASSWORD,
+}
+
+
 def write_env(path, values):
     path.write_text("".join(f"{k}={v}\n" for k, v in values.items()))
     return path
@@ -27,8 +37,9 @@ def write_env(path, values):
 @pytest.fixture(autouse=True)
 def clean_environment(monkeypatch, tmp_path):
     """No test may see the real secrets files or inherited variables."""
-    for name in (*CH_VARS, *config.API_KEY_NAMES):
+    for name in (*CH_VARS, *READER_VARS, *config.API_KEY_NAMES):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(config.AGENT_READER_POINTER, str(tmp_path / "absent-agent-reader.env"))
     monkeypatch.setenv(config.CLICKHOUSE_POINTER, str(tmp_path / "absent-clickhouse.env"))
     monkeypatch.setenv(config.API_KEYS_POINTER, str(tmp_path / "absent-api-keys.env"))
 
@@ -86,6 +97,67 @@ def test_environment_wins_over_file(monkeypatch, tmp_path):
 
 def test_clickhouse_config_does_not_need_the_api_keys_file(monkeypatch, tmp_path):
     """The split: database access must work with api-keys.env absent or unreadable."""
+    monkeypatch.setenv(config.CLICKHOUSE_POINTER, str(write_env(tmp_path / "ch.env", GOOD_CH)))
+    assert config.load_clickhouse_config().user == "indexer"
+
+
+def test_loads_agent_reader_config_from_its_own_file(monkeypatch, tmp_path):
+    path = write_env(tmp_path / "reader.env", GOOD_READER)
+    monkeypatch.setenv(config.AGENT_READER_POINTER, str(path))
+    cfg = config.load_agent_reader_config()
+    assert (cfg.host, cfg.port) == ("127.0.0.1", 8123)
+    assert (cfg.database, cfg.user) == ("onchain_dbt", "agent_reader")
+    assert cfg.password == FAKE_PASSWORD
+    assert FAKE_PASSWORD not in repr(cfg)
+
+
+def test_agent_reader_default_file_is_agent_reader_env():
+    assert config.AGENT_READER_POINTER == "AGENT_READER_ENV_FILE"
+    assert config.AGENT_READER_DEFAULT == "~/secrets/agent-reader.env"
+
+
+@pytest.mark.parametrize("missing", READER_VARS)
+def test_missing_agent_reader_variable_is_named(monkeypatch, tmp_path, missing):
+    values = {k: v for k, v in GOOD_READER.items() if k != missing}
+    monkeypatch.setenv(config.AGENT_READER_POINTER, str(write_env(tmp_path / "r.env", values)))
+    with pytest.raises(config.ConfigError) as err:
+        config.load_agent_reader_config()
+    assert missing in str(err.value)
+    assert FAKE_PASSWORD not in str(err.value)
+
+
+def test_missing_agent_reader_file_is_reported_with_its_path():
+    with pytest.raises(config.ConfigError) as err:
+        config.load_agent_reader_config()
+    assert "absent-agent-reader.env" in str(err.value)
+    assert "file not found" in str(err.value)
+
+
+def test_agent_reader_placeholder_and_bad_port_are_rejected(monkeypatch, tmp_path):
+    values = {**GOOD_READER, "AGENT_READER_PASSWORD": config.PLACEHOLDER}
+    monkeypatch.setenv(config.AGENT_READER_POINTER, str(write_env(tmp_path / "a.env", values)))
+    with pytest.raises(config.ConfigError, match="AGENT_READER_PASSWORD"):
+        config.load_agent_reader_config()
+    values = {**GOOD_READER, "AGENT_READER_PORT": "eight-thousand"}
+    monkeypatch.setenv(config.AGENT_READER_POINTER, str(write_env(tmp_path / "b.env", values)))
+    with pytest.raises(config.ConfigError) as err:
+        config.load_agent_reader_config()
+    assert "AGENT_READER_PORT" in str(err.value)
+    assert "eight-thousand" not in str(err.value)
+
+
+def test_the_writer_credentials_never_become_the_reader(monkeypatch, tmp_path):
+    """An exported clickhouse.env (as `make dbt-build` does) must not reach the reader."""
+    for name, value in GOOD_CH.items():
+        monkeypatch.setenv(name, value)
+    with pytest.raises(config.ConfigError, match="AGENT_READER_"):
+        config.load_agent_reader_config()
+    path = write_env(tmp_path / "reader.env", GOOD_READER)
+    monkeypatch.setenv(config.AGENT_READER_POINTER, str(path))
+    assert config.load_agent_reader_config().user == "agent_reader"
+
+
+def test_the_reader_file_is_not_needed_by_the_writer(monkeypatch, tmp_path):
     monkeypatch.setenv(config.CLICKHOUSE_POINTER, str(write_env(tmp_path / "ch.env", GOOD_CH)))
     assert config.load_clickhouse_config().user == "indexer"
 

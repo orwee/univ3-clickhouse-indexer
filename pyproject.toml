@@ -55,6 +55,8 @@ select = ["E", "F", "I", "B", "UP", "S"]
 # The only interpolated value is the table name, validated by clickhouse.qualified().
 "src/univ3_indexer/loader.py" = ["S608"]
 "src/univ3_indexer/mv.py" = ["S608"]
+# Database and table names come from the users.d file of this repo, validated by qualified().
+"src/univ3_indexer/agent_reader.py" = ["S608"]
 # Long lines are Markdown table rows; the only interpolated name is validated.
 "src/univ3_indexer/reconcile.py" = ["E501", "S608"]
 "src/univ3_indexer/h2_check.py" = ["E501"]
