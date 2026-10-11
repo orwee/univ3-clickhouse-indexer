@@ -22,8 +22,6 @@ A swap of ours is "named" when its transaction hash is among the transactions of
 
 | Pool | Our swaps in the window | Our USD | Named swaps | Named transactions | Named USD | Share of swaps | Share of USD |
 |---|---|---|---|---|---|---|---|
-| wstETH/USDC 0.3% | 15 | 1,766 | 0 | 0 | 0 | 0.0000% | 0.0000% |
-| wstETH/USDC 0.05% | 104 | 2,134 | 1 | 1 | 5 | 0.9615% | 0.2334% |
 | USDC/WETH 0.05% | 6,955 | 48,468,095 | 14 | 14 | 70,173 | 0.2013% | 0.1448% |
 | USDC/WETH 0.01% | 21,386 | 44,561,323 | 48 | 48 | 93,299 | 0.2244% | 0.2094% |
 | **All four** | 28,460 | 93,033,317 | 63 | 63 | 163,477 | 0.2214% | 0.1757% |
@@ -31,3 +29,5 @@ A swap of ours is "named" when its transaction hash is among the transactions of
 Distinct transactions of the response inside the window: 181. Present in `raw_swaps`, in any of the pools: 56.
 
 A transaction can route through two of the pools: the per-pool rows then count it once each, and the total row adds them up.
+
+A pool with fewer than 5 smart-money swaps is not shown on its own. Such pools are merged into one row, "other pools", and that row is left out too when it is still under 5. The total counts every pool.

@@ -12,7 +12,7 @@ import pytest
 import requests
 
 from univ3_indexer import clickhouse as ch
-from univ3_indexer import landing, loader, nansen
+from univ3_indexer import config, landing, loader, nansen
 
 from .test_loader import RAW, make_landing
 
@@ -328,6 +328,106 @@ def test_the_report_carries_no_hash_address_or_label(clickhouse, loaded):
     )
     assert named[2:12] not in text and "ab" * 20 not in text and "Synthetic Fund" not in text
     assert not re.search(r"0x[0-9a-fA-F]{40}", text), "not even a pool address"
+
+
+# --- small counts are not published per pool ------------------------------------------------
+
+
+def _pools(*counts):
+    return [
+        {
+            "pool": f"pool {n}",
+            "named_swaps": count,
+            "swaps": 100 * (n + 1),
+            "named_volume_usd": 10.0 * count,
+        }
+        for n, count in enumerate(counts)
+    ]
+
+
+SUMMED = ("named_swaps", "swaps", "named_volume_usd")
+
+
+def _published(rows):
+    out = nansen.publishable(rows, "named_swaps", "pool", SUMMED)
+    return [(row["pool"], row["named_swaps"]) for row in out]
+
+
+def test_a_pool_under_five_smart_money_swaps_has_no_row_of_its_own():
+    assert nansen.MIN_PUBLISHED_SWAPS == 5
+    # Five is shown, four is not: the two sides of the rule.
+    assert _published(_pools(5, 48)) == [("pool 0", 5), ("pool 1", 48)]
+    assert _published(_pools(4, 48)) == [("pool 1", 48)]
+    # Nothing small: nothing changes, and no "other pools" row appears.
+    assert _published(_pools(14, 48)) == [("pool 0", 14), ("pool 1", 48)]
+    assert _published([]) == []
+
+
+def test_small_pools_are_merged_and_the_merged_row_is_shown_only_from_five():
+    # 2 + 3 = 5: one row, "other pools", after the pools that have their own.
+    rows = _pools(2, 48, 3)
+    merged = nansen.publishable(rows, "named_swaps", "pool", SUMMED)
+    assert [row["pool"] for row in merged] == ["pool 1", nansen.OTHER_POOLS]
+    assert merged[1] == {
+        "pool": "other pools",
+        "named_swaps": 5,
+        "swaps": 400,
+        "named_volume_usd": 50.0,
+    }
+    # 2 + 2 = 4: still under five, so it is not shown and only the total stays.
+    assert _published(_pools(2, 48, 2)) == [("pool 1", 48)]
+    # A pool with none is under five like any other.
+    assert _published(_pools(0, 1, 48)) == [("pool 2", 48)]
+    assert _published(_pools(0, 0, 0)) == []
+    assert rows == _pools(2, 48, 3), "the rows given are not changed"
+
+
+def test_the_cross_report_applies_the_rule_and_its_total_still_counts_every_pool():
+    pools = [
+        {"pool": "thin", "swaps": 104, "volume_usd": 2134.0, "named_swaps": 1,
+         "named_transactions": 1, "named_volume_usd": 5.0},
+        {"pool": "deep", "swaps": 6955, "volume_usd": 48468095.0, "named_swaps": 14,
+         "named_transactions": 14, "named_volume_usd": 70173.0},
+    ]  # fmt: skip
+    moment = datetime.datetime(2026, 9, 20, 14, 0, tzinfo=datetime.UTC)
+    text = nansen.render(
+        nansen.Cross(
+            fetched_at="2026-09-20T14:28:00+00:00", credits={}, trades=2, transactions=2,
+            is_last_page=True, response_from=moment, response_to=moment, our_last_swap=moment,
+            trades_after_our_data=0, window_from=moment, window_to=moment,
+            transactions_in_window=2, transactions_found=2, pools=pools,
+        )
+    )  # fmt: skip
+    table = [line for line in text.splitlines() if line.startswith("| ") and "Pool" not in line]
+    assert [line.split(" | ")[0] for line in table] == ["| deep", "| **All four**"]
+    assert "| **All four** | 7,059 | 48,470,229 | 15 | 15 | 70,178 |" in text  # thin is in it
+    assert "| thin" not in text and f"| {nansen.OTHER_POOLS} |" not in text
+    assert nansen.SMALL_COUNTS_NOTE in text
+
+
+def test_no_published_smart_money_table_has_a_small_row_or_points_at_a_day():
+    """The committed documents, read as they are."""
+    for name in ("NANSEN.md", "NANSEN_CROSS.md"):
+        text = (config.REPO_ROOT / "docs" / name).read_text()
+        assert "Days with any" not in text and "Highest daily" not in text, name
+        assert nansen.SMALL_COUNTS_NOTE in text, name
+        tables = 0
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            if not line.startswith("| Pool |"):
+                continue
+            header = [cell.strip() for cell in line.strip("|").split("|")]
+            counted = [c for c in header if c in ("In smart-money transactions", "Named swaps")]
+            if not counted:
+                continue
+            column, tables = header.index(counted[0]), tables + 1
+            for row in lines[i + 2 :]:
+                if not row.startswith("|"):
+                    break
+                cells = [cell.strip() for cell in row.strip("|").split("|")]
+                if cells[0] != "**All four**":
+                    assert int(cells[column].replace(",", "")) >= nansen.MIN_PUBLISHED_SWAPS, row
+        assert tables >= 1, name
 
 
 # --- tgm/dex-trades: token from pools.yml, pages cached, a ledger that outlives the process ----

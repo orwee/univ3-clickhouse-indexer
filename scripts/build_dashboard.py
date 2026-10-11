@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 from univ3_indexer import clickhouse as ch
-from univ3_indexer import config, external, reconcile
+from univ3_indexer import config, external, nansen, reconcile
 from univ3_indexer.pools import load_pools
 
 REPO = config.REPO_ROOT
@@ -539,7 +539,6 @@ SELECT pool_label,
        sum(smart_money_swaps) AS smart_swaps,
        toFloat64(sum(volume_usd)) AS volume_usd,
        sum(smart_money_volume_usd) AS smart_volume_usd,
-       countIf(smart_money_volume_usd > 0) AS days_with_any,
        min(block_date) AS first_day,
        max(block_date) AS last_day
 FROM {DBT_DB}.fct_pool_daily_smart_money
@@ -1885,6 +1884,14 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         tot_smart_swaps += r["smart_swaps"]
         tot_usd += r["volume_usd"]
         tot_smart_usd += r["smart_volume_usd"]
+    # A pool with fewer than five smart-money swaps gets no row of its own.
+    shown = nansen.publishable(
+        data["smart"],
+        "smart_swaps",
+        "pool_label",
+        ("swaps", "smart_swaps", "volume_usd", "smart_volume_usd"),
+    )
+    for r in shown:
         smart_rows.append(
             [
                 esc(r["pool_label"]),
@@ -1898,7 +1905,6 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
                 esc(r["pool_label"]),
                 fint(r["swaps"]),
                 fint(r["smart_swaps"]),
-                f"{r['days_with_any']} of {r['pool_days']}",
             ]
         )
     smart_rows.append(
@@ -1910,7 +1916,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         ]
     )
     count_rows.append(
-        ["<b>all four</b>", f"<b>{fint(tot_swaps)}</b>", f"<b>{fint(tot_smart_swaps)}</b>", ""]
+        ["<b>all four</b>", f"<b>{fint(tot_swaps)}</b>", f"<b>{fint(tot_smart_swaps)}</b>"]
     )
     body = (
         chart
@@ -1927,15 +1933,16 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         + details(
             "The swap counts behind those shares",
             table(
-                ["pool", "our swaps", "in smart-money tx", "days with any"],
+                ["pool", "our swaps", "in smart-money tx"],
                 count_rows,
-                widths=[31, 23, 23, 23],
+                widths=[40, 30, 30],
             ),
         )
         + f'<p class="note"><b>Smart-money data: Powered by Nansen API.</b> Aggregates per '
-        f"pool and day only, derived from Nansen's classification; no address, label or "
+        f"pool only, derived from Nansen's classification; no address, label or "
         f"transaction hash is republished. {first_day} to {last_day}, the "
-        f"{sum(r['pool_days'] for r in data['smart'])} pool-days that were fetched.</p>"
+        f"{sum(r['pool_days'] for r in data['smart'])} pool-days that were fetched. "
+        f"{esc(nansen.SMALL_COUNTS_NOTE)}</p>"
     )
     placed["senders"] = section(
         "senders",
