@@ -233,6 +233,8 @@ def test_without_the_reader_an_evaluation_does_not_start(setup, monkeypatch, cap
         (["--variant", "x", "--max-usd", "plenty"], "--max-usd must be a number"),
         (["--variant", "x", "--limit", "0"], "no case was selected"),
         (["--variant", "x", "--repetitions", "0"], "--repetitions must be at least 1"),
+        (["--variant", "../x"], "--variant is letters, digits, dot, dash and underscore"),
+        (["--variant", "a b"], "--variant is letters, digits, dot, dash and underscore"),
     ],
 )
 def test_arguments_that_cannot_be_run_stop_before_anything_is_asked(arguments, says, capsys):

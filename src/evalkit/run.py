@@ -29,6 +29,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import uuid
@@ -45,6 +46,7 @@ from univ3_indexer import config
 DEFAULT_CONFIG = config.REPO_ROOT / "evals" / "warehouse.yml"
 API_KEY_NAME = "ANTHROPIC_API_KEY"  # noqa: S105 - the name of a variable, not a value
 FORMAT = 1
+VARIANT = re.compile(r"[A-Za-z0-9._-]+")  # it becomes part of file names
 SETUP_ERROR = 2
 
 
@@ -179,6 +181,8 @@ def main(argv: list[str] | None = None, *, make_llm: Callable | None = None) -> 
         return _stop(f"{type(problem).__name__}: {problem}")
     except InvalidOperation:
         return _stop(f"--max-usd must be a number, got {args.max_usd!r}")
+    if not VARIANT.fullmatch(args.variant):
+        return _stop("--variant is letters, digits, dot, dash and underscore: it names files")
     if not chosen:
         return _stop("no case was selected: nothing to run")
     if args.repetitions < 1:
