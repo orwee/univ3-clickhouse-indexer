@@ -111,6 +111,27 @@ def test_no_address_and_no_hash_anywhere(page):
     assert not loose, f"0x-prefixed hex on the page: {loose[:3]}"
 
 
+def test_smart_money_is_published_per_pool_and_small_counts_are_not(page):
+    """Per pool, never per pool and day; no pool under five smart-money swaps has a row of
+    its own; no column of the smart-money tables points at single days."""
+    import html as html_module
+
+    from univ3_indexer import nansen
+
+    assert "Aggregates per pool only" in page and "Aggregates per pool and day" not in page
+    assert html_module.escape(nansen.SMALL_COUNTS_NOTE) in page
+    section = page[page.index("<h3>Smart money, over the days fetched") :]
+    section = section[: section.index("Powered by Nansen API")]
+    assert "days with any" not in section and "highest daily" not in section.lower()
+    tables = re.findall(r"<tbody>(.*?)</tbody>", section)
+    assert len(tables) == 2
+    for row in re.findall(r"<tr>(.*?)</tr>", tables[1]):  # pool, our swaps, in smart-money tx
+        cells = [re.sub(r"<[^>]+>", "", cell) for cell in re.findall(r"<td>(.*?)</td>", row)]
+        assert len(cells) == 3
+        if cells[0] != "all four":
+            assert int(cells[2].replace(",", "")) >= nansen.MIN_PUBLISHED_SWAPS, cells
+
+
 def test_no_nansen_identifier_is_republished(page):
     """Only the attribution line and aggregates: no label, no address from their responses."""
     assert "Powered by Nansen API" in page

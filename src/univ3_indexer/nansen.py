@@ -579,6 +579,36 @@ def _sql(path: Path) -> str:
     return ch.strip_sql_comments(path.read_text(encoding="utf-8")).strip().rstrip(";")
 
 
+# A figure that rests on fewer than this many smart-money swaps is not published for one pool
+# on its own: with so few, a count and an amount can point at a transaction, and through it
+# at the wallet Nansen classifies.
+MIN_PUBLISHED_SWAPS = 5
+OTHER_POOLS = "other pools"
+SMALL_COUNTS_NOTE = (
+    f"A pool with fewer than {MIN_PUBLISHED_SWAPS} smart-money swaps is not shown on its own. "
+    f'Such pools are merged into one row, "{OTHER_POOLS}", and that row is left out too when '
+    f"it is still under {MIN_PUBLISHED_SWAPS}. The total counts every pool."
+)
+
+
+def publishable(rows: list[dict], count: str, label: str, sums: tuple[str, ...]) -> list[dict]:
+    """The per-pool rows that may be published, in their order.
+
+    A pool whose ``count`` is under ``MIN_PUBLISHED_SWAPS`` loses its own row. Those pools
+    are merged into one row labelled ``OTHER_POOLS``, with the ``sums`` columns added up; if
+    the merged row is still under the minimum it is not returned at all, and only the total,
+    which the caller computes over every pool, is left to stand for them.
+    """
+    kept = [row for row in rows if row[count] >= MIN_PUBLISHED_SWAPS]
+    small = [row for row in rows if row[count] < MIN_PUBLISHED_SWAPS]
+    if not small:
+        return kept
+    merged = {label: OTHER_POOLS, **{key: sum(row[key] for row in small) for key in sums}}
+    if merged[count] < MIN_PUBLISHED_SWAPS:
+        return kept
+    return [*kept, merged]
+
+
 def _share(part: float, whole: float) -> str:
     return f"{100 * part / whole:.4f}%" if whole else "n/a"
 
@@ -639,6 +669,7 @@ def render(result: Cross) -> str:
     for r in result.pools:
         for key in total:
             total[key] += r[key]
+    for r in publishable(result.pools, "named_swaps", "pool", tuple(total)):
         out.append(
             f"| {r['pool']} | {r['swaps']:,} | {r['volume_usd']:,.0f} | {r['named_swaps']:,} | "
             f"{r['named_transactions']:,} | {r['named_volume_usd']:,.0f} | "
@@ -660,6 +691,8 @@ def render(result: Cross) -> str:
         "",
         "A transaction can route through two of the pools: the per-pool rows then count it once "
         "each, and the total row adds them up.",
+        "",
+        SMALL_COUNTS_NOTE,
         "",
     ]
     return "\n".join(out)

@@ -68,13 +68,13 @@ by `fct_pool_daily`. 30 complete days, 120 pool-days, 2026-08-21 to 2026-09-19:
 > no address, label or transaction hash from their responses is redistributed, following their
 > redistribution guidelines (<https://docs.nansen.ai/mcp/redistribution-guidelines.md>).
 
-| Pool | Our swaps | In smart-money transactions | Our USD | Smart-money USD | Share of swaps | Share of USD | Days with any | Highest daily share of USD |
-|---|---|---|---|---|---|---|---|---|
-| USDC/WETH 0.05% | 227,562 | 153 | 2,438,587,799 | 1,698,906 | 0.067% | 0.070% | 27 of 30 | 0.39% |
-| USDC/WETH 0.01% | 626,933 | 521 | 1,368,378,340 | 1,320,570 | 0.083% | 0.097% | 30 of 30 | 0.23% |
-| wstETH/USDC 0.05% | 4,594 | 2 | 26,352,526 | 4,195 | 0.044% | 0.016% | 2 of 30 | 4.21% |
-| wstETH/USDC 0.3% | 602 | 1 | 57,219 | 50 | 0.166% | 0.087% | 1 of 30 | 0.62% |
-| **All four** | 859,691 | 677 | 3,833,375,884 | 3,023,721 | 0.079% | 0.079% | | |
+| Pool | Our swaps | In smart-money transactions | Our USD | Smart-money USD | Share of swaps | Share of USD |
+|---|---|---|---|---|---|---|
+| USDC/WETH 0.05% | 227,562 | 153 | 2,438,587,799 | 1,698,906 | 0.067% | 0.070% |
+| USDC/WETH 0.01% | 626,933 | 521 | 1,368,378,340 | 1,320,570 | 0.083% | 0.097% |
+| **All four** | 859,691 | 677 | 3,833,375,884 | 3,023,721 | 0.079% | 0.079% |
+
+A pool with fewer than 5 smart-money swaps is not shown on its own. Such pools are merged into one row, "other pools", and that row is left out too when it is still under 5. The total counts every pool.
 
 Of the 1,498 transactions Nansen lists, 666 pool-transactions are in `raw_swaps` (a
 transaction routed through two of the pools counts once in each). What these shares mean is
@@ -84,13 +84,13 @@ not decided here.
 trades in one page, the window closed (newest trade 23:53 UTC on 2026-09-24), cached like the
 others and crossed the same way. 20 pool-days, 2026-09-20 to 2026-09-24:
 
-| Pool | Our swaps | In smart-money transactions | Our USD | Smart-money USD | Share of swaps | Share of USD | Days with any | Highest daily share of USD |
-|---|---|---|---|---|---|---|---|---|
-| USDC/WETH 0.01% | 110,804 | 145 | 414,591,114 | 602,432 | 0.131% | 0.145% | 5 of 5 | 0.31% |
-| USDC/WETH 0.05% | 34,124 | 42 | 341,467,959 | 545,946 | 0.123% | 0.160% | 5 of 5 | 0.43% |
-| wstETH/USDC 0.3% | 273 | 0 | 35,372 | 0 | 0% | 0% | 0 of 5 | 0% |
-| wstETH/USDC 0.05% | 469 | 1 | 22,490 | 5 | 0.213% | 0.022% | 1 of 5 | 0.38% |
-| **All four** | 145,670 | 188 | 756,116,935 | 1,148,383 | 0.129% | 0.152% | | |
+| Pool | Our swaps | In smart-money transactions | Our USD | Smart-money USD | Share of swaps | Share of USD |
+|---|---|---|---|---|---|---|
+| USDC/WETH 0.01% | 110,804 | 145 | 414,591,114 | 602,432 | 0.131% | 0.145% |
+| USDC/WETH 0.05% | 34,124 | 42 | 341,467,959 | 545,946 | 0.123% | 0.160% |
+| **All four** | 145,670 | 188 | 756,116,935 | 1,148,383 | 0.129% | 0.152% |
+
+A pool with fewer than 5 smart-money swaps is not shown on its own. Such pools are merged into one row, "other pools", and that row is left out too when it is still under 5. The total counts every pool.
 
 Over the 35 days now fetched (2026-08-21 to 2026-09-24, 140 pool-days): 865 of 1,005,361 swaps
 (0.086%) and 4,172,105 of 4,589,492,820 USD (0.091%). The five new days are higher than the
