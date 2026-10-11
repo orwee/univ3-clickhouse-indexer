@@ -6,6 +6,9 @@ Every figure printed here is read from the file ``python -m evalkit.run`` wrote.
 is recomputed from elsewhere, compared with another run or commented on. A proportion is
 shown with the two counts it is made of and its 95% Wilson interval. ``--top`` prints only
 the first tables, for a job summary.
+
+A run that did not finish, a run that stopped on its budget and a run in which questions
+ended in an error each say so in a table of their own, before anything else.
 """
 
 from __future__ import annotations
@@ -48,13 +51,27 @@ def _table(header: list[str], rows: list[list[object]]) -> list[str]:
 def _what_was_run(r: dict) -> list[str]:
     fingerprint = r["fixture_fingerprint"]
     s = r["summary"]
+    files = [[f"Variant file {path}", f"SHA-256 {sha}"] for path, sha in r["variant_files"].items()]
+    rescored = [
+        ["Rescored", f"at {step['at']}, from golden SHA-256 {step['from_golden_sha256']} to "
+                     f"{step['to_golden_sha256']}; {len(step['changed'])} scores changed"]
+        for step in r.get("rescored", [])
+    ]  # fmt: skip
+    reruns = [
+        ["Errors asked again", f"{len(step['asked_again'])} in run {step['run_id']} at commit "
+                               f"{step['commit']}, for ${step['spent_usd']}; "
+                               f"{len(step['not_asked_again'])} not asked again"]
+        for step in r.get("reruns", [])
+    ]  # fmt: skip
     rows = [
         ["Variant", r["variant"]],
+        *files,
         ["Model", r["model"]],
         ["Commit", r["commit"]],
         ["Started", r["started"]],
-        ["Ended", r["ended"]],
+        ["Ended", r["ended"] or f"not finished; file last written {r['written']}"],
         ["Golden file", f"{r['golden_file']}, SHA-256 {r['golden_sha256']}"],
+        *rescored,
         ["System prompt", f"SHA-256 {r['system_prompt_sha256']}"],
         ["Fixture", f"exported {fingerprint.get('exported_on')}, marts built from "
                     f"{fingerprint.get('built_from_commit')}"],
@@ -63,12 +80,52 @@ def _what_was_run(r: dict) -> list[str]:
         ["Repetitions", r["repetitions"]],
         ["Questions asked", f"{s['ran']} of {s['records']}"],
         ["Not run", s["not_run"]],
+        ["Ended in an error, in no figure below", s["errors"]["count"]],
+        ["Scored", s["scored"]],
+        ["Waits after a 429 or a 529", f"{s['waits']['count']} in {s['waits']['questions']} "
+                                       f"questions, {s['waits']['seconds']:.0f} s in all"],
+        *reruns,
         ["Budget", f"${r['budget_usd']}"],
         ["Spent", f"${r['spent_usd']}"],
         ["Per question", f"${r['limits']['max_usd_per_question']}, {r['limits']['max_iterations']} "
                          f"model calls, {r['limits']['row_cap']} rows"],
     ]  # fmt: skip
     return _table(["What was run", ""], rows)
+
+
+def _warnings(r: dict) -> list[str]:
+    """What a reader has to know before any figure: unfinished, partial, errors."""
+    s = r["summary"]
+    lines = []
+    if r["state"] != "complete":
+        reached = s["records"] - len(r["not_reached"])
+        lines += _table(
+            ["UNFINISHED RUN"],
+            [[f"This file was written while the run was going, after {reached} of "
+              f"{s['records']} questions, and the run never wrote a later one. "
+              f"{len(r['not_reached'])} questions were not reached; they are the ones marked "
+              "not run below."]],
+        )  # fmt: skip
+    elif s["partial"]:
+        lines += _table(
+            ["PARTIAL RUN"],
+            [[f"{s['not_run']} of {s['records']} questions were not asked. Every "
+              "figure below is over the ones that were."]],
+        )  # fmt: skip
+    errors = s["errors"]
+    if errors["count"]:
+        lines += _table(
+            ["RUN WITH ERRORS"],
+            [[f"{errors['count']} of {s['ran']} questions asked ended in an error (the API, the "
+              f"network or the budget), not in an answer. They are counted here and in no "
+              f"figure below: every accuracy is over the other {s['scored']}. They cost "
+              f"${errors['usd']}."]],
+        )  # fmt: skip
+        lines += _table(
+            ["Why a question ended in an error", "Questions"],
+            [[reason, count] for reason, count in errors["reasons"].items()],
+        )
+    return lines
 
 
 def _headline(figures: dict) -> list[str]:
@@ -178,12 +235,16 @@ def _cases(r: dict) -> list[str]:
         answer = result.get("answer") or {}
         got = answer.get("refusal_reason") if result["status"] == "refused" else answer.get("value")
         status = result["status"] + (f" ({result['reason']})" if result.get("reason") else "")
+        if result["status"] == "error":
+            correct = "not scored"
+        else:
+            correct = "yes" if record["score"]["correct"] else "NO"
         rows.append(
             [
                 record["id"],
                 record["repetition"],
                 status,
-                "yes" if record["score"]["correct"] else "NO",
+                correct,
                 "refusal" if case["answer_type"] == "refusal" else _shown(case["expected"]),
                 _shown(got)[:200],
             ]
@@ -194,17 +255,13 @@ def _cases(r: dict) -> list[str]:
 def render(results: dict, top_only: bool = False) -> str:
     summary = results["summary"]
     lines = [f"# Evaluation: {_cell(results['variant'])}", ""]
-    if summary["partial"]:
-        lines += _table(
-            ["PARTIAL RUN"],
-            [[f"{summary['not_run']} of {summary['records']} questions were not asked. Every "
-              "figure below is over the ones that were."]],
-        )  # fmt: skip
+    lines += _warnings(results)
     lines += _what_was_run(results)
     lines += _headline(summary["overall"])
     lines += _refusals(summary["overall"])
     lines += _costs(summary["overall"])
     if not top_only:
+        lines += _breakdown("By split", summary["by_split"])
         lines += _breakdown("By kind", summary["by_kind"])
         lines += _breakdown("By family", summary["by_family"])
         if "repetitions" in summary:

@@ -60,7 +60,7 @@ It is started by hand and by nothing else.
    same page.
 
 The job is green when the status is `answered` or `refused`, and red for anything else: no
-answer, an ungrounded answer, or a command that could not run. The summary is written
+answer, an error, an ungrounded answer, or a command that could not run. The summary is written
 either way.
 
 What to know before pressing the button:
@@ -73,9 +73,13 @@ What to know before pressing the button:
 - **Every run is a paid request** to the model provider, up to `max_usd`.
 - **It needs a secret named `ANTHROPIC_API_KEY` in the `agent-eval` environment.** The
   workflow gives it to the one step that runs the agent and to no other.
-- **It has never run.** A workflow started by hand only appears in the Actions tab once its
-  file is on `main`, and running it needs the owner. Nothing in this repository's history
-  is the output of a real model.
+- **The owner ran it twice on 2026-10-11**, and nobody else has. The first run
+  ([38150273030](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38150273030))
+  ended in an error: the API rejected the request with HTTP 400 because the key was not
+  scoped to a workspace, and booked nothing. The second
+  ([38150882341](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38150882341))
+  answered its question in three model calls. Both figures are in the artifacts of those
+  runs, not in this repository.
 
 ## How a question ends
 
@@ -84,20 +88,31 @@ What to know before pressing the button:
 | `answered` | `submit_answer` was called and its value is a cell of the last result |
 | `refused` | The model said the data cannot answer, and why. A correct outcome |
 | `ungrounded` | `submit_answer` was called and its value is **not** a cell of the last result |
-| `no_answer` | The cap on model calls was reached, the budget refused a call, a model call failed, or the model stopped on its own |
+| `no_answer` | The cap on model calls was reached, or the model stopped on its own. The model's outcome |
+| `error` | The API or the network failed, or the budget refused a call. Not the model's outcome |
 
 At the cap the result is `no_answer`. The loop never builds an answer out of what it has
 seen.
 
-**When a model call fails**, the question ends there as `no_answer`: nothing is retried.
-The reason says what failed. When the API answered with an error status it reads
+**One kind of request is sent again**: one the API answered with 429 (too many requests) or
+529 (overloaded). Those say the request was not served, so nothing was billed, and sending
+it again is not a second paid attempt. The loop waits what the `retry-after` header says,
+at most 60 seconds (with no header: 10, 20 and 40 seconds), and sends the same request
+again, at most three times for one call. Every wait is in the result, under `waits`, and
+in the ledger as a line booked at zero. Nothing else is ever sent twice.
+
+**When a model call fails** for any other reason, or is refused a fourth time, the question
+ends there as `error`. The reason says what failed. When the API answered with an error status it reads
 `llm_error: BadRequestError: HTTP 400, invalid_request_error: …`: the status code, the API's
 own error type and the first 300 characters of its message, taken from the body of the
 response and from nowhere else, so never the request, a header or the key. That reason is
 in the plain output, in the JSON and in the workflow's summary. What the call costs depends
-on what happened. A request the API rejected with a 4xx status was not served, so it is
-booked at zero, and the ledger note says so. A timeout, a lost connection and a 5xx may have
-been served and billed, so they are booked at the worst case of the call.
+on what happened. A request the API rejected with a 4xx status or with 529 was not served,
+so it is booked at zero, and the ledger note says so. A timeout, a lost connection and any
+other 5xx may have been served and billed, so they are booked at the worst case of the call.
+
+The result also keeps `last_result`: the column names and the first 50 rows of the last
+query that ran, which is what the answer was checked against.
 
 ## Guardrails: what the server enforces and what is code
 
@@ -124,7 +139,8 @@ DECISIONS.md; the read-only user is entry
 - at most 200 rows of a result reach the model, and the same SQL is not sent twice after
   it failed;
 - at most 6 model calls per question;
-- a dollar budget per question, checked before every model call, with a ledger; no retry;
+- a dollar budget per question, checked before every model call, with a ledger; no retry,
+  except of a request the API answered with 429 or 529, which was not served;
 - the answer must be a cell of the last result, or it is marked `ungrounded`.
 
 **Instructions, not enforcement.** The prompt
@@ -181,7 +197,7 @@ How to read it:
   `claude-opus-5-5` and 4 of 6 for `claude-sonnet-5-5`, with 0.02 and 0.08 USD spent. Its
   results were smaller than the ones here; the conclusion is the same.
 - With the default model the bound is not what stops a question. With the other two,
-  raise `--max-usd` or expect `no_answer` with the reason `budget:` on questions that read
+  raise `--max-usd` or expect `error` with the reason `budget:` on questions that read
   large results.
 
 `claude-haiku-5-5` is priced by prompt length: a request whose prompt is over 100,000

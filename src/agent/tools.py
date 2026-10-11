@@ -7,6 +7,9 @@ result with ``ok`` false, because the error text is what the model corrects itse
 The client handed to ``Tools`` decides what can be read. In production it is connected as
 the read-only user, and the grants of that user are the table list the server enforces;
 the list in the YAML only says which tables ``describe_schema`` shows.
+
+Descriptions of tables and columns are optional and come from the caller, as an argument.
+Nothing here knows where they were written or what they say.
 """
 
 from __future__ import annotations
@@ -90,17 +93,28 @@ class Tools:
 
     ``client`` is a clickhouse-connect client whose default database is the warehouse's, so
     the model writes table names without a database in front.
+
+    ``descriptions`` is optional: ``{table: {"description": text, "columns": {name: text}}}``,
+    both keys optional. What is given is returned by ``describe_schema`` next to the names
+    and the types; a table or a column it names that the database does not have is ignored.
     """
 
-    def __init__(self, client, warehouse: Warehouse):
+    def __init__(self, client, warehouse: Warehouse, descriptions: dict | None = None):
         self._client = client
         self._warehouse = warehouse
+        self._descriptions = dict(descriptions or {})
         self._failed: set[str] = set()
+
+    @property
+    def has_descriptions(self) -> bool:
+        return bool(self._descriptions)
 
     def describe_schema(self, tables: list[str] | None = None) -> dict:
         """Column names and types of the configured tables, or of the ones asked for.
 
-        Names and types only, as DESCRIBE TABLE gives them: no descriptions.
+        Names and types as DESCRIBE TABLE gives them. When ``Tools`` was given descriptions,
+        a column that has one carries it as ``description``, and the tables that have one
+        are listed under ``descriptions``.
         """
         wanted = list(tables) if tables else list(self._warehouse.tables)
         unknown = [t for t in wanted if t not in self._warehouse.tables]
@@ -120,8 +134,24 @@ class Tools:
                 return _failure("database", _first_line(str(exc)), exc.code)
             except Exception as exc:  # noqa: BLE001 - nothing may escape into the loop
                 return _failure("client", f"{type(exc).__name__}: {_first_line(str(exc))}")
-            described[table] = [{"name": row[0], "type": row[1]} for row in rows]
-        return {"ok": True, "database": self._warehouse.database, "tables": described}
+            notes = (self._descriptions.get(table) or {}).get("columns") or {}
+            described[table] = [
+                {
+                    "name": row[0],
+                    "type": row[1],
+                    **({"description": notes[row[0]]} if row[0] in notes else {}),
+                }
+                for row in rows
+            ]
+        output = {"ok": True, "database": self._warehouse.database, "tables": described}
+        about = {
+            table: self._descriptions[table]["description"]
+            for table in described
+            if (self._descriptions.get(table) or {}).get("description")
+        }
+        if about:
+            output["descriptions"] = about
+        return output
 
     def run_sql(self, sql: str) -> dict:
         """Run one SELECT and return its rows, at most ``row_cap`` of them.

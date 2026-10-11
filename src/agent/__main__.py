@@ -4,8 +4,9 @@
         [--config evals/warehouse.yml] [--max-usd 0.25] [--json] [--model ID]
 
 Prints the answer, the SQL used and the cost. Exit code 0 for an answer or a refusal, 1 when
-there is no answer or the answer is not grounded in the last result, 2 when the command
-could not run at all.
+there is no answer, when the question ended in an error (the API, the network or the
+budget) or when the answer is not grounded in the last result, 2 when the command could
+not run at all.
 
 It connects to ClickHouse as the read-only user, with the credentials of agent-reader.env
 and with nothing else. When that user is not available it says so and stops: there is no
@@ -81,6 +82,8 @@ def _render(result: loop.Result) -> str:
     elif result.status == "ungrounded":
         lines.append(f"UNGROUNDED, do not trust: {answer.get('value')}")
         lines.append(f"Why: {result.reason}")
+    elif result.status == "error":
+        lines.append(f"Error, the question was not answered: {result.reason}")
     else:
         lines.append(f"No answer: {result.reason}")
     if answer.get("explanation"):

@@ -172,7 +172,7 @@ def test_the_budget_refuses_a_call_before_it_is_sent():
     """The first call's worst case is over eight cents of output alone: three cents never fit."""
     result, model, purse = ask([describe()], FakeTools(), max_usd="0.03")
     assert model.calls == []
-    assert result.status == "no_answer" and result.reason.startswith("budget: a call that can cost")
+    assert result.status == "error" and result.reason.startswith("budget: a call that can cost")
     assert result.usd == 0 == purse.spent and result.iterations == 0
 
 
@@ -180,7 +180,7 @@ def test_the_budget_refuses_the_next_call_once_the_money_is_spent():
     heavy = llm.Usage(input_tokens=20_000, output_tokens=4_000)  # $0.16
     result, model, purse = ask([describe(heavy), describe()], FakeTools(), max_usd="0.25")
     assert len(model.calls) == 1 and result.iterations == 1
-    assert result.status == "no_answer" and "$0.16 of $0.25 already spent" in result.reason
+    assert result.status == "error" and "$0.16 of $0.25 already spent" in result.reason
     assert result.usd == Decimal("0.16") == purse.spent
 
 
@@ -203,7 +203,7 @@ def test_a_failed_model_call_is_booked_at_its_worst_case_and_ends_the_question(t
     purse = budget.DollarBudget("1", ledger)
     model = llm.ScriptedLLM([describe(), llm.LLMError("_APITimeoutError")], OPUS)
     result = loop.run("q", model, FakeTools(), purse)
-    assert result.status == "no_answer" and result.reason == "llm_error: _APITimeoutError"
+    assert result.status == "error" and result.reason == "llm_error: _APITimeoutError"
     assert result.iterations == 2 and len(model.calls) == 2  # one attempt, not retried
     booked = [json.loads(line) for line in ledger.read_text().splitlines()]
     assert [e["outcome"] for e in booked] == ["ok", "failed"]
@@ -218,7 +218,7 @@ def test_a_failed_model_call_is_booked_at_its_worst_case_and_ends_the_question(t
     assert booked[1]["note"] == "iteration 2: LLMError, booked at the worst case"
 
 
-@pytest.mark.parametrize("status", [500, 502, 529])
+@pytest.mark.parametrize("status", [500, 502, 503])
 def test_a_5xx_may_have_been_served_and_stays_at_the_worst_case(tmp_path, status):
     ledger = tmp_path / "ledger.jsonl"
     error = llm.LLMError(
@@ -230,11 +230,12 @@ def test_a_5xx_may_have_been_served_and_stays_at_the_worst_case(tmp_path, status
     booked = json.loads(ledger.read_text())
     assert booked["outcome"] == "failed" and Decimal(booked["usd"]) > Decimal("0.08192")
     assert result.usd == Decimal(booked["usd"]) and "worst case" in booked["note"]
+    assert result.status == "error" and result.waits == []  # and it is not sent again
 
 
 @pytest.mark.parametrize(
     ("status", "kind"),
-    [(400, "invalid_request_error"), (401, "authentication_error"), (429, "rate_limit_error")],
+    [(400, "invalid_request_error"), (401, "authentication_error"), (404, "not_found_error")],
 )
 def test_a_call_the_api_rejected_was_not_served_and_is_booked_at_zero(tmp_path, status, kind):
     ledger = tmp_path / "ledger.jsonl"
@@ -244,8 +245,8 @@ def test_a_call_the_api_rejected_was_not_served_and_is_booked_at_zero(tmp_path, 
         said, status_code=status, error_type=kind, detail="max_tokens: field required"
     )
     result = loop.run("q", llm.ScriptedLLM([describe(), error], OPUS), FakeTools(), purse)
-    assert result.status == "no_answer" and result.reason == f"llm_error: {said}"
-    assert result.iterations == 2
+    assert result.status == "error" and result.reason == f"llm_error: {said}"
+    assert result.iterations == 2 and result.waits == []
     first, second = (json.loads(line) for line in ledger.read_text().splitlines())
     assert (first["usd"], first["outcome"]) == ("0.006", "ok")
     assert (second["usd"], second["outcome"]) == ("0", "failed")
@@ -254,6 +255,105 @@ def test_a_call_the_api_rejected_was_not_served_and_is_booked_at_zero(tmp_path, 
     )
     assert result.usd == Decimal("0.006") == purse.spent  # only the call that was served
     assert result.to_json()["reason"] == f"llm_error: {said}"
+
+
+def limited(status=429, retry_after=None):
+    return llm.LLMError(
+        f"RateLimitError: HTTP {status}", status_code=status, retry_after=retry_after
+    )
+
+
+@pytest.mark.parametrize("status", [429, 529])
+def test_a_429_or_a_529_is_waited_for_and_the_same_request_is_sent_again(tmp_path, status):
+    ledger = tmp_path / "ledger.jsonl"
+    purse = budget.DollarBudget("1", ledger)
+    script = [
+        describe(),
+        limited(status, 7),
+        query("SELECT 1 AS v"),
+        submit(type="number", value="1"),
+    ]
+    model, slept = llm.ScriptedLLM(script, OPUS), []
+    result = loop.run("q", model, FakeTools(rows(["1"])), purse, sleep=slept.append)
+    assert result.status == "answered" and slept == [7.0]
+    assert result.waits == [
+        {"iteration": 2, "attempt": 1, "status_code": status, "seconds": 7.0, "from_header": True}
+    ]
+    assert result.to_json()["waits"] == result.waits
+    # The request that was refused and the one sent after the wait are the same request.
+    assert model.calls[1] == model.calls[2] and len(model.calls) == 4
+    assert result.iterations == 3  # the wait is not a turn
+    booked = [json.loads(line) for line in ledger.read_text().splitlines()]
+    assert [(e["usd"], e["outcome"]) for e in booked] == [
+        ("0.006", "ok"), ("0", "failed"), ("0.006", "ok"), ("0.006", "ok"),
+    ]  # fmt: skip
+    assert f"HTTP {status}, not served, booked at zero; waiting 7 s" in booked[1]["note"]
+    assert result.usd == Decimal("0.018") == purse.spent  # nothing was paid for the 429
+
+
+def test_a_call_is_sent_again_at_most_three_times_and_then_the_question_is_an_error():
+    """Four refusals of one call: three waits, and the fourth ends the question. What the
+    API says is waited, at most a minute; with no header, 10, 20 and 40 seconds."""
+    script = [limited(529, 300), limited(529), limited(529), limited(529), describe()]
+    model, slept = llm.ScriptedLLM(script, OPUS), []
+    result = loop.run("q", model, FakeTools(), budget.DollarBudget("1"), sleep=slept.append)
+    assert slept == [60.0, 20.0, 40.0] and len(model.calls) == 4 == loop.MAX_RESENDS + 1
+    assert result.status == "error" and result.reason == "llm_error: RateLimitError: HTTP 529"
+    assert [(w["attempt"], w["seconds"], w["from_header"]) for w in result.waits] == [
+        (1, 60.0, True), (2, 20.0, False), (3, 40.0, False),
+    ]  # fmt: skip
+    assert result.usd == 0 and result.answer is None
+
+
+def test_the_three_times_are_per_call_not_per_question():
+    script = [
+        limited(), describe(), limited(), limited(), limited(),
+        submit(type="refusal", refusal_reason="No such column."),
+    ]  # fmt: skip
+    slept = []
+    result = loop.run(
+        "q", llm.ScriptedLLM(script, OPUS), FakeTools(), budget.DollarBudget("1"),
+        sleep=slept.append,
+    )  # fmt: skip
+    assert result.status == "refused" and slept == [10.0, 10.0, 20.0, 40.0]
+    assert [(w["iteration"], w["attempt"]) for w in result.waits] == [
+        (1, 1), (2, 1), (2, 2), (2, 3),
+    ]  # fmt: skip
+
+
+def test_how_long_a_wait_is():
+    assert loop.wait_seconds(3, 1) == 3 and loop.wait_seconds(0, 2) == 0
+    assert loop.wait_seconds(61, 1) == 60 == loop.wait_seconds(3600, 3) == loop.MAX_WAIT_SECONDS
+    assert [loop.wait_seconds(None, n) for n in (1, 2, 3)] == [10, 20, 40]
+    assert loop.wait_seconds(None, 9) == 60
+
+
+def test_the_first_rows_of_the_last_result_are_kept_in_the_result():
+    many = rows(*([str(n)] for n in range(60)))
+    script = [query("SELECT 0"), query("SELECT number"), submit(type="number", value="59")]
+    result, _, _ = ask(script, FakeTools(rows(["x"]), many))
+    assert result.status == "answered"  # checked against all sixty, not against the fifty kept
+    kept = result.to_json()["last_result"]
+    assert kept["columns"] == ["v"] and kept["row_count"] == 60 and kept["truncated"] is False
+    assert kept["rows"] == [[str(n)] for n in range(50)] and loop.KEPT_ROWS == 50
+    # A question that never ran a query has none.
+    result, _, _ = ask([submit(type="refusal", refusal_reason="No such column.")], FakeTools())
+    assert result.to_json()["last_result"] is None
+
+
+def test_an_addendum_is_appended_to_the_system_prompt_and_descriptions_change_one_sentence():
+    script = [submit(type="refusal", refusal_reason="No.")]
+    _, plain, _ = ask(list(script), FakeTools())
+    assert loop.NO_DESCRIPTIONS in plain.calls[0]["system"]
+    assert plain.calls[0]["system"] == loop.system_prompt(loop.DEFAULT_MAX_ITERATIONS, 200)
+    _, more, _ = ask(list(script), FakeTools(), prompt_addendum="  A volume is in whole units.\n")
+    assert more.calls[0]["system"] == plain.calls[0]["system"] + "\nA volume is in whole units.\n"
+    described = FakeTools()
+    described.has_descriptions = True
+    _, told, _ = ask(list(script), described)
+    assert loop.WITH_DESCRIPTIONS in told.calls[0]["system"]
+    assert loop.NO_DESCRIPTIONS not in told.calls[0]["system"]
+    assert "{{" not in told.calls[0]["system"]
 
 
 def test_a_refusal_ends_the_question_and_needs_no_result():
@@ -513,10 +613,10 @@ def test_why_a_model_call_failed_is_in_the_plain_output_and_in_the_json():
     error = llm.LLMError(said, status_code=400, error_type="invalid_request_error")
     result = loop.run("q", llm.ScriptedLLM([error], OPUS), FakeTools(), budget.DollarBudget("1"))
     printed = cli._render(result).splitlines()
-    assert printed[0] == f"No answer: llm_error: {said}"
+    assert printed[0] == f"Error, the question was not answered: llm_error: {said}"
     assert printed[-1].startswith("Cost: $0 (0 input and 0 output tokens, 1 model calls")
     as_json = json.loads(json.dumps(result.to_json()))
-    assert as_json["status"] == "no_answer" and as_json["reason"] == f"llm_error: {said}"
+    assert as_json["status"] == "error" and as_json["reason"] == f"llm_error: {said}"
     assert as_json["usd"] == "0"
 
 
@@ -608,7 +708,8 @@ def test_no_answer_and_ungrounded_exit_with_one(fixture_setup, capsys):
     assert code == 1 and capsys.readouterr().out.startswith("UNGROUNDED, do not trust: 2")
     code = cli.main(["q", "--config", str(fixture_setup), "--max-usd", "0.01"],
                     make_llm=lambda model: llm.ScriptedLLM([describe()], OPUS))  # fmt: skip
-    assert code == 1 and capsys.readouterr().out.startswith("No answer: budget:")
+    out = capsys.readouterr().out
+    assert code == 1 and out.startswith("Error, the question was not answered: budget:")
 
 
 def test_the_real_tools_in_the_loop(clickhouse, marts_database):

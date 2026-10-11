@@ -8,9 +8,19 @@ answer from what it has seen.
 Before every model call the budget is asked whether the worst case of that call still
 fits. A call that does not fit is not sent.
 
+One kind of request is sent again: one the API answered with 429 or 529. Those say the
+request was not served, so nothing was billed. The loop waits what the ``retry-after``
+header says, at most a minute, and sends the same request again, at most three times for
+one call. Every wait is recorded in the result. Nothing else is ever sent twice.
+
+How a question ends is one of five things. ``answered``, ``refused`` and ``ungrounded`` are
+what the model submitted. ``no_answer`` is the model's outcome too: it reached the cap of
+model calls, or it stopped. ``error`` is not the model's: the API or the network failed
+after those waits, or the budget refused a call.
+
 An answer is checked against the rows of the last successful ``run_sql``: the value
 submitted has to be one of its cells. When it is not, the answer is kept and marked
-``ungrounded``.
+``ungrounded``. The first rows of that last result are kept in the result.
 """
 
 from __future__ import annotations
@@ -30,6 +40,18 @@ from agent.tools import Tools
 SYSTEM_PROMPT_FILE = Path(__file__).parent / "prompts" / "system.md"
 DEFAULT_MAX_ITERATIONS = 6
 DEFAULT_MAX_TOKENS = 4096
+# After a 429 or a 529: how often one call is sent again, and how long a wait can be.
+MAX_RESENDS = 3
+MAX_WAIT_SECONDS = 60.0
+# With no retry-after header: 10, 20, then 40 seconds.
+WAIT_WITHOUT_HEADER_SECONDS = 10.0
+# Rows of the last result kept in the result of a question.
+KEPT_ROWS = 50
+NO_DESCRIPTIONS = "There are no descriptions: names and types are all there is."
+WITH_DESCRIPTIONS = (
+    "Where a table or a column has a description, it comes back next to its name and type: "
+    "read it before choosing a column."
+)
 ANSWER_TYPES = ("number", "label", "date", "list", "refusal")
 ANSWER_FIELDS = ("type", "value", "unit", "sql", "explanation", "refusal_reason")
 
@@ -111,9 +133,12 @@ class ToolCall:
 class Result:
     """How one question ended.
 
-    ``status`` is ``answered``, ``refused``, ``ungrounded`` or ``no_answer``. ``reason`` says
-    why for the last two. ``answer`` holds the six fields of ``submit_answer`` when the model
-    submitted one. ``final_sql`` is the last statement that actually ran successfully.
+    ``status`` is ``answered``, ``refused``, ``ungrounded``, ``no_answer`` or ``error``.
+    ``reason`` says why for the last three. ``answer`` holds the six fields of
+    ``submit_answer`` when the model submitted one. ``final_sql`` is the last statement
+    that actually ran successfully, and ``last_result`` what it returned: the column names,
+    the first ``KEPT_ROWS`` rows, and how many rows there were. ``waits`` has one entry for
+    every time the loop waited after a 429 or a 529 before sending a call again.
     """
 
     question: str
@@ -127,6 +152,8 @@ class Result:
     usage: Usage = field(default_factory=Usage)
     usd: Decimal = Decimal(0)
     seconds: float = 0.0
+    waits: list[dict] = field(default_factory=list)
+    last_result: dict | None = None
 
     def to_json(self) -> dict:
         return {
@@ -141,14 +168,35 @@ class Result:
             "tokens": asdict(self.usage),
             "usd": str(self.usd),
             "seconds": round(self.seconds, 3),
+            "waits": list(self.waits),
+            "last_result": self.last_result,
         }
 
 
-def system_prompt(max_iterations: int, row_cap: int) -> str:
+def system_prompt(
+    max_iterations: int, row_cap: int, addendum: str = "", descriptions: bool = False
+) -> str:
+    """The system prompt. ``addendum`` is appended as it is, after a blank line.
+
+    ``descriptions`` says whether ``describe_schema`` will return any, so that the prompt
+    does not tell the model there are none when there are.
+    """
     template = SYSTEM_PROMPT_FILE.read_text(encoding="utf-8")
-    return template.replace("{{max_iterations}}", str(max_iterations)).replace(
-        "{{row_cap}}", str(row_cap)
+    prompt = (
+        template.replace("{{max_iterations}}", str(max_iterations))
+        .replace("{{row_cap}}", str(row_cap))
+        .replace("{{descriptions}}", WITH_DESCRIPTIONS if descriptions else NO_DESCRIPTIONS)
     )
+    if addendum.strip():
+        prompt = prompt.rstrip("\n") + "\n\n" + addendum.strip() + "\n"
+    return prompt
+
+
+def wait_seconds(retry_after: float | None, attempt: int) -> float:
+    """How long to wait before sending a call again: what the API said, at most a minute."""
+    if retry_after is None:
+        retry_after = WAIT_WITHOUT_HEADER_SECONDS * 2 ** (attempt - 1)
+    return min(max(retry_after, 0.0), MAX_WAIT_SECONDS)
 
 
 def _number(value: object) -> Decimal | None:
@@ -234,13 +282,22 @@ def run(
     row_cap: int = 200,
     clock: Callable[[], float] = time.monotonic,
     transcript: list | None = None,
+    prompt_addendum: str = "",
+    sleep: Callable[[float], None] = time.sleep,
 ) -> Result:
     """Run one question. With ``transcript``, every turn is appended to that list as plain
     data: the question, what the model said and called, and what each tool returned in
-    full. It is for whoever keeps a record outside the result; the loop does not read it."""
+    full. It is for whoever keeps a record outside the result; the loop does not read it.
+    ``prompt_addendum`` is text appended to the system prompt; where it comes from is the
+    caller's business."""
     started = clock()
     result = Result(question=question, model=llm.model)
-    system = system_prompt(max_iterations, row_cap)
+    system = system_prompt(
+        max_iterations,
+        row_cap,
+        prompt_addendum,
+        descriptions=bool(getattr(tools, "has_descriptions", False)),
+    )
     messages: list = [{"role": "user", "content": question}]
 
     def keep(role: str, content: object) -> None:
@@ -261,29 +318,59 @@ def run(
         try:
             budget.check(worst)
         except BudgetExceeded as refusal:
-            return finish("no_answer", f"budget: {refusal}")
-        try:
-            response = llm.complete(
-                system=system, messages=messages, tools=TOOL_DEFINITIONS, max_tokens=max_tokens
-            )
-        except Exception as exc:  # noqa: BLE001 - whatever failed, the question ends here
-            # A request the API rejected with a 4xx status was not served, so it cost
-            # nothing. Anything else (a timeout, a lost connection, a 5xx) may have been
-            # served and billed, and is booked at the most it could have cost.
-            if isinstance(exc, llm_module.LLMError) and exc.rejected:
-                booked = Decimal(0)
-                note = (
-                    f"iteration {iteration}: rejected by the API with HTTP {exc.status_code}"
-                    f" ({exc.error_type or 'no error type'}), not served, booked at zero"
+            return finish("error", f"budget: {refusal}")
+        response = None
+        for resend in range(MAX_RESENDS + 1):
+            try:
+                response = llm.complete(
+                    system=system,
+                    messages=messages,
+                    tools=TOOL_DEFINITIONS,
+                    max_tokens=max_tokens,
                 )
-            else:
-                booked = worst
-                note = f"iteration {iteration}: {type(exc).__name__}, booked at the worst case"
-            budget.fail(booked, note, model=llm.model)
-            result.usd += booked
-            result.iterations = iteration
-            detail = str(exc) if isinstance(exc, llm_module.LLMError) else type(exc).__name__
-            return finish("no_answer", f"llm_error: {detail}")
+                break
+            except Exception as exc:  # noqa: BLE001 - whatever failed is handled here
+                known = isinstance(exc, llm_module.LLMError)
+                if known and exc.rate_limited and resend < MAX_RESENDS:
+                    # 429 or 529: the request was not served and nothing was billed. Wait
+                    # what the API says and send the same request again. This is the one
+                    # request the loop sends twice.
+                    seconds = wait_seconds(exc.retry_after, resend + 1)
+                    budget.fail(
+                        Decimal(0),
+                        f"iteration {iteration}: HTTP {exc.status_code}, not served, booked "
+                        f"at zero; waiting {seconds:g} s before sending it again",
+                        model=llm.model,
+                    )
+                    result.waits.append(
+                        {
+                            "iteration": iteration,
+                            "attempt": resend + 1,
+                            "status_code": exc.status_code,
+                            "seconds": seconds,
+                            "from_header": exc.retry_after is not None,
+                        }
+                    )
+                    sleep(seconds)
+                    continue
+                # A request the API rejected (a 4xx status, or a 529) was not served, so it
+                # cost nothing. Anything else (a timeout, a lost connection, another 5xx)
+                # may have been served and billed, and is booked at the most it could cost.
+                if known and exc.rejected:
+                    booked = Decimal(0)
+                    note = (
+                        f"iteration {iteration}: rejected by the API with HTTP "
+                        f"{exc.status_code} ({exc.error_type or 'no error type'}), not "
+                        "served, booked at zero"
+                    )
+                else:
+                    booked = worst
+                    note = f"iteration {iteration}: {type(exc).__name__}, booked at the worst case"
+                budget.fail(booked, note, model=llm.model)
+                result.usd += booked
+                result.iterations = iteration
+                detail = str(exc) if known else type(exc).__name__
+                return finish("error", f"llm_error: {detail}")
         cost = llm_module.cost_usd(llm.model, response.usage)
         budget.record(cost, f"iteration {iteration}", model=llm.model, **asdict(response.usage))
         result.usd += cost
@@ -331,6 +418,12 @@ def run(
                 output = tools.run_sql(sql)
                 if output.get("ok"):
                     last_rows, result.final_sql = output["rows"], sql
+                    result.last_result = {
+                        "columns": [column["name"] for column in output["columns"]],
+                        "rows": output["rows"][:KEPT_ROWS],
+                        "row_count": output["row_count"],
+                        "truncated": output["truncated"],
+                    }
             else:
                 output = {"ok": False, "error": {"kind": "unknown_tool", "message": name}}
             result.tool_calls.append(ToolCall(iteration, name, given, _summary(name, output)))
