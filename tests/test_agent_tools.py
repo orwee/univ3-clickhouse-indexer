@@ -34,6 +34,18 @@ def test_nothing_under_src_agent_knows_this_projects_domain():
         assert not found, f"{path.relative_to(config.REPO_ROOT)} mentions {found}"
 
 
+def test_the_prompt_names_no_table_and_no_limit_of_this_warehouse():
+    """It says a result too large for the server is an error, without saying how large."""
+    prompt = (AGENT_DIR / "prompts" / "system.md").read_text()
+    assert "A result too large for the server comes back as an error, not as a cut result" in prompt
+    assert "aggregate or to add LIMIT" in prompt
+    for table in warehouse.load(WAREHOUSE_YML).tables:
+        assert table not in prompt
+    for number in ("396", "10,000", "10000", "200", "0.25"):
+        assert number not in prompt, number
+    assert re.findall(r"\{\{(\w+)\}\}", prompt) == ["row_cap", "max_iterations"]
+
+
 def test_src_agent_imports_nothing_of_the_indexer_but_its_config():
     for path in AGENT_DIR.rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -233,6 +245,32 @@ def test_rows_over_the_cap_are_cut_and_flagged(kit):
     assert out["row_count"] == 5 and out["truncated"] is False
     # The connection is still usable after a result was cut short.
     assert kit.run_sql("SELECT 1 AS one")["rows"] == [[1]]
+
+
+def test_a_result_over_the_servers_row_limit_is_an_error_not_a_cut_result(kit, loaded):
+    """The read-only user has max_result_rows with result_overflow_mode = 'throw'. This
+    connection gets the same two settings for the session, with a small limit, to see what
+    the tool returns: over the server's limit there are no rows at all, only error 396.
+    Between the tool's cap and the server's limit the result is cut and flagged."""
+    import clickhouse_connect
+
+    c = config.load_clickhouse_config()
+    limited = clickhouse_connect.get_client(
+        host=c.host,
+        port=c.port,
+        username=c.user,
+        password=c.password,
+        database=loaded[0],
+        settings={"max_result_rows": 1000, "result_overflow_mode": "throw"},
+    )
+    capped = tools.Tools(limited, kit._warehouse)  # the tool's own cap is 5 rows
+    over = capped.run_sql("SELECT number FROM numbers(1001)")
+    assert over["ok"] is False and "rows" not in over
+    assert over["error"]["kind"] == "database" and over["error"]["code"] == 396
+    assert "TOO_MANY_ROWS_OR_BYTES" in over["error"]["message"]
+    within = capped.run_sql("SELECT number FROM numbers(1000)")
+    assert within["ok"] and within["row_count"] == 5 and within["truncated"] is True
+    assert capped.run_sql("SELECT number FROM numbers(1001) LIMIT 3")["rows"] == [[0], [1], [2]]
 
 
 def test_the_empty_smart_money_table_answers_with_no_rows(kit):
