@@ -80,6 +80,7 @@ def test_the_warehouse_job_runs_the_reader_tests_and_fails_if_they_skip():
     for name in ("reader", "tools", "loop", "budget_fit", "guard"):
         assert f"tests/test_agent_{name}.py" in run
     assert "tests/test_marts_fixture.py" in run and "tests/test_golden.py" in run
+    assert "tests/test_eval_run.py" in run
     assert 'if [ "$skipped" != "0" ]' in run and 'if [ "$reader" != "13" ]' in run
 
 

@@ -150,3 +150,80 @@ readings agree.
   a fee in basis points or in percent is written by hand.
 - **Anything a model would have to compute outside SQL.** Every template answer is one
   query.
+
+## Running an evaluation
+
+```sh
+PYTHONPATH=src uv run --group agent python -m evalkit.run evals/golden.jsonl \
+    --variant baseline [--split dev|test|all] [--ids FILE] [--limit N] [--model ID] \
+    [--repetitions N] [--max-usd 5] [--out results.json]
+PYTHONPATH=src uv run python -m evalkit.report results.json [--out report.md] [--top]
+```
+
+[`evalkit.run`](../src/evalkit/run.py) asks the agent every selected case and writes one
+results file. What it holds to:
+
+- **It connects as the read-only user**, as `python -m agent` does, and as nobody else.
+- **One budget for the whole run.** Before every question it checks that the question's own
+  ceiling (0.25 USD by default) still fits in what is left. When it does not, the run stops
+  and every case left is recorded as `not_run`. A partial run is never reported as a whole
+  one: the file says how many were not asked, and the report opens with it.
+- **Nothing is retried.** A question that ends in a model error is recorded as it ended.
+- **The results file says what was run**: the commit, the model, the variant, the SHA-256 of
+  the system prompt and of the golden file, the fixture's fingerprint, start and end, the
+  budget and what was spent, and for every case and repetition the agent's whole result
+  and its score.
+- **Full transcripts stay out of the repository.** Every row the model saw is written under
+  the data directory, `<data directory>/evals/<run>/transcripts/`, next to the ledger.
+
+[`evalkit.report`](../src/evalkit/report.py) turns a results file into Markdown: tables
+only, and nothing in it that is not in the file.
+
+## The metrics
+
+[`evalkit.score`](../src/evalkit/score.py) is deterministic and uses no model. A case that
+was not run is in none of these figures.
+
+**Correct.** For a case with an answer, the submitted value equals `expected` or one of
+`accepted`: within the tolerance for numbers, exactly after trimming and case-folding for
+labels, as a date for dates, element by element and in order for lists. Refusing such a
+case is wrong. For a case with no answer, refusing is right.
+
+**Execution accuracy.** Correct cases over cases that have an answer.
+
+**Valid SQL.** `run_sql` calls that ran over all `run_sql` calls; and, separately,
+questions with at least one failed query.
+
+**Refusals.** The two-by-two table: should refuse or not, did or did not. Precision is the
+share of the refusals made that were due; recall is the share of the refusals due that
+were made.
+
+**Hallucination rate.** Answered when it should have refused, plus answers marked
+`ungrounded`, over all cases. A value that is right and ungrounded counts in both places:
+accuracy says what was answered, this says where it came from.
+
+**Cost, tokens and seconds per question.** Mean, median and 95th percentile (by nearest
+rank: the smallest value with 95% of the questions at or below it). Cost per correct
+answer is the whole cost of the run over the number of correct cases.
+
+**Intervals and breakdowns.** Every proportion is printed as `k of n = p% [low, high]`,
+where the bracket is the 95% Wilson interval. With a few dozen cases the interval is wide,
+and it is there so that two runs are not read as different when they are not. Every figure
+is also broken down by kind and by family.
+
+**Repetitions.** With `--repetitions N` every case is asked N times. The file then says,
+per case, how many of the runs passed, how many cases passed every run, some runs or none,
+and the spread between runs: the lowest and the highest share of correct cases among the
+N runs, and their difference.
+
+Details that the definitions above leave open, and how the scorer settles them:
+
+- A submitted number may be JSON text or a JSON number. Anything that is not a finite
+  number is wrong, not an error.
+- A date is compared as a date: an ISO date, or an ISO timestamp at midnight. `22 August
+  2026` is wrong.
+- In a list, an element is compared as a date when both sides are dates, as a number
+  (exactly) when both are numbers, and otherwise as a label.
+- `no_answer` is wrong for every case, and is not a hallucination: nothing was made up.
+- A case with no answer that got a value counts once in the hallucination rate, even when
+  that value was also ungrounded.

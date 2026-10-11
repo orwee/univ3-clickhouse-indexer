@@ -233,11 +233,21 @@ def run(
     max_tokens: int = DEFAULT_MAX_TOKENS,
     row_cap: int = 200,
     clock: Callable[[], float] = time.monotonic,
+    transcript: list | None = None,
 ) -> Result:
+    """Run one question. With ``transcript``, every turn is appended to that list as plain
+    data: the question, what the model said and called, and what each tool returned in
+    full. It is for whoever keeps a record outside the result; the loop does not read it."""
     started = clock()
     result = Result(question=question, model=llm.model)
     system = system_prompt(max_iterations, row_cap)
     messages: list = [{"role": "user", "content": question}]
+
+    def keep(role: str, content: object) -> None:
+        if transcript is not None:
+            transcript.append({"role": role, "content": content})
+
+    keep("user", question)
     last_rows: list[list] | None = None
 
     def finish(status: str, reason: str = "") -> Result:
@@ -284,9 +294,11 @@ def run(
             return finish("no_answer", f"model_stop: {response.stop_reason}")
 
         messages.append({"role": "assistant", "content": response.assistant_content()})
+        keep("assistant", list(response.content))
         calls = [block for block in response.content if block["type"] == "tool_use"]
         if not calls:
             messages.append({"role": "user", "content": NUDGE})
+            keep("user", NUDGE)
             continue
 
         outputs = []
@@ -337,4 +349,5 @@ def run(
                 ],
             }
         )
+        keep("user", messages[-1]["content"])
     return finish("no_answer", f"iteration_cap: {max_iterations} model calls without an answer")
