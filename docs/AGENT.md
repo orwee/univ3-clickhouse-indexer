@@ -51,8 +51,9 @@ seen.
 
 ## Guardrails: what the server enforces and what is code
 
-The decision and its reasons are entry 21 of [DECISIONS.md](../DECISIONS.md), once the
-owner has added it; the read-only user is entry
+The decision and its reasons are entry
+[21](../DECISIONS.md#21-the-agents-guardrails-what-the-server-enforces-and-what-is-code) of
+DECISIONS.md; the read-only user is entry
 [19](../DECISIONS.md#19-a-read-only-user-limited-to-the-marts-for-readers-and-agents).
 
 **Enforced by ClickHouse**, whatever this code does, for the user `agent_reader`

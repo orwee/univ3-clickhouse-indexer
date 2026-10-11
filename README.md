@@ -25,8 +25,8 @@ ClickHouse, modelled with dbt, and reconciled against an independent source. 1,2
 
 A third source, the Nansen API, adds what a Swap log cannot carry: a classification of the
 account that signed the transaction. **Smart-money data: Powered by Nansen API** — the repository publishes only
-aggregates per pool and day derived from their classification, never an address, a label or a
-transaction hash from their responses, following their
+totals per pool over the days fetched, derived from their classification: no figure per pool
+and day, and never an address, a label or a transaction hash from their responses, following their
 [redistribution guidelines](https://docs.nansen.ai/mcp/redistribution-guidelines.md). See
 [docs/NANSEN.md](docs/NANSEN.md).
 

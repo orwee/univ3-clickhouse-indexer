@@ -62,7 +62,9 @@ transaction hash and stores one row per pool and UTC day in `nansen_smart_money_
 by `fct_pool_daily`. 30 complete days, 120 pool-days, 2026-08-21 to 2026-09-19:
 
 > **Smart-money data: Powered by Nansen API.** The aggregates below are derived from Nansen's
-> proprietary smart-money classification. Only aggregates per pool and day are published here;
+> proprietary smart-money classification. Only totals per pool over the days fetched are
+> published here, with no figure per pool and day
+> ([decision 20](../DECISIONS.md#20-the-fixture-carries-no-smart-money-rows));
 > no address, label or transaction hash from their responses is redistributed, following their
 > redistribution guidelines (<https://docs.nansen.ai/mcp/redistribution-guidelines.md>).
 
@@ -134,8 +136,8 @@ when it is missing, and the mart builds with no rows (`make demo` does exactly t
 Raw responses name wallets and carry Nansen's labels: they are Nansen's data about third
 parties. They live under `<data dir>/nansen/` (mode 600, outside the working copy and outside
 ClickHouse). The repo holds the client, tests that use **synthetic** responses only, and
-aggregates per pool and day. A test fails if a report contains a transaction hash, an address
-or a label.
+totals per pool over the days fetched; the rows per pool and day stay in the warehouse. A
+test fails if a report contains a transaction hash, an address or a label.
 
 ## What production would add
 
