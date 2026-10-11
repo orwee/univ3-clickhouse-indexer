@@ -215,6 +215,45 @@ def test_a_failed_model_call_is_booked_at_its_worst_case_and_ends_the_question(t
         "q", llm.ScriptedLLM([ValueError("boom")], OPUS), FakeTools(), budget.DollarBudget("1")
     )
     assert result.reason == "llm_error: ValueError"
+    assert booked[1]["note"] == "iteration 2: LLMError, booked at the worst case"
+
+
+@pytest.mark.parametrize("status", [500, 502, 529])
+def test_a_5xx_may_have_been_served_and_stays_at_the_worst_case(tmp_path, status):
+    ledger = tmp_path / "ledger.jsonl"
+    error = llm.LLMError(
+        f"InternalServerError: HTTP {status}", status_code=status, error_type="api_error"
+    )
+    result = loop.run(
+        "q", llm.ScriptedLLM([error], OPUS), FakeTools(), budget.DollarBudget("1", ledger)
+    )
+    booked = json.loads(ledger.read_text())
+    assert booked["outcome"] == "failed" and Decimal(booked["usd"]) > Decimal("0.08192")
+    assert result.usd == Decimal(booked["usd"]) and "worst case" in booked["note"]
+
+
+@pytest.mark.parametrize(
+    ("status", "kind"),
+    [(400, "invalid_request_error"), (401, "authentication_error"), (429, "rate_limit_error")],
+)
+def test_a_call_the_api_rejected_was_not_served_and_is_booked_at_zero(tmp_path, status, kind):
+    ledger = tmp_path / "ledger.jsonl"
+    purse = budget.DollarBudget("1", ledger)
+    said = f"BadRequestError: HTTP {status}, {kind}: max_tokens: field required"
+    error = llm.LLMError(
+        said, status_code=status, error_type=kind, detail="max_tokens: field required"
+    )
+    result = loop.run("q", llm.ScriptedLLM([describe(), error], OPUS), FakeTools(), purse)
+    assert result.status == "no_answer" and result.reason == f"llm_error: {said}"
+    assert result.iterations == 2
+    first, second = (json.loads(line) for line in ledger.read_text().splitlines())
+    assert (first["usd"], first["outcome"]) == ("0.006", "ok")
+    assert (second["usd"], second["outcome"]) == ("0", "failed")
+    assert second["note"] == (
+        f"iteration 2: rejected by the API with HTTP {status} ({kind}), not served, booked at zero"
+    )
+    assert result.usd == Decimal("0.006") == purse.spent  # only the call that was served
+    assert result.to_json()["reason"] == f"llm_error: {said}"
 
 
 def test_a_refusal_ends_the_question_and_needs_no_result():
@@ -467,6 +506,18 @@ def test_without_a_key_the_command_says_which_variable_is_missing(no_reader, mon
     err = capsys.readouterr().err
     assert "No model key: ANTHROPIC_API_KEY is not set" in err
     assert "ANTHROPIC_API_KEY" in config.API_KEY_NAMES
+
+
+def test_why_a_model_call_failed_is_in_the_plain_output_and_in_the_json():
+    said = "BadRequestError: HTTP 400, invalid_request_error: max_tokens: field required"
+    error = llm.LLMError(said, status_code=400, error_type="invalid_request_error")
+    result = loop.run("q", llm.ScriptedLLM([error], OPUS), FakeTools(), budget.DollarBudget("1"))
+    printed = cli._render(result).splitlines()
+    assert printed[0] == f"No answer: llm_error: {said}"
+    assert printed[-1].startswith("Cost: $0 (0 input and 0 output tokens, 1 model calls")
+    as_json = json.loads(json.dumps(result.to_json()))
+    assert as_json["status"] == "no_answer" and as_json["reason"] == f"llm_error: {said}"
+    assert as_json["usd"] == "0"
 
 
 def test_bad_arguments_stop_the_command(no_reader, tmp_path, capsys):

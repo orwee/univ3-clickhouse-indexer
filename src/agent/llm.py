@@ -104,8 +104,49 @@ class UnknownModel(ValueError):
     """No price is recorded for this model id, so its cost cannot be bounded or computed."""
 
 
+ERROR_MESSAGE_CHARS = 300
+
+
 class LLMError(RuntimeError):
-    """A model call failed. The message never holds the key or the request."""
+    """A model call failed. The message never holds the key, the request or a header.
+
+    When the API answered with an error status, ``status_code`` is that status,
+    ``error_type`` the API's own name for the error and ``detail`` the start of its message,
+    all three read from the body of the response. For a timeout or a connection error there
+    was no answer, and the three are empty.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_type: str | None = None,
+        detail: str = "",
+    ):
+        super().__init__(message)
+        self.status_code, self.error_type, self.detail = status_code, error_type, detail
+
+    @property
+    def rejected(self) -> bool:
+        """The API refused the request with a 4xx status: it was not served."""
+        return self.status_code is not None and 400 <= self.status_code < 500
+
+
+def _api_error(body: object) -> tuple[str | None, str]:
+    """The error type and the start of the message, from the body of an error response.
+
+    Only the two fields the API documents for an error are read. Anything else in the body,
+    and everything outside it, is left where it is.
+    """
+    error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        return None, ""
+    kind, message = error.get("type"), error.get("message")
+    return (
+        kind if isinstance(kind, str) else None,
+        " ".join(message.split())[:ERROR_MESSAGE_CHARS] if isinstance(message, str) else "",
+    )
 
 
 def price_of(model: str) -> Price:
@@ -227,7 +268,7 @@ class AnthropicLLM:
     """The official SDK, with no automatic retry and an explicit timeout.
 
     No retry: a retried request is a second billed request the budget did not approve. The
-    loop books a failed call at its worst case and stops.
+    loop stops at a failed call, and books it at its worst case unless the API rejected it.
     """
 
     def __init__(
@@ -259,7 +300,15 @@ class AnthropicLLM:
                 output_config={"effort": self._effort},
             )
         except self._anthropic.APIStatusError as exc:
-            raise LLMError(f"{type(exc).__name__}: HTTP {exc.status_code}") from None
+            kind, detail = _api_error(getattr(exc, "body", None))
+            said = f", {kind}" if kind else ""
+            said += f": {detail}" if detail else ""
+            raise LLMError(
+                f"{type(exc).__name__}: HTTP {exc.status_code}{said}",
+                status_code=exc.status_code,
+                error_type=kind,
+                detail=detail,
+            ) from None
         except self._anthropic.APIError as exc:  # timeouts and connection errors
             raise LLMError(type(exc).__name__) from None
         blocks = []
