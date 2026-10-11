@@ -1,0 +1,20 @@
+# What the committed copy of the marts is made of. src/evalkit/fixture.py is generic and
+# reads the names from here: which tables, which of them are kept as a schema with no rows
+# (and why, word for word what goes into fingerprint.json), and which columns the
+# fingerprint summarises.
+tables:
+- dim_pools
+- fct_pool_daily
+- fct_pool_daily_round_trips
+- fct_pool_daily_smart_money
+- fct_round_trip_legs
+schema_only:
+  fct_pool_daily_smart_money: Not published. A pool-day that holds a single smart-money swap gives
+    its USD amount to six decimals; the swaps are public on chain, so pool, day and amount identify
+    the transaction and through it the wallet Nansen classifies. Nansen's redistribution guidelines
+    require that published output cannot be reverse-engineered to their classification.
+fingerprint:
+  date_column: block_date
+  sum_columns:
+  - swaps
+  - volume_usd

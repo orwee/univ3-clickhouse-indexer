@@ -64,6 +64,9 @@ select = ["E", "F", "I", "B", "UP", "S"]
 # read back from system.tables.
 "src/evalkit/fixture.py" = ["S608"]
 "scripts/export_marts_fixture.py" = ["S608"]
+# The golden set: long lines are questions and queries, kept whole to be readable; the SQL is
+# built from names read out of the fixture files and passed through lit().
+"evals/golden_templates.py" = ["S608", "E501"]
 # Long lines are Markdown table rows; the only interpolated name is validated.
 "src/univ3_indexer/reconcile.py" = ["E501", "S608"]
 "src/univ3_indexer/h2_check.py" = ["E501"]
