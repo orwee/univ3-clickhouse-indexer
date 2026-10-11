@@ -65,6 +65,11 @@ def _connect_as_reader(database: str):
     )
 
 
+def connect_as_reader(database: str):
+    """The same connection, for other entry points that must use this user and no other."""
+    return _connect_as_reader(database)
+
+
 def _render(result: loop.Result) -> str:
     lines = []
     answer = result.answer or {}
