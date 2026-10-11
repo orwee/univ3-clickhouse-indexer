@@ -684,6 +684,97 @@ other work depends on (then the mount moves into `docker-compose.yml`).
 
 ---
 
+## 20. The fixture carries no smart-money rows
+
+- Date: 2026-10-11
+- Status: Accepted
+
+**Context.** The five marts are committed under `evals/fixture/` so that the evaluation
+and CI run on the data the warehouse serves. One of them, `fct_pool_daily_smart_money`,
+holds per pool-day figures derived from Nansen's classification of the signer. Five of
+its 140 pool-days hold exactly one smart-money swap, with its USD amount to six decimals.
+Until now this repository published totals per pool only.
+
+**Decision.** The per pool-day rows of `fct_pool_daily_smart_money` are not published.
+The fixture carries that table as a schema and no rows: the two header lines of its file
+and its `CREATE TABLE`. The export never selects its rows, the fingerprint says rows 0
+and why, and a test fails if the file ever gets a data row. The other four marts are
+committed whole.
+
+The read-only user keeps `SELECT` on `fct_pool_daily_smart_money`. On a server where that
+table has rows the agent can read and return them, so the results of a run against such a
+server are not published. The evaluation runs on the fixture, where the table is empty.
+
+**Why.** The swaps are public on chain, so a pool, a day and an amount identify the
+transaction, and through it the wallet Nansen classifies. Nansen's redistribution
+guidelines require that published output cannot be reverse-engineered to their
+classification. A total per pool over the whole period does not allow that; a pool-day
+with a single swap does.
+
+**Tradeoff.** The evaluation cannot ask anything about smart money: on the fixture the
+table exists and is empty, so the honest answer to such a question is a refusal. The
+fixture is no longer the warehouse table for table, and the test that compares them
+checks that mart by its schema only.
+
+**Revisit when.** The rows can be published in a form that cannot be traced back, for
+example only pool-days above a minimum number of swaps and with amounts rounded, or Nansen
+agrees in writing to the per pool-day figures.
+
+---
+
+## 21. The agent's guardrails: what the server enforces and what is code
+
+- Date: 2026-10-11
+- Status: Accepted
+
+**Context.** `python -m agent` lets a model write SQL against the warehouse and report
+an answer. Nobody reads the SQL before it runs, and nobody checks the answer before it is
+printed. Some of what keeps this safe is enforced by ClickHouse whatever the code does;
+the rest is code in `src/agent/`, which a bug or a later change can weaken. The two kinds
+should not be confused.
+
+**Decision.** Enforced by the server, for the user `agent_reader` (entry 19):
+
+- it cannot write, create, alter or drop anything (`readonly = 1`);
+- it can read five tables and no others (grants by name);
+- it cannot change a setting, so a query stops at 10 s, at 10,000 result rows and at
+  500,000,000 bytes of memory;
+- it cannot read from outside the database (no grant on any source).
+
+Enforced by code only:
+
+- the agent connects as `agent_reader` and as nobody else, and stops when that user is
+  not available;
+- the SQL guard: one statement, `SELECT` only, no `SETTINGS`, `FORMAT` or `INTO OUTFILE`,
+  no table function that reads outside. It gives the model a clear sentence early; every
+  one of its refusals that matters is also a refusal of the server;
+- at most 200 rows of a result reach the model, and the same failed SQL is not sent twice;
+- at most 6 model calls per question, and at the cap the result is `no_answer`;
+- a dollar budget per question, checked against the worst case before each model call,
+  with a ledger; no automatic retry;
+- the answer must be a cell of the last result, or it is marked `ungrounded`;
+- the prompt's rules (arithmetic in SQL, refuse instead of guessing) are instructions,
+  not enforcement: only the grounding check and the cap catch a model that ignores them.
+
+**Why.** A guard that parses SQL can be wrong, and an instruction can be ignored. What
+must never happen (a write, a read outside the five tables, a query that takes the
+server down) is therefore the server's job, tested against a real server in `make demo`.
+The code handles what the server cannot know: what the question was, what it may cost,
+and whether the answer came out of the data.
+
+**Tradeoff.** The agent cannot run where the reader does not exist, which today includes
+the real server. A correct answer that is not literally a cell of the last result is
+reported as ungrounded. The budget's worst case is a loose bound, so a question can be
+stopped with money left. A grounded answer can still be the wrong query: grounding shows
+the number came from the data, not that it answers the question. That is what the
+evaluation is for.
+
+**Revisit when.** The evaluation shows how often the model breaks a rule that only the
+prompt states, the budget bound stops questions that would have fitted, or the agent
+gets a tool that does more than read.
+
+---
+
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.
