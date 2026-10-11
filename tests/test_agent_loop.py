@@ -18,7 +18,10 @@ from univ3_indexer import config
 
 AGENT_DIR = config.REPO_ROOT / "src" / "agent"
 SCHEMA = {"ok": True, "database": "d", "tables": {"t": [{"name": "v", "type": "Decimal(76, 18)"}]}}
-SMALL = llm.Usage(input_tokens=1000, output_tokens=100)  # $0.006 on the default model
+# The arithmetic of these tests is written for one model, named here, so that changing the
+# default model of the agent does not change what they check.
+OPUS = "claude-opus-5-5"
+SMALL = llm.Usage(input_tokens=1000, output_tokens=100)  # $0.006 on OPUS
 
 
 def rows(*result_rows, columns=("v",)):
@@ -65,7 +68,7 @@ def submit(usage=SMALL, **fields):
 
 
 def ask(script, fake, max_usd="5", **options):
-    model = llm.ScriptedLLM(script)
+    model = llm.ScriptedLLM(script, OPUS)
     purse = budget.DollarBudget(max_usd)
     return loop.run("How much?", model, fake, purse, **options), model, purse
 
@@ -185,20 +188,20 @@ def test_every_call_is_booked_in_the_ledger(tmp_path):
     ledger = tmp_path / "ledger.jsonl"
     purse = budget.DollarBudget("1", ledger, scope="question:1")
     script = [describe(), submit(type="refusal", refusal_reason="No such column.")]
-    loop.run("q", llm.ScriptedLLM(script), FakeTools(), purse)
+    loop.run("q", llm.ScriptedLLM(script, OPUS), FakeTools(), purse)
     lines = [json.loads(line) for line in ledger.read_text().splitlines()]
     assert [(e["usd"], e["outcome"], e["note"]) for e in lines] == [
         ("0.006", "ok", "iteration 1"),
         ("0.006", "ok", "iteration 2"),
     ]
-    assert lines[0]["details"]["model"] == llm.DEFAULT_MODEL
+    assert lines[0]["details"]["model"] == OPUS
     assert lines[0]["details"]["input_tokens"] == 1000
 
 
 def test_a_failed_model_call_is_booked_at_its_worst_case_and_ends_the_question(tmp_path):
     ledger = tmp_path / "ledger.jsonl"
     purse = budget.DollarBudget("1", ledger)
-    model = llm.ScriptedLLM([describe(), llm.LLMError("_APITimeoutError")])
+    model = llm.ScriptedLLM([describe(), llm.LLMError("_APITimeoutError")], OPUS)
     result = loop.run("q", model, FakeTools(), purse)
     assert result.status == "no_answer" and result.reason == "llm_error: _APITimeoutError"
     assert result.iterations == 2 and len(model.calls) == 2  # one attempt, not retried
@@ -209,7 +212,7 @@ def test_a_failed_model_call_is_booked_at_its_worst_case_and_ends_the_question(t
     assert result.usd == Decimal("0.006") + worst == purse.spent
 
     result = loop.run(
-        "q", llm.ScriptedLLM([ValueError("boom")]), FakeTools(), budget.DollarBudget("1")
+        "q", llm.ScriptedLLM([ValueError("boom")], OPUS), FakeTools(), budget.DollarBudget("1")
     )
     assert result.reason == "llm_error: ValueError"
 
@@ -507,9 +510,11 @@ def test_a_scripted_question_end_to_end_on_the_fixture(fixture_setup, capsys, tm
         query(sql),
         submit(type="number", value=total, unit="USD", sql=sql, explanation="All volume."),
     ]
-    scripted = llm.ScriptedLLM(script)
+    scripted = llm.ScriptedLLM(script, OPUS)
+    asked_for = []
     code = cli.main(["What is the total?", "--config", str(fixture_setup), "--json"],
-                    make_llm=lambda model: scripted)  # fmt: skip
+                    make_llm=lambda model: asked_for.append(model) or scripted)  # fmt: skip
+    assert asked_for == [llm.DEFAULT_MODEL] == ["claude-haiku-5-5"]  # with no --model
     out = json.loads(capsys.readouterr().out)
     assert code == 0 and out["status"] == "answered"
     assert out["answer"]["value"] == total and out["final_sql"] == sql
@@ -528,19 +533,19 @@ def test_the_plain_output_has_the_answer_the_sql_and_the_cost(fixture_setup, cap
     sql = "SELECT count() AS n FROM dim_pools"
     script = [query(sql), submit(type="number", value=4, unit="rows", sql=sql, explanation="Rows.")]
     code = cli.main(["How many?", "--config", str(fixture_setup)],
-                    make_llm=lambda model: llm.ScriptedLLM(script))  # fmt: skip
+                    make_llm=lambda model: llm.ScriptedLLM(script, OPUS))  # fmt: skip
     out = capsys.readouterr().out.splitlines()
     assert code == 0
     assert out[0] == "Answer: 4 rows" and out[1] == "Explanation: Rows." and out[2] == f"SQL: {sql}"
     assert out[3].startswith("Cost: $0.012 (2,000 input and 200 output tokens, 2 model calls, ")
-    assert out[3].endswith(f"{llm.DEFAULT_MODEL})")
+    assert out[3].endswith(f"{OPUS})")
 
 
 def test_a_question_the_empty_table_cannot_answer_ends_in_a_refusal(fixture_setup, capsys):
     sql = "SELECT count() AS n FROM fct_pool_daily_smart_money"
     script = [query(sql), submit(type="refusal", refusal_reason="The table has no rows.")]
     code = cli.main(["q", "--config", str(fixture_setup)],
-                    make_llm=lambda model: llm.ScriptedLLM(script))  # fmt: skip
+                    make_llm=lambda model: llm.ScriptedLLM(script, OPUS))  # fmt: skip
     out = capsys.readouterr().out
     assert code == 0 and out.startswith("Refused: The table has no rows.")
 
@@ -548,10 +553,10 @@ def test_a_question_the_empty_table_cannot_answer_ends_in_a_refusal(fixture_setu
 def test_no_answer_and_ungrounded_exit_with_one(fixture_setup, capsys):
     script = [query("SELECT 1 AS n"), submit(type="number", value=2)]
     code = cli.main(["q", "--config", str(fixture_setup)],
-                    make_llm=lambda model: llm.ScriptedLLM(script))  # fmt: skip
+                    make_llm=lambda model: llm.ScriptedLLM(script, OPUS))  # fmt: skip
     assert code == 1 and capsys.readouterr().out.startswith("UNGROUNDED, do not trust: 2")
     code = cli.main(["q", "--config", str(fixture_setup), "--max-usd", "0.01"],
-                    make_llm=lambda model: llm.ScriptedLLM([describe()]))  # fmt: skip
+                    make_llm=lambda model: llm.ScriptedLLM([describe()], OPUS))  # fmt: skip
     assert code == 1 and capsys.readouterr().out.startswith("No answer: budget:")
 
 
@@ -565,7 +570,7 @@ def test_the_real_tools_in_the_loop(clickhouse, marts_database):
         submit(type="date", value="2026-09-25"),
     ]
     result = loop.run(
-        "Last day?", llm.ScriptedLLM(script), kit, budget.DollarBudget("1"), row_cap=3
+        "Last day?", llm.ScriptedLLM(script, OPUS), kit, budget.DollarBudget("1"), row_cap=3
     )
     assert result.status == "answered"
     assert result.tool_calls[0].summary["truncated"] is True

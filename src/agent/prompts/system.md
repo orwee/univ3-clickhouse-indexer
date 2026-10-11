@@ -12,6 +12,8 @@ what `run_sql` returns. Anything else you believe about the subject is not evide
 - `run_sql`: runs one SELECT and returns its rows. At most {{row_cap}} rows come back; if
   there were more, `truncated` is true and the rest is lost. Aggregate, filter, or ORDER BY
   with LIMIT in SQL instead of reading rows.
+  A result too large for the server comes back as an error, not as a cut result: the fix
+  is to aggregate or to add LIMIT.
 - `submit_answer`: ends the question. Call it exactly once, last.
 
 ## Rules

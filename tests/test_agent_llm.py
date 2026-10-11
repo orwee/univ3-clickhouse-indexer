@@ -31,8 +31,84 @@ def test_every_price_says_where_and_when_it_was_read():
         assert price.id_source == llm.MODELS_URL and price.price_source == llm.PRICING_URL
         assert price.id_source.startswith("https://platform.claude.com/docs/")
         assert re.fullmatch(r"\d{4}-\d\d-\d\d", price.read_on)
-        assert 0 < price.cache_read < price.input < price.cache_write_5m < price.cache_write_1h
-        assert price.input < price.output
+        for rates in filter(None, (price, price.long_prompt)):
+            assert 0 < rates.cache_read < rates.input < rates.cache_write_5m < rates.cache_write_1h
+            assert rates.input < rates.output
+        assert (price.long_prompt is None) == (price.long_prompt_threshold is None)
+
+
+def test_the_default_model_is_the_small_one():
+    """The owner's choice. It is the only model in the table priced by prompt length."""
+    assert llm.DEFAULT_MODEL == "claude-haiku-5-5"
+    tiered = [m for m, p in llm.PRICES.items() if p.long_prompt is not None]
+    assert tiered == ["claude-haiku-5-5"]
+    price = llm.PRICES["claude-haiku-5-5"]
+    assert price.long_prompt_threshold == 100_000 and price.read_on == "2026-10-11"
+    assert all(
+        getattr(price.long_prompt, kind) == 5 * getattr(price, kind)
+        for kind in ("input", "cache_write_5m", "cache_write_1h", "cache_read", "output")
+    )
+
+
+HAIKU = "claude-haiku-5-5"
+
+
+def test_a_call_is_priced_by_its_own_prompt_length_on_both_sides_of_the_threshold():
+    """Up to 100,000 prompt tokens the lower prices, one token more the higher ones, for
+    every kind of token of that call, the output included. Worked out by hand."""
+    # Exactly at the threshold. 60,000 x 0.10 + 40,000 x 0.01 + 1,000 x 0.50 = 6,900
+    at = llm.Usage(input_tokens=60_000, cache_read_tokens=40_000, output_tokens=1_000)
+    assert llm.prompt_tokens(at) == 100_000
+    assert llm.cost_usd(HAIKU, at) == Decimal("0.0069")
+    # One token over. 60,001 x 0.50 + 40,000 x 0.05 + 1,000 x 2.50 = 34,500.5
+    over = llm.Usage(input_tokens=60_001, cache_read_tokens=40_000, output_tokens=1_000)
+    assert llm.prompt_tokens(over) == 100_001
+    assert llm.cost_usd(HAIKU, over) == Decimal("0.0345005")
+
+
+def test_cache_reads_and_cache_writes_count_toward_the_threshold_and_output_does_not():
+    # 50,000 + 30,000 + 20,001 = 100,001 prompt tokens, none of them a plain cache miss
+    # over the line on its own. 50,000 x 0.50 + 30,000 x 0.625 + 20,001 x 1 = 63,751
+    writes = llm.Usage(
+        input_tokens=50_000, cache_write_5m_tokens=30_000, cache_write_1h_tokens=20_001
+    )
+    assert llm.cost_usd(HAIKU, writes) == Decimal("0.063751")
+    # The same call one cache-write token shorter is at the lower prices:
+    # 50,000 x 0.10 + 30,000 x 0.125 + 20,000 x 0.20 = 12,750
+    under = llm.Usage(
+        input_tokens=50_000, cache_write_5m_tokens=30_000, cache_write_1h_tokens=20_000
+    )
+    assert llm.cost_usd(HAIKU, under) == Decimal("0.01275")
+    # 50,000 output tokens do not make a 100,000-token prompt long.
+    # 100,000 x 0.10 + 50,000 x 0.50 = 35,000
+    chatty = llm.Usage(input_tokens=100_000, output_tokens=50_000)
+    assert llm.cost_usd(HAIKU, chatty) == Decimal("0.035")
+
+
+def test_the_worst_case_takes_the_higher_prices_as_soon_as_the_ceiling_is_over():
+    # 100,000 x 0.10 + 4,096 x 0.50 = 12,048
+    assert llm.worst_case_usd(HAIKU, 100_000, 4096) == Decimal("0.012048")
+    # 100,001 x 0.50 + 4,096 x 2.50 = 60,240.5
+    assert llm.worst_case_usd(HAIKU, 100_001, 4096) == Decimal("0.0602405")
+
+
+@pytest.mark.parametrize("ceiling", [1, 50_000, 99_999, 100_000, 100_001, 150_000, 400_000])
+def test_the_worst_case_is_never_under_the_real_cost_of_a_call_within_the_ceiling(ceiling):
+    """Whatever the call turns out to be, as long as its prompt is within the ceiling and
+    its output within the cap. The cases include a ceiling over the threshold with a real
+    prompt under it, and the other models, which have one set of prices."""
+    for model in llm.PRICES:
+        worst = llm.worst_case_usd(model, ceiling, 4096)
+        for prompt in {1, ceiling // 2, min(ceiling, 100_000), min(ceiling, 100_001), ceiling}:
+            for output in (0, 4096):
+                real = llm.cost_usd(model, llm.Usage(input_tokens=prompt, output_tokens=output))
+                assert real <= worst, (model, ceiling, prompt, output)
+
+
+def test_a_model_with_one_set_of_prices_ignores_the_prompt_length():
+    for model in ("claude-opus-5-5", "claude-sonnet-5-5"):
+        price = llm.PRICES[model]
+        assert price.rates_for(1) is price and price.rates_for(10_000_000) is price
 
 
 def test_cost_arithmetic_against_the_price_table():
@@ -177,7 +253,7 @@ def test_a_call_sends_what_it_was_given_and_maps_what_comes_back(sdk):
     out = model.complete(system="sys", messages=messages, tools=tools, max_tokens=4096)
     assert sdk.requests == [
         {
-            "model": "claude-opus-5-5",
+            "model": "claude-haiku-5-5",
             "max_tokens": 4096,
             "system": "sys",
             "tools": tools,

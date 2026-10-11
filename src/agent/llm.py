@@ -22,41 +22,78 @@ MILLION = Decimal(1_000_000)
 
 
 @dataclass(frozen=True)
-class Price:
-    """Dollars per million tokens, and where and when they were read."""
+class Rates:
+    """Dollars per million tokens, one price per kind of token."""
 
     input: Decimal
     cache_write_5m: Decimal
     cache_write_1h: Decimal
     cache_read: Decimal
     output: Decimal
-    id_source: str
-    price_source: str
-    read_on: str
 
 
-def _price(input_: str, write_5m: str, write_1h: str, read: str, output: str) -> Price:
+@dataclass(frozen=True)
+class Price(Rates):
+    """The prices of one model, and where and when they were read.
+
+    A model priced by prompt length has a second set of prices, ``long_prompt``, for a
+    request whose prompt is over ``long_prompt_threshold`` tokens. The prompt length of a
+    request counts all of its input tokens, cache reads and cache writes included, and a
+    request over the threshold pays the higher prices for every kind of token, the output
+    too.
+    """
+
+    id_source: str = ""
+    price_source: str = ""
+    read_on: str = ""
+    long_prompt_threshold: int | None = None
+    long_prompt: Rates | None = None
+
+    def rates_for(self, prompt_tokens: int) -> Rates:
+        """The prices a request with this many prompt tokens is billed at."""
+        if self.long_prompt is not None and prompt_tokens > self.long_prompt_threshold:
+            return self.long_prompt
+        return self
+
+
+def _rates(input_: str, write_5m: str, write_1h: str, read: str, output: str) -> Rates:
+    return Rates(*(Decimal(x) for x in (input_, write_5m, write_1h, read, output)))
+
+
+def _price(
+    *rates: str, read_on: str, over: int | None = None, long_prompt: Rates | None = None
+) -> Price:
     return Price(
-        Decimal(input_),
-        Decimal(write_5m),
-        Decimal(write_1h),
-        Decimal(read),
-        Decimal(output),
+        *(Decimal(x) for x in rates),
         id_source=MODELS_URL,  # the "Claude API ID" row of the models table
-        price_source=PRICING_URL,  # the "Model pricing" table
-        read_on="2026-10-10",
+        price_source=PRICING_URL,  # the "Model pricing" table and "Long context pricing"
+        read_on=read_on,
+        long_prompt_threshold=over,
+        long_prompt=long_prompt,
     )
 
 
 # Columns of the pricing table, in its order: base input tokens, 5m cache writes, 1h cache
 # writes, cache hits and refreshes, output tokens. All in USD per million tokens.
 PRICES: dict[str, Price] = {
+    # id: MODELS_URL, read 2026-10-11. prices: PRICING_URL, read 2026-10-11. Two rows in the
+    # table: "for prompts up to 100,000 tokens" and "for prompts over 100,000 tokens". What
+    # counts, from "Long context pricing" on the same page: "A request's prompt length
+    # counts all of its input tokens, including cache reads and cache writes. Each request
+    # is priced on its own".
+    "claude-haiku-5-5": _price(
+        "0.10", "0.125", "0.20", "0.01", "0.50",
+        read_on="2026-10-11",
+        over=100_000,
+        long_prompt=_rates("0.50", "0.625", "1", "0.05", "2.50"),
+    ),
     # id: MODELS_URL, read 2026-10-10. prices: PRICING_URL, read 2026-10-10.
-    "claude-opus-5-5": _price("4", "5", "8", "0.20", "20"),
+    "claude-opus-5-5": _price("4", "5", "8", "0.20", "20", read_on="2026-10-10"),
     # id: MODELS_URL, read 2026-10-10. prices: PRICING_URL, read 2026-10-10.
-    "claude-sonnet-5-5": _price("2", "2.50", "4", "0.10", "10"),
-}
-DEFAULT_MODEL = "claude-opus-5-5"
+    "claude-sonnet-5-5": _price("2", "2.50", "4", "0.10", "10", read_on="2026-10-10"),
+}  # fmt: skip
+# The owner's choice: the small model is the agent.
+DEFAULT_MODEL = "claude-haiku-5-5"
 
 # Tokens the API adds around a request that are not in its text (the instructions that go
 # with tool definitions, message framing). An allowance, on the generous side.
@@ -103,9 +140,23 @@ class Usage:
         )
 
 
+def prompt_tokens(usage: Usage) -> int:
+    """The prompt length of a call: all of its input tokens, cached or not."""
+    return (
+        usage.input_tokens
+        + usage.cache_read_tokens
+        + usage.cache_write_5m_tokens
+        + usage.cache_write_1h_tokens
+    )
+
+
 def cost_usd(model: str, usage: Usage) -> Decimal:
-    """What a call cost, exactly: every kind of token at its own price."""
-    p = price_of(model)
+    """What a call cost, exactly: every kind of token at its own price.
+
+    For a model priced by prompt length, the prices are the ones of this call's own prompt
+    length.
+    """
+    p = price_of(model).rates_for(prompt_tokens(usage))
     return (
         usage.input_tokens * p.input
         + usage.output_tokens * p.output
@@ -136,9 +187,11 @@ def worst_case_usd(model: str, input_ceiling: int, max_tokens: int) -> Decimal:
     """The most a call can cost: every input token at the base rate, the whole output cap.
 
     Input is priced at the base rate because the requests built here carry no cache
-    breakpoint, so nothing can be billed as a cache write.
+    breakpoint, so nothing can be billed as a cache write. For a model priced by prompt
+    length, the higher prices apply as soon as the ceiling is over the threshold: the real
+    prompt may be shorter, but nothing shows that before the call.
     """
-    p = price_of(model)
+    p = price_of(model).rates_for(input_ceiling)
     return (input_ceiling * p.input + max_tokens * p.output) / MILLION
 
 
