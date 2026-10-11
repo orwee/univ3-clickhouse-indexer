@@ -413,7 +413,7 @@ PYTHONPATH=src uv run python -m evalkit.calibration build evals/results/*_baseli
 PYTHONPATH=src uv run python -m evalkit.calibration agree evals/calibration/sheet.csv verdicts.json
 ```
 
-`build` writes [`evals/calibration/sheet.csv`](../evals/calibration/): thirty answered
+`build` writes `evals/calibration/sheet.csv`, which does not exist yet: thirty answered
 questions, each a different case, drawn with a fixed seed and stratified by the kind of
 case, from the `dev` split only. Fifteen keep the explanation the agent wrote. The other
 fifteen have an explanation altered on purpose, by code and not by a model: a number
