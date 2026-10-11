@@ -1,0 +1,115 @@
+# Ask the agent one question, by hand.
+#
+# Started from the Actions tab only (workflow_dispatch). The job runs in the `agent-eval`
+# environment, which holds the model key; a run that the environment makes wait for an
+# approval does not start until the owner gives it.
+#
+# The warehouse it asks is not the real one. It is a throw-away ClickHouse started in the
+# runner by scripts/ci_warehouse.sh, with the read-only user and the committed marts
+# fixture: the same data the tests run on, and nothing that is not already in the repository.
+#
+# Two rules this file keeps, and tests/test_workflows.py checks:
+#   - the inputs reach the shell through `env:`. No GitHub expression is written inside a
+#     `run:` script, where a question could be read as shell;
+#   - the model key is given to one step, the one that runs the agent, and to no other.
+#
+# The actions are the ones the tests workflow pins, at the same commits, plus the artifact
+# upload. SHAs looked up with `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` on 2026-10-11.
+name: agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      question:
+        description: "The question, in plain words"
+        required: true
+        type: string
+      model:
+        description: "A model id with a price in src/agent/llm.py. Empty: the default in the code"
+        required: false
+        default: ""
+        type: string
+      max_usd:
+        description: "Dollars for this question"
+        required: false
+        default: "0.25"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ask:
+    name: ask the agent
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: agent-eval
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.16" # the version demo/Dockerfile installs
+
+      - name: uv sync --frozen --group agent
+        run: uv sync --frozen --group agent
+
+      # ClickHouse with the read-only user and the fixture. Exports AGENT_READER_*.
+      - name: Start the warehouse
+        run: bash scripts/ci_warehouse.sh
+
+      # The only step that sees the key. It never fails the job by itself: the result is
+      # judged at the end, after the summary and the artifact have been written.
+      - name: Ask
+        env:
+          QUESTION: ${{ inputs.question }}
+          MODEL: ${{ inputs.model }}
+          MAX_USD: ${{ inputs.max_usd }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          arguments=(--json --max-usd "$MAX_USD")
+          if [ -n "$MODEL" ]; then
+            arguments+=(--model "$MODEL")
+          fi
+          set +e
+          PYTHONPATH=src uv run --frozen --group agent python -m agent "$QUESTION" "${arguments[@]}" \
+            > agent-result.json 2> agent-stderr.txt
+          code=$?
+          set -e
+          echo "$code" > agent-exit-code.txt
+          echo "python -m agent exited with $code"
+          cat agent-stderr.txt >&2
+
+      - name: Summary
+        if: always()
+        env:
+          QUESTION: ${{ inputs.question }}
+        run: |
+          python3 scripts/agent_summary.py agent-result.json agent-exit-code.txt agent-stderr.txt \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-result
+          path: agent-result.json
+          if-no-files-found: warn
+
+      # Answered and refused are both correct outcomes. Anything else fails the job: no
+      # answer, an answer that is not grounded in the last result, or a command that could
+      # not run at all.
+      - name: The status is answered or refused
+        run: |
+          status=$(python3 scripts/agent_summary.py --status agent-result.json)
+          echo "status: ${status:-none}"
+          case "$status" in
+            answered | refused) exit 0 ;;
+            *)
+              echo "::error::the agent ended with status '${status:-none}': neither answered nor refused"
+              exit 1
+              ;;
+          esac

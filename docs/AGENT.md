@@ -37,6 +37,46 @@ The model is `claude-haiku-5-5` unless `--model` names another one that has a li
 `PRICES` ([`src/agent/llm.py`](../src/agent/llm.py)). A model without a recorded price is
 refused: its cost could be neither bounded nor computed.
 
+## Asking from GitHub, with no key on any machine
+
+The workflow [`agent`](../.github/workflows/agent.yml) asks one question on GitHub's runner.
+It is started by hand and by nothing else.
+
+1. On GitHub, open the **Actions** tab, choose the workflow **agent** in the list on the
+   left, and press **Run workflow**.
+2. Leave the branch on `main` and fill in the form:
+   - `question`: the question, in plain words. Required.
+   - `model`: empty for the default in the code, or a model id that has a price in
+     `src/agent/llm.py`.
+   - `max_usd`: dollars for this question, 0.25 unless changed.
+3. **Approve the run.** The job runs in the `agent-eval` environment, which holds the model
+   key. When that environment requires a reviewer, the run stops at "Waiting for review"
+   until the owner opens it and presses **Review deployments**, then **Approve and deploy**.
+   On 2026-10-11 the API showed no such rule on the environment (see the table at the end
+   of [AGENTS.md](../AGENTS.md)); without it the run starts at once.
+4. **Read the result** on the page of the run, under **Summary**: the question, the status,
+   the answer or the refusal, the SQL, the tokens, the cost and the seconds. The whole
+   result, every tool call included, is the artifact `agent-result` at the bottom of the
+   same page.
+
+The job is green when the status is `answered` or `refused`, and red for anything else: no
+answer, an ungrounded answer, or a command that could not run. The summary is written
+either way.
+
+What to know before pressing the button:
+
+- **The warehouse it asks is the fixture, not the real one.** The job starts a throw-away
+  ClickHouse with the read-only user and loads [`evals/fixture/`](../evals/fixture/fingerprint.json)
+  into it ([`scripts/ci_warehouse.sh`](../scripts/ci_warehouse.sh)). The data ends on
+  2026-09-25, and `fct_pool_daily_smart_money` is empty there, so a question about smart
+  money should end in a refusal.
+- **Every run is a paid request** to the model provider, up to `max_usd`.
+- **It needs a secret named `ANTHROPIC_API_KEY` in the `agent-eval` environment.** The
+  workflow gives it to the one step that runs the agent and to no other.
+- **It has never run.** A workflow started by hand only appears in the Actions tab once its
+  file is on `main`, and running it needs the owner. Nothing in this repository's history
+  is the output of a real model.
+
 ## How a question ends
 
 | Status | Meaning |
