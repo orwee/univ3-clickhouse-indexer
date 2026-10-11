@@ -394,6 +394,25 @@ The files must be runs of the same thing (the same variant files, model, golden 
 system prompt, limits and cases), or nothing is written and the command says what differs.
 The report names no case: it can be read without learning which `test` case failed.
 
+## Reading the failures, on `dev` only
+
+A change to the agent is designed from what it gets wrong. That reading is done on `dev`
+and on nothing else: once a `test` case has been looked at to choose a change, its result
+is no longer a test of that change.
+
+```sh
+PYTHONPATH=src uv run python -m evalkit.failures evals/results/A.json evals/results/B.json \
+    evals/results/C.json --out failures.csv --unstable unstable.csv
+```
+
+[`evalkit.failures`](../src/evalkit/failures.py) writes one row for every `dev` case that
+was wrong in at least two of the runs: its id, kind and family, what happened in each run,
+an empty `category` and `note` to fill in by hand, and one line of evidence (the final SQL
+of the first run that was wrong, or the reason it gave for refusing). Cases wrong in exactly
+one run go to a second file, listed and not classified: one failure in three is as likely
+to be the draw as the agent. A question that ended in an error is in neither. With the
+default split, no `test` case is listed, counted or printed.
+
 ## The judge: what code cannot check
 
 The scorer decides whether an answer is right, and no model takes part in that. One thing
