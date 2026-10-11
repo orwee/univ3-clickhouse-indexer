@@ -371,3 +371,63 @@ Details that the definitions above leave open, and how the scorer settles them:
   run has one run fewer, not one failed run.
 - A case with no answer that got a value counts once in the hallucination rate, even when
   that value was also ungrounded.
+
+## The judge: what code cannot check
+
+The scorer decides whether an answer is right, and no model takes part in that. One thing
+is left that code cannot read: the explanation in words that comes with every answer.
+Whether those words say only what the query and its result support is a question for a
+reader, and here the reader is a model. It is the only place in the evaluation where a
+model judges anything, and its verdict never changes a score.
+
+- **The rubric** is [`evals/judge_rubric.md`](../evals/judge_rubric.md), and its text is
+  the judge's system prompt, word for word. One verdict, `faithful` or `unfaithful`, and one
+  sentence of reason. Unfaithful: the explanation states a number, a unit, a pool, a table
+  or a period that the query or its result does not support, or claims more than the query
+  measured. A wrong answer can have a faithful explanation, and the rubric says so.
+- **[`evalkit.judge`](../src/evalkit/judge.py)** makes one call per case. It is given the
+  question, the final SQL, the rows of the last result as the results file kept them, and
+  the explanation. The verdict comes back through a tool, `submit_verdict`; a response with
+  no well-formed call of it is recorded as `no_verdict`, and free text is never read for a
+  verdict. It has its own budget (2 USD unless changed), checked before every call, and the
+  cases that do not fit are recorded as `not_judged`. Its default model is
+  `claude-opus-5-5`, the strongest of the price table in `src/agent/llm.py`, because it
+  reads the words of the smaller model the agent runs on.
+- **The workflow [`judge`](../.github/workflows/judge.yml)** runs it on GitHub, in the image
+  of `eval`: started by hand only, in the `agent-eval` environment, the key in one step. Its
+  input `source` is a file already in the repository: a results file, or the calibration
+  sheet. It needs no warehouse, because it runs no query.
+
+```sh
+PYTHONPATH=src uv run --group agent python -m evalkit.judge evals/results/FILE.json \
+    [--model ID] [--max-usd 2] [--limit N] [--out verdicts.json]
+```
+
+### Calibration: the judge against a person
+
+A judge is only worth what its agreement with a person is worth, so that is measured before
+any verdict is used.
+
+```sh
+PYTHONPATH=src uv run python -m evalkit.calibration build evals/results/*_baseline_*.json
+PYTHONPATH=src uv run python -m evalkit.calibration agree evals/calibration/sheet.csv verdicts.json
+```
+
+`build` writes [`evals/calibration/sheet.csv`](../evals/calibration/): thirty answered
+questions, each a different case, drawn with a fixed seed and stratified by the kind of
+case, from the `dev` split only. Fifteen keep the explanation the agent wrote. The other
+fifteen have an explanation altered on purpose, by code and not by a model: a number
+changed, the unit changed, a date moved or a name replaced, or a claim added that no query
+supports. The rows are in random order, with an empty `label` column for the person, and
+nothing in the sheet says which rows were altered. That is the key, a second file, which is
+written under the data directory and stays out of the repository until the labels are
+committed.
+
+`agree` compares the labels with the judge's verdicts on the same sheet: percent agreement,
+Cohen's kappa and the two-by-two table. A test checks the kappa against two values worked
+out by hand in the test. With the key it also says how many of the altered rows each of the
+two called unfaithful.
+
+**None of this has run.** No model has judged anything, the owner has not labelled a sheet,
+and there is no agreement figure. Until there is one, a verdict of the judge is not a
+measurement, and no report in this repository uses one.

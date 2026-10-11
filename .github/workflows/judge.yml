@@ -1,0 +1,128 @@
+# Judge the explanations of an evaluation, by hand.
+#
+# In the image of eval.yml. Started from the Actions tab only (workflow_dispatch). The job
+# runs in the `agent-eval` environment, which holds the model key; a run that the
+# environment makes wait for an approval does not start until the owner gives it.
+#
+# The judge reads a file that is already in the repository: a results file of the `eval`
+# workflow, or the calibration sheet. It asks a model one thing per case, whether the
+# explanation in words is faithful to the query and to its result, and takes the verdict
+# through a tool. It needs no warehouse: it runs no query.
+#
+# The job fails only when the judge could not execute. Verdicts are a result, not a
+# failure, and so is a run that stopped on its budget.
+#
+# Two rules this file keeps, and tests/test_workflows.py checks:
+#   - the inputs reach the shell through `env:`. No GitHub expression is written inside a
+#     `run:` script;
+#   - the model key is given to one step, the one that runs the judge, and to no other.
+#
+# The actions are the ones eval.yml pins, at the same commits.
+name: judge
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "A file in the repository: a results file under evals/results/, or evals/calibration/sheet.csv"
+        required: true
+        type: string
+      model:
+        description: "A model id with a price in src/agent/llm.py. Empty: the judge's default in the code"
+        required: false
+        default: ""
+        type: string
+      max_usd:
+        description: "Dollars for all the verdicts"
+        required: false
+        default: "2"
+        type: string
+      limit:
+        description: "Only the first N cases, for a cheap first run. Empty: all of them"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  judge:
+    name: judge the explanations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: agent-eval
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.16" # the version demo/Dockerfile installs
+
+      - name: uv sync --frozen --group agent
+        run: uv sync --frozen --group agent
+
+      # The only step that sees the key. It never fails the job by itself: whether the judge
+      # executed is decided at the end, after the summary and the artifact.
+      - name: Judge
+        timeout-minutes: 15
+        env:
+          SOURCE: ${{ inputs.source }}
+          MODEL: ${{ inputs.model }}
+          MAX_USD: ${{ inputs.max_usd }}
+          LIMIT: ${{ inputs.limit }}
+          UNIV3_DATA_DIR: ${{ runner.temp }}/judge-data
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          arguments=(--max-usd "$MAX_USD" --out judge-verdicts.json)
+          if [ -n "$MODEL" ]; then
+            arguments+=(--model "$MODEL")
+          fi
+          if [ -n "$LIMIT" ]; then
+            arguments+=(--limit "$LIMIT")
+          fi
+          set +e
+          PYTHONPATH=src uv run --frozen --group agent python -m evalkit.judge "$SOURCE" \
+            "${arguments[@]}" > judge-stdout.txt 2> judge-stderr.txt
+          code=$?
+          set -e
+          echo "$code" > judge-exit-code.txt
+          echo "python -m evalkit.judge exited with $code"
+          cat judge-stdout.txt
+          cat judge-stderr.txt >&2
+
+      # What the command printed, as text. No key here.
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### The judge"
+            echo ""
+            echo "\`python -m evalkit.judge\` exited with \`$(cat judge-exit-code.txt 2>/dev/null || echo unknown)\`."
+            echo ""
+            echo "<pre>"
+            cat judge-stdout.txt judge-stderr.txt 2>/dev/null \
+              | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' || true
+            echo "</pre>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the verdicts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: judge-verdicts
+          path: judge-verdicts.json
+          if-no-files-found: warn
+
+      # Only this can fail the job: the judge did not execute. A verdict does not.
+      - name: The judge executed
+        run: |
+          code=$(cat judge-exit-code.txt 2>/dev/null || echo "none")
+          if [ "$code" != "0" ] || [ ! -f judge-verdicts.json ]; then
+            echo "::error::the judge did not execute (exit code $code)"
+            exit 1
+          fi
+          echo "the judge executed; its verdicts are in the artifact"
