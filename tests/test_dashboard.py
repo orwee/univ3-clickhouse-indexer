@@ -125,11 +125,20 @@ def test_smart_money_is_published_per_pool_and_small_counts_are_not(page):
     assert "days with any" not in section and "highest daily" not in section.lower()
     tables = re.findall(r"<tbody>(.*?)</tbody>", section)
     assert len(tables) == 2
+    shown, total = [], None
     for row in re.findall(r"<tr>(.*?)</tr>", tables[1]):  # pool, our swaps, in smart-money tx
         cells = [re.sub(r"<[^>]+>", "", cell) for cell in re.findall(r"<td>(.*?)</td>", row)]
         assert len(cells) == 3
-        if cells[0] != "all four":
+        if cells[0] == nansen.TOTAL_LABEL:
+            total = cells
+        else:
             assert int(cells[2].replace(",", "")) >= nansen.MIN_PUBLISHED_SWAPS, cells
+            shown.append(cells)
+    # The total is of the pools shown: each of its counts is the sum of the rows above it.
+    assert total is not None and shown and "all four" not in section
+    for n in (1, 2):
+        assert int(total[n].replace(",", "")) == sum(int(r[n].replace(",", "")) for r in shown)
+    assert "pool-days of the pools shown" in page
 
 
 def test_no_nansen_identifier_is_republished(page):

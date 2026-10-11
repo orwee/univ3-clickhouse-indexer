@@ -584,10 +584,12 @@ def _sql(path: Path) -> str:
 # at the wallet Nansen classifies.
 MIN_PUBLISHED_SWAPS = 5
 OTHER_POOLS = "other pools"
+TOTAL_LABEL = "Pools shown"
 SMALL_COUNTS_NOTE = (
-    f"A pool with fewer than {MIN_PUBLISHED_SWAPS} smart-money swaps is not shown on its own. "
-    f'Such pools are merged into one row, "{OTHER_POOLS}", and that row is left out too when '
-    f"it is still under {MIN_PUBLISHED_SWAPS}. The total counts every pool."
+    f"Pools with fewer than {MIN_PUBLISHED_SWAPS} smart-money swaps are left out of every "
+    "figure in this table, the total included: the total row covers only the pools that are "
+    f'shown. Such pools are merged into one row, "{OTHER_POOLS}", when together they reach '
+    f"{MIN_PUBLISHED_SWAPS}; when they do not, they are in no row and in no total."
 )
 
 
@@ -596,8 +598,9 @@ def publishable(rows: list[dict], count: str, label: str, sums: tuple[str, ...])
 
     A pool whose ``count`` is under ``MIN_PUBLISHED_SWAPS`` loses its own row. Those pools
     are merged into one row labelled ``OTHER_POOLS``, with the ``sums`` columns added up; if
-    the merged row is still under the minimum it is not returned at all, and only the total,
-    which the caller computes over every pool, is left to stand for them.
+    the merged row is still under the minimum it is not returned at all. The total is
+    ``total_of`` these rows and of nothing else: a total over every pool, next to the rows
+    of the large ones, would give the small ones away by subtraction.
     """
     kept = [row for row in rows if row[count] >= MIN_PUBLISHED_SWAPS]
     small = [row for row in rows if row[count] < MIN_PUBLISHED_SWAPS]
@@ -607,6 +610,11 @@ def publishable(rows: list[dict], count: str, label: str, sums: tuple[str, ...])
     if merged[count] < MIN_PUBLISHED_SWAPS:
         return kept
     return [*kept, merged]
+
+
+def total_of(shown: list[dict], sums: tuple[str, ...]) -> dict:
+    """The total row: the ``sums`` columns added up over the rows that are published."""
+    return {key: sum(row[key] for row in shown) for key in sums}
 
 
 def _share(part: float, whole: float) -> str:
@@ -659,17 +667,10 @@ def render(result: Cross) -> str:
         "| Pool | Our swaps in the window | Our USD | Named swaps | Named transactions | Named USD | Share of swaps | Share of USD |",  # noqa: E501
         "|---|---|---|---|---|---|---|---|",
     ]
-    total = {
-        "swaps": 0,
-        "volume_usd": 0.0,
-        "named_swaps": 0,
-        "named_transactions": 0,
-        "named_volume_usd": 0.0,
-    }
-    for r in result.pools:
-        for key in total:
-            total[key] += r[key]
-    for r in publishable(result.pools, "named_swaps", "pool", tuple(total)):
+    summed = ("swaps", "volume_usd", "named_swaps", "named_transactions", "named_volume_usd")
+    shown = publishable(result.pools, "named_swaps", "pool", summed)
+    total = total_of(shown, summed)
+    for r in shown:
         out.append(
             f"| {r['pool']} | {r['swaps']:,} | {r['volume_usd']:,.0f} | {r['named_swaps']:,} | "
             f"{r['named_transactions']:,} | {r['named_volume_usd']:,.0f} | "
@@ -677,7 +678,7 @@ def render(result: Cross) -> str:
             f"{_share(r['named_volume_usd'], r['volume_usd'])} |"
         )
     out.append(
-        f"| **All four** | {total['swaps']:,} | {total['volume_usd']:,.0f} | "
+        f"| **{TOTAL_LABEL}** | {total['swaps']:,} | {total['volume_usd']:,.0f} | "
         f"{total['named_swaps']:,} | "
         f"{total['named_transactions']:,} | {total['named_volume_usd']:,.0f} | "
         f"{_share(total['named_swaps'], total['swaps'])} | "
@@ -685,14 +686,16 @@ def render(result: Cross) -> str:
     )
     out += [
         "",
-        "Distinct transactions of the response inside the window: "
-        f"{result.transactions_in_window:,}. "
-        f"Present in `raw_swaps`, in any of the pools: {result.transactions_found:,}.",
+        SMALL_COUNTS_NOTE,
         "",
         "A transaction can route through two of the pools: the per-pool rows then count it once "
         "each, and the total row adds them up.",
         "",
-        SMALL_COUNTS_NOTE,
+        "Distinct transactions of the response inside the window: "
+        f"{result.transactions_in_window:,}. "
+        f"Present in `raw_swaps`, in any of the pools: {result.transactions_found:,}. This "
+        "last count is over every pool, shown or not, and each transaction counts once: it is "
+        "not a column of the table and cannot be set against its rows.",
         "",
     ]
     return "\n".join(out)

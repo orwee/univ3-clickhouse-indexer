@@ -24,10 +24,10 @@ A swap of ours is "named" when its transaction hash is among the transactions of
 |---|---|---|---|---|---|---|---|
 | USDC/WETH 0.05% | 6,955 | 48,468,095 | 14 | 14 | 70,173 | 0.2013% | 0.1448% |
 | USDC/WETH 0.01% | 21,386 | 44,561,323 | 48 | 48 | 93,299 | 0.2244% | 0.2094% |
-| **All four** | 28,460 | 93,033,317 | 63 | 63 | 163,477 | 0.2214% | 0.1757% |
+| **Pools shown** | 28,341 | 93,029,418 | 62 | 62 | 163,472 | 0.2188% | 0.1757% |
 
-Distinct transactions of the response inside the window: 181. Present in `raw_swaps`, in any of the pools: 56.
+Pools with fewer than 5 smart-money swaps are left out of every figure in this table, the total included: the total row covers only the pools that are shown. Such pools are merged into one row, "other pools", when together they reach 5; when they do not, they are in no row and in no total.
 
 A transaction can route through two of the pools: the per-pool rows then count it once each, and the total row adds them up.
 
-A pool with fewer than 5 smart-money swaps is not shown on its own. Such pools are merged into one row, "other pools", and that row is left out too when it is still under 5. The total counts every pool.
+Distinct transactions of the response inside the window: 181. Present in `raw_swaps`, in any of the pools: 56. This last count is over every pool, shown or not, and each transaction counts once: it is not a column of the table and cannot be set against its rows.

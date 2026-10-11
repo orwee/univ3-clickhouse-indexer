@@ -310,7 +310,9 @@ def test_an_empty_cross_is_a_result_not_an_error(clickhouse, loaded):
     assert result.transactions_found == 0 and sum(r["named_swaps"] for r in result.pools) == 0
     assert sum(r["swaps"] for r in result.pools) > 0, "our side of the window is still reported"
     text = nansen.render(result)
-    assert "0.0000%" in text
+    # No pool reaches five named swaps, so no pool is shown and the total is of no pool.
+    assert "| **Pools shown** | 0 | 0 | 0 | 0 | 0 | n/a | n/a |" in text
+    assert nansen.SMALL_COUNTS_NOTE in text
 
 
 def test_a_response_without_trades_renders_without_a_table(clickhouse, loaded):
@@ -374,7 +376,7 @@ def test_small_pools_are_merged_and_the_merged_row_is_shown_only_from_five():
         "swaps": 400,
         "named_volume_usd": 50.0,
     }
-    # 2 + 2 = 4: still under five, so it is not shown and only the total stays.
+    # 2 + 2 = 4: still under five, so it is not shown, and it is in no total either.
     assert _published(_pools(2, 48, 2)) == [("pool 1", 48)]
     # A pool with none is under five like any other.
     assert _published(_pools(0, 1, 48)) == [("pool 2", 48)]
@@ -382,7 +384,22 @@ def test_small_pools_are_merged_and_the_merged_row_is_shown_only_from_five():
     assert rows == _pools(2, 48, 3), "the rows given are not changed"
 
 
-def test_the_cross_report_applies_the_rule_and_its_total_still_counts_every_pool():
+def test_the_total_is_of_the_rows_that_are_published_and_of_nothing_else():
+    """A total over every pool, next to the rows of the large ones, gives the small ones
+    away by subtraction. So the total is added up from what `publishable` returned."""
+    rows = _pools(2, 48, 2, 14)
+    shown = nansen.publishable(rows, "named_swaps", "pool", SUMMED)
+    assert [row["pool"] for row in shown] == ["pool 1", "pool 3"]
+    total = nansen.total_of(shown, SUMMED)
+    assert total == {"named_swaps": 62, "swaps": 600, "named_volume_usd": 620.0}
+    assert total["named_swaps"] < sum(row["named_swaps"] for row in rows)  # the 4 are not in it
+    # A merged row that reaches five is shown, and then it is in the total like any row.
+    shown = nansen.publishable(_pools(2, 48, 3), "named_swaps", "pool", SUMMED)
+    assert nansen.total_of(shown, SUMMED)["named_swaps"] == 53
+    assert nansen.total_of([], SUMMED) == {"named_swaps": 0, "swaps": 0, "named_volume_usd": 0}
+
+
+def test_the_cross_report_applies_the_rule_and_its_total_covers_only_the_pools_shown():
     pools = [
         {"pool": "thin", "swaps": 104, "volume_usd": 2134.0, "named_swaps": 1,
          "named_transactions": 1, "named_volume_usd": 5.0},
@@ -398,11 +415,18 @@ def test_the_cross_report_applies_the_rule_and_its_total_still_counts_every_pool
             transactions_in_window=2, transactions_found=2, pools=pools,
         )
     )  # fmt: skip
-    table = [line for line in text.splitlines() if line.startswith("| ") and "Pool" not in line]
-    assert [line.split(" | ")[0] for line in table] == ["| deep", "| **All four**"]
-    assert "| **All four** | 7,059 | 48,470,229 | 15 | 15 | 70,178 |" in text  # thin is in it
+    table = [line for line in text.splitlines() if line.startswith("| ")]
+    table = [line for line in table if not line.startswith("| Pool |")]
+    assert [line.split(" | ")[0] for line in table] == ["| deep", "| **Pools shown**"]
+    # The total row is the row of the one pool shown: thin is in no figure of the table.
+    assert "| **Pools shown** | 6,955 | 48,468,095 | 14 | 14 | 70,173 |" in text
+    for hidden in ("7,059", "48,470,229", "70,178", "| 15 |"):
+        assert hidden not in text, hidden
     assert "| thin" not in text and f"| {nansen.OTHER_POOLS} |" not in text
     assert nansen.SMALL_COUNTS_NOTE in text
+    assert "the total included" in nansen.SMALL_COUNTS_NOTE
+    assert "covers only the pools that are shown" in nansen.SMALL_COUNTS_NOTE
+    assert "This last count is over every pool, shown or not" in text
 
 
 def test_no_published_smart_money_table_has_a_small_row_or_points_at_a_day():
@@ -421,13 +445,26 @@ def test_no_published_smart_money_table_has_a_small_row_or_points_at_a_day():
             if not counted:
                 continue
             column, tables = header.index(counted[0]), tables + 1
+            shown, total = [], None
             for row in lines[i + 2 :]:
                 if not row.startswith("|"):
                     break
                 cells = [cell.strip() for cell in row.strip("|").split("|")]
-                if cells[0] != "**All four**":
+                if cells[0] == f"**{nansen.TOTAL_LABEL}**":
+                    total = cells
+                else:
                     assert int(cells[column].replace(",", "")) >= nansen.MIN_PUBLISHED_SWAPS, row
+                    shown.append(cells)
+            # The total row is the sum of the rows above it, column by column: nothing that
+            # is not shown is in it, so nothing comes out by subtraction.
+            assert total is not None and shown, name
+            for n, cell in enumerate(total):
+                if re.fullmatch(r"[\d,]+", cell):
+                    assert int(cell.replace(",", "")) == sum(
+                        int(row[n].replace(",", "")) for row in shown
+                    ), (name, header[n])
         assert tables >= 1, name
+        assert "All four" not in text, name
 
 
 # --- tgm/dex-trades: token from pools.yml, pages cached, a ledger that outlives the process ----

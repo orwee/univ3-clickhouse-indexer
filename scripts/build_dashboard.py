@@ -1446,11 +1446,14 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     largest = max(
         (r for r in csv_rows if r["flagged"]), key=lambda r: abs(r["abs_usd"])
     )  # the biggest difference of the project, still in the open list
+    # Smart money: every figure on the page is over the pools that may be shown, and over
+    # nothing else (nansen.publishable). The same rows feed the section further down.
+    smart_sums = ("swaps", "smart_swaps", "volume_usd", "smart_volume_usd", "pool_days")
+    smart_shown = nansen.publishable(data["smart"], "smart_swaps", "pool_label", smart_sums)
+    smart_total = nansen.total_of(smart_shown, smart_sums)
     smart_first = min(r["first_day"] for r in data["smart"])
     smart_last = max(r["last_day"] for r in data["smart"])
-    smart_share = sum(r["smart_volume_usd"] for r in data["smart"]) / sum(
-        r["volume_usd"] for r in data["smart"]
-    )
+    smart_share = smart_total["smart_volume_usd"] / smart_total["volume_usd"]
     takeaways = [
         f"<b>The pipeline agrees with itself exactly.</b> A recomputation from "
         f"<code>raw_swaps</code> against the materialized view: {esc(docs['internal'])} on all "
@@ -1468,8 +1471,8 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         f"<b>A handful of contracts route most of the volume.</b> The top eight "
         f"<code>sender</code> contracts (routers and bots, not people) carry "
         f"{data['senders']['cumulative'][8] * 100:.0f}% of it; the wallets Nansen calls smart "
-        f"money are {smart_share * 100:.2f}% of it over the days fetched ({smart_first} to "
-        f"{smart_last}).",
+        f"money are {smart_share * 100:.2f}% of the volume of the pools shown for them, over "
+        f"the days fetched ({smart_first} to {smart_last}).",
     ]
     a(
         '<div class="take"><h2>Key takeaways</h2><ul>'
@@ -1876,22 +1879,13 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
     # The shares are what the section is about; the raw counts behind them move into a
     # details, which is what keeps four columns instead of six on a narrow screen.
     smart_rows, count_rows = [], []
-    tot_swaps, tot_smart_swaps, tot_usd, tot_smart_usd = 0, 0, 0.0, 0.0
-    first_day = min(r["first_day"] for r in data["smart"])
-    last_day = max(r["last_day"] for r in data["smart"])
-    for r in data["smart"]:
-        tot_swaps += r["swaps"]
-        tot_smart_swaps += r["smart_swaps"]
-        tot_usd += r["volume_usd"]
-        tot_smart_usd += r["smart_volume_usd"]
-    # A pool with fewer than five smart-money swaps gets no row of its own.
-    shown = nansen.publishable(
-        data["smart"],
-        "smart_swaps",
-        "pool_label",
-        ("swaps", "smart_swaps", "volume_usd", "smart_volume_usd"),
-    )
-    for r in shown:
+    first_day, last_day = smart_first, smart_last
+    # A pool with fewer than five smart-money swaps gets no row of its own, and is in no
+    # total either: the total is of the rows shown.
+    tot_swaps, tot_smart_swaps = smart_total["swaps"], smart_total["smart_swaps"]
+    tot_usd, tot_smart_usd = smart_total["volume_usd"], smart_total["smart_volume_usd"]
+    total_label = f"<b>{esc(nansen.TOTAL_LABEL)}</b>"
+    for r in smart_shown:
         smart_rows.append(
             [
                 esc(r["pool_label"]),
@@ -1909,15 +1903,13 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         )
     smart_rows.append(
         [
-            "<b>all four</b>",
+            total_label,
             f"<b>{fint(tot_smart_swaps)}</b>",
             f"<b>{tot_smart_swaps / tot_swaps * 100:.3f}%</b>",
             f"<b>{tot_smart_usd / tot_usd * 100:.3f}%</b>",
         ]
     )
-    count_rows.append(
-        ["<b>all four</b>", f"<b>{fint(tot_swaps)}</b>", f"<b>{fint(tot_smart_swaps)}</b>"]
-    )
+    count_rows.append([total_label, f"<b>{fint(tot_swaps)}</b>", f"<b>{fint(tot_smart_swaps)}</b>"])
     body = (
         chart
         + f'<p class="note">{fint(data["senders"]["total"]["senders"])} distinct senders moved '
@@ -1941,7 +1933,7 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         + f'<p class="note"><b>Smart-money data: Powered by Nansen API.</b> Aggregates per '
         f"pool only, derived from Nansen's classification; no address, label or "
         f"transaction hash is republished. {first_day} to {last_day}, the "
-        f"{sum(r['pool_days'] for r in data['smart'])} pool-days that were fetched. "
+        f"{smart_total['pool_days']} pool-days of the pools shown. "
         f"{esc(nansen.SMALL_COUNTS_NOTE)}</p>"
     )
     placed["senders"] = section(
