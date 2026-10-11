@@ -180,9 +180,16 @@ class _APIError(Exception):
 
 
 class _APIStatusError(_APIError):
-    def __init__(self, status_code):
+    """Shaped like the SDK's: a status code, the parsed body, and a response with headers."""
+
+    def __init__(self, status_code, body=None):
         super().__init__(f"request with key {KEY} failed")
         self.status_code = status_code
+        self.body = body
+        self.response = types.SimpleNamespace(
+            headers={"x-api-key": KEY, "request-id": "req_from_a_header"},
+            request=types.SimpleNamespace(content=f"the request, with {KEY}"),
+        )
 
 
 class _RateLimitError(_APIStatusError):
@@ -292,6 +299,65 @@ def test_an_sdk_error_becomes_one_short_error_without_the_key(sdk, raised, says)
     assert str(err.value) == says and KEY not in str(err.value)
     assert err.value.__cause__ is None and err.value.__suppress_context__
     assert len(sdk.requests) == 1  # one attempt, no retry
+
+
+API_SAID = {
+    "type": "error",
+    "error": {
+        "type": "invalid_request_error",
+        "message": "output_config.effort: this model\n does not   support it. " + "x" * 400,
+    },
+    "request_id": "req_in_the_body",
+}
+
+
+def test_an_error_status_carries_the_code_the_apis_error_type_and_the_start_of_its_message(sdk):
+    """Built without a network: the three come from the body of the response, and nothing
+    else of the exchange does. The key planted in the client is nowhere in the error."""
+    sdk.answer = _APIStatusError(400, API_SAID)
+    with pytest.raises(llm.LLMError) as err:
+        llm.AnthropicLLM(KEY).complete(system="", messages=[], tools=[], max_tokens=1)
+    error = err.value
+    assert sdk.client["api_key"] == KEY  # the key was there to leak
+    assert error.status_code == 400 and error.error_type == "invalid_request_error"
+    expected = ("output_config.effort: this model does not support it. " + "x" * 400)[:300]
+    assert error.detail == expected and len(error.detail) == 300
+    assert str(error) == f"_APIStatusError: HTTP 400, invalid_request_error: {expected}"
+    assert error.rejected is True
+    for hidden in (KEY, "req_from_a_header", "req_in_the_body", "the request"):
+        assert hidden not in str(error) and hidden not in repr(error.__dict__)
+    assert error.__cause__ is None and error.__suppress_context__
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "says", "rejected"),
+    [
+        (429, {"error": {"type": "rate_limit_error", "message": "Slow down"}},
+         "_APIStatusError: HTTP 429, rate_limit_error: Slow down", True),
+        (529, {"error": {"type": "overloaded_error", "message": "Overloaded"}},
+         "_APIStatusError: HTTP 529, overloaded_error: Overloaded", False),
+        (502, "<html>bad gateway</html>", "_APIStatusError: HTTP 502", False),
+        (400, None, "_APIStatusError: HTTP 400", True),
+        (400, {"error": "not an object"}, "_APIStatusError: HTTP 400", True),
+        (400, {"error": {"type": 7, "message": ["x"]}}, "_APIStatusError: HTTP 400", True),
+        (400, {"error": {"type": "invalid_request_error"}},
+         "_APIStatusError: HTTP 400, invalid_request_error", True),
+    ],
+)  # fmt: skip
+def test_what_an_error_says_for_each_shape_of_body(sdk, status, body, says, rejected):
+    sdk.answer = _APIStatusError(status, body)
+    with pytest.raises(llm.LLMError) as err:
+        llm.AnthropicLLM(KEY).complete(system="", messages=[], tools=[], max_tokens=1)
+    assert str(err.value) == says and err.value.rejected is rejected
+    assert err.value.status_code == status and KEY not in str(err.value)
+
+
+def test_a_timeout_has_no_status_and_is_not_a_rejection(sdk):
+    sdk.answer = _APITimeoutError("slow")
+    with pytest.raises(llm.LLMError) as err:
+        llm.AnthropicLLM(KEY).complete(system="", messages=[], tools=[], max_tokens=1)
+    assert (err.value.status_code, err.value.error_type, err.value.detail) == (None, None, "")
+    assert err.value.rejected is False
 
 
 # --- the script --------------------------------------------------------------------------

@@ -247,6 +247,17 @@ def test_the_summary_of_every_other_status(tmp_path, status, says):
         assert "<pre>none ran successfully</pre>" in text
 
 
+def test_the_summary_says_why_a_model_call_failed(tmp_path):
+    said = "llm_error: BadRequestError: HTTP 400, invalid_request_error: <b>max_tokens</b> required"
+    result = {**RESULT, "status": "no_answer", "reason": said, "answer": None, "final_sql": None}
+    text, status = summary(tmp_path, result, code="1")
+    assert status == "no_answer"
+    assert (
+        "**Status: `no_answer`** (llm_error: BadRequestError: HTTP 400, "
+        "invalid_request_error: &lt;b&gt;max_tokens&lt;/b&gt; required)"
+    ) in text
+
+
 def test_without_a_result_the_summary_says_so_and_shows_standard_error(tmp_path):
     text, status = summary(tmp_path, None, code="2", stderr="No model key: X is not set\n")
     assert status == ""

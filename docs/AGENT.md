@@ -89,6 +89,16 @@ What to know before pressing the button:
 At the cap the result is `no_answer`. The loop never builds an answer out of what it has
 seen.
 
+**When a model call fails**, the question ends there as `no_answer`: nothing is retried.
+The reason says what failed. When the API answered with an error status it reads
+`llm_error: BadRequestError: HTTP 400, invalid_request_error: …`: the status code, the API's
+own error type and the first 300 characters of its message, taken from the body of the
+response and from nowhere else, so never the request, a header or the key. That reason is
+in the plain output, in the JSON and in the workflow's summary. What the call costs depends
+on what happened. A request the API rejected with a 4xx status was not served, so it is
+booked at zero, and the ledger note says so. A timeout, a lost connection and a 5xx may have
+been served and billed, so they are booked at the worst case of the call.
+
 ## Guardrails: what the server enforces and what is code
 
 The decision and its reasons are entry

@@ -256,9 +256,21 @@ def run(
             response = llm.complete(
                 system=system, messages=messages, tools=TOOL_DEFINITIONS, max_tokens=max_tokens
             )
-        except Exception as exc:  # noqa: BLE001 - whatever failed, the call may have been billed
-            budget.fail(worst, f"iteration {iteration}: {type(exc).__name__}", model=llm.model)
-            result.usd += worst
+        except Exception as exc:  # noqa: BLE001 - whatever failed, the question ends here
+            # A request the API rejected with a 4xx status was not served, so it cost
+            # nothing. Anything else (a timeout, a lost connection, a 5xx) may have been
+            # served and billed, and is booked at the most it could have cost.
+            if isinstance(exc, llm_module.LLMError) and exc.rejected:
+                booked = Decimal(0)
+                note = (
+                    f"iteration {iteration}: rejected by the API with HTTP {exc.status_code}"
+                    f" ({exc.error_type or 'no error type'}), not served, booked at zero"
+                )
+            else:
+                booked = worst
+                note = f"iteration {iteration}: {type(exc).__name__}, booked at the worst case"
+            budget.fail(booked, note, model=llm.model)
+            result.usd += booked
             result.iterations = iteration
             detail = str(exc) if isinstance(exc, llm_module.LLMError) else type(exc).__name__
             return finish("no_answer", f"llm_error: {detail}")
