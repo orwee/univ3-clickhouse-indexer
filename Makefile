@@ -85,7 +85,7 @@ eval-fixture: ## copy the five dbt marts into evals/fixture/ (SELECT only): what
 	PYTHONPATH=src uv run python scripts/export_marts_fixture.py
 
 golden: ## compute evals/golden.jsonl: every answer by SQL on the fixture, in a throw-away test_* database
-	PYTHONPATH=src uv run python -m evalkit.golden --templates evals/golden_templates.py --out evals/golden.jsonl
+	PYTHONPATH=src uv run python -m evalkit.golden --templates evals/golden_templates.py --hand evals/hand_cases.yml --out evals/golden.jsonl
 
 fetch-external: ## daily volume per pool from the public GeckoTerminal API (no key) into ClickHouse
 	PYTHONPATH=src uv run python -m univ3_indexer.external --fetch

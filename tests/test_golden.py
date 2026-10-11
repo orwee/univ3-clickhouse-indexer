@@ -270,6 +270,85 @@ def test_families_one_and_two_agree_with_the_reconciliation(cases, specs):
     assert compared == {"volume-day": 10, "swaps-day": 10}
 
 
+# --- the cases written by hand ---------------------------------------------------------------
+
+HARD = {
+    "multi-step", "units", "reversed-name", "gross-net", "ambiguous", "ordered-list",
+    "missing-row", "dates",
+}  # fmt: skip
+NO_ANSWER = {
+    "not-in-data", "other-chain", "out-of-range", "forecast", "not-in-marts", "smart-money",
+    "legs-trap",
+}  # fmt: skip
+
+
+def test_thirty_hard_cases_and_thirty_with_no_answer_at_least_three_per_category(cases):
+    hard = Counter(case["family"] for case in cases if case["kind"] == "hand")
+    none = Counter(case["family"] for case in cases if case["kind"] == "unanswerable")
+    assert sum(hard.values()) == 30 and set(hard) == HARD and min(hard.values()) >= 3
+    assert sum(none.values()) == 30 and set(none) == NO_ANSWER and min(none.values()) >= 3
+    assert len(cases) == 180
+    by_split = Counter((case["kind"], case["split"]) for case in cases)
+    assert by_split[("hand", "dev")] + by_split[("hand", "test")] == 30
+    assert by_split[("hand", "dev")] > 0 and by_split[("unanswerable", "dev")] > 0
+
+
+def test_a_case_with_no_answer_is_a_refusal_and_says_what_a_wrong_answer_looks_like(cases):
+    for case in cases:
+        if case["kind"] != "unanswerable":
+            continue
+        assert case["answer_type"] == "refusal" and case["expected"] is None
+        assert case["reference_sql"] is None and case["accepted"] == []
+        assert "wrong answer" in case["notes"], case["id"]
+
+
+def test_no_answer_is_written_by_hand(tmp_path):
+    """The file of hand cases holds questions and queries. A value in it is refused."""
+    text = HAND.read_text()
+    assert not re.search(r"^\s*(expected|accepted|split)\s*:", text, flags=re.MULTILINE)
+    from evalkit import hand_cases
+
+    base = "- {id: h-x-001, kind: hand, family: x, question: q, notes: n, answer_type: number, "
+    for extra, says in [
+        ("reference_sql: SELECT 1, tolerance: count, expected: '1'}", "cannot be written by hand"),
+        (
+            "reference_sql: SELECT 1, tolerance: count, accepted: ['2']}",
+            "cannot be written by hand",
+        ),
+        ("tolerance: count}", "needs answer_type and reference_sql"),
+        ("reference_sql: SELECT 1, colour: red}", "unknown"),
+    ]:
+        path = tmp_path / "cases.yml"
+        path.write_text(base + extra + "\n")
+        with pytest.raises(golden.GoldenError, match=says):
+            hand_cases.load(path)
+    path.write_text(
+        "- {id: u-x-001, kind: unanswerable, family: x, question: q, notes: n, unit: USD}\n"
+    )
+    with pytest.raises(golden.GoldenError, match="has no unit"):
+        hand_cases.load(path)
+
+
+def test_a_reversed_name_does_not_appear_as_a_label_in_the_data(cases):
+    labels = set(fixture.read_table("dim_pools").column("pool_label"))
+    for case in cases:
+        if case["family"] == "reversed-name":
+            asked = re.search(r"\b(\w+/\w+ 0\.\d+%)", case["question"]).group(1)
+            assert asked not in labels
+            tokens, tier = asked.split()
+            assert "/".join(reversed(tokens.split("/"))) + " " + tier in labels
+
+
+def test_the_ambiguous_cases_show_their_readings(cases, specs):
+    by_id = {spec.id: spec for spec in specs}
+    listed = {c["id"]: c["accepted"] for c in cases if c["family"] == "ambiguous"}
+    assert len(listed) >= 3
+    for case_id in listed:
+        assert by_id[case_id].accepted_sql, f"{case_id} has no query for its other reading"
+    assert sum(1 for values in listed.values() if values) >= 2  # readings that differ
+    assert sum(1 for values in listed.values() if not values) >= 1  # readings that agree
+
+
 def test_plain_number_keeps_every_digit_and_refuses_what_is_not_a_number():
     big = Decimal("1234567890123456789012345678901234567890.123456789012345678")
     assert golden.plain_number(big) == str(big)

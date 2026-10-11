@@ -108,6 +108,29 @@ Two independent checks on the answers themselves:
   which `make reconcile` computes from the raw table, by another path;
 - every reference query, run again on the fixture, returns exactly the stored answer.
 
+## The cases written by hand
+
+Sixty more cases come from [`evals/hand_cases.yml`](../evals/hand_cases.yml), thirty of
+each kind. The file holds questions and queries, never answers: a case that carries
+`expected` is refused, and the generator computes the answer of a hand case exactly as it
+does for a template.
+
+- **`hand`, thirty hard cases**, in eight categories: several steps in one question; units
+  (a token, basis points, millions); a pool named the other way round from its label; gross
+  against net volume; more than one reasonable reading; a list in order; a pool-day inside
+  the window with no row, where the answer is 0 and a refusal is wrong; dates.
+- **`unanswerable`, thirty cases with no answer**, in seven categories: a pool or pair that
+  is not in the data; another chain or protocol; a date outside the data; a forecast;
+  something the marts do not hold; smart money, where the table has no rows and no rows is
+  not zero; and a question that sounds answerable from a column that looks right and is
+  not. Their `answer_type` is `refusal`, they have no query, and their `notes` say what a
+  wrong answer would look like.
+
+For a question with more than one reasonable reading the file gives one query per reading
+(`accepted_sql`). When a reading gives another value, that value goes into `accepted`; when
+it gives the same value, nothing is added and the second query is the proof that the
+readings agree.
+
 ## What is deliberately left out of the templates
 
 - **Partial days and missing pool-days.** They are the interesting cases (is a missing
