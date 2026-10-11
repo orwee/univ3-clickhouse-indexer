@@ -17,7 +17,7 @@ from agent import llm
 from univ3_indexer import config
 
 WORKFLOWS = config.REPO_ROOT / ".github" / "workflows"
-TESTS, AGENT = WORKFLOWS / "tests.yml", WORKFLOWS / "agent.yml"
+TESTS, AGENT, EVAL = (WORKFLOWS / f"{name}.yml" for name in ("tests", "agent", "eval"))
 SUMMARY = config.REPO_ROOT / "scripts" / "agent_summary.py"
 PINNED = re.compile(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 EXPRESSION = "${{"
@@ -34,7 +34,7 @@ def steps(workflow):
     return [step for job in workflow["jobs"].values() for step in job["steps"]]
 
 
-@pytest.mark.parametrize("path", [TESTS, AGENT], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL], ids=lambda p: p.name)
 def test_every_action_is_pinned_to_a_commit_with_its_version_next_to_it(path):
     used = [step["uses"] for step in steps(load(path)) if "uses" in step]
     assert used and all(PINNED.fullmatch(action) for action in used), used
@@ -54,12 +54,13 @@ def test_the_agent_workflow_pins_the_same_commits_as_the_tests_workflow():
     assert set(agent) - set(tests) == {"actions/upload-artifact"}
 
 
-@pytest.mark.parametrize("path", [TESTS, AGENT], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL], ids=lambda p: p.name)
 def test_read_only_token_and_a_timeout_on_every_job(path):
     workflow = load(path)
     assert workflow["permissions"] == {"contents": "read"}
     for job in workflow["jobs"].values():
-        assert 0 < job["timeout-minutes"] <= 20
+        # Twenty minutes at most, except the evaluation: 180 questions take longer.
+        assert 0 < job["timeout-minutes"] <= (60 if path == EVAL else 20)
         assert "permissions" not in job
     assert "pull_request_target" not in path.read_text().replace("never `pull_request_target`", "")
 
@@ -96,7 +97,7 @@ def test_the_agent_workflow_is_started_by_hand_only_in_the_agent_eval_environmen
     assert workflow["jobs"]["ask"]["environment"] == "agent-eval"
 
 
-@pytest.mark.parametrize("path", [TESTS, AGENT], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL], ids=lambda p: p.name)
 def test_no_github_expression_is_written_inside_a_run_script(path):
     """An input or any other expression reaches the shell through `env:`, as a variable."""
     for step in steps(load(path)):
@@ -142,6 +143,103 @@ def test_the_agent_workflow_steps_in_order_and_the_summary_is_written_either_way
     assert "exit 1" not in by_name["Ask"]["run"]  # it never fails the job by itself
     verdict = by_name["The status is answered or refused"]["run"]
     assert "answered | refused) exit 0" in verdict and "exit 1" in verdict
+
+
+# --- the eval workflow, in the image of the agent one ---------------------------------------
+
+
+def test_the_eval_workflow_pins_the_same_commits_as_the_agent_workflow():
+    def pins(path):
+        return sorted(step["uses"] for step in steps(load(path)) if "uses" in step)
+
+    assert pins(EVAL) == pins(AGENT)
+
+
+def test_the_eval_workflow_is_started_by_hand_only_in_the_agent_eval_environment():
+    workflow = load(EVAL)
+    assert list(workflow["on"]) == ["workflow_dispatch"]
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    assert list(inputs) == ["variant", "split", "model", "repetitions", "max_usd", "limit"]
+    assert inputs["variant"]["required"] is True
+    assert (
+        inputs["split"]["options"] == ["dev", "test", "all"] and inputs["split"]["default"] == "dev"
+    )
+    assert inputs["model"]["default"] == "" and inputs["limit"]["default"] == ""
+    assert inputs["repetitions"]["default"] == "1" and inputs["max_usd"]["default"] == "5"
+    assert all(not inputs[name]["required"] for name in inputs if name != "variant")
+    assert list(workflow["jobs"]) == ["evaluate"]
+    assert workflow["jobs"]["evaluate"]["environment"] == "agent-eval"
+
+
+def test_the_model_key_is_given_to_the_step_that_runs_the_evaluation_and_to_no_other():
+    workflow = load(EVAL)
+    job = workflow["jobs"]["evaluate"]
+    assert len(SECRET.findall(EVAL.read_text())) == 1
+    assert "env" not in workflow and "env" not in job
+    with_key = [s for s in job["steps"] if "ANTHROPIC_API_KEY" in json.dumps(s.get("env", {}))]
+    assert [s["name"] for s in with_key] == ["Evaluate"]
+    evaluate = with_key[0]
+    assert evaluate["env"] == {
+        "VARIANT": "${{ inputs.variant }}",
+        "SPLIT": "${{ inputs.split }}",
+        "MODEL": "${{ inputs.model }}",
+        "REPETITIONS": "${{ inputs.repetitions }}",
+        "MAX_USD": "${{ inputs.max_usd }}",
+        "LIMIT": "${{ inputs.limit }}",
+        "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
+    }
+    run = evaluate["run"]
+    assert "python -m evalkit.run evals/golden.jsonl" in run and "--group agent" in run
+    for flag, variable in [("--variant", "$VARIANT"), ("--split", "$SPLIT"), ("--limit", "$LIMIT"),
+                           ("--repetitions", "$REPETITIONS"), ("--max-usd", "$MAX_USD"),
+                           ("--model", "$MODEL")]:  # fmt: skip
+        assert f'{flag} "{variable}"' in run, flag
+    assert "--out eval-results.json" in run
+
+
+def test_the_eval_workflow_fails_only_when_the_run_could_not_execute():
+    job = load(EVAL)["jobs"]["evaluate"]
+    names = [step.get("name", step.get("uses", "").split("@")[0]) for step in job["steps"]]
+    assert names == [
+        "actions/checkout",
+        "Install uv",
+        "uv sync --frozen --group agent",
+        "Start the warehouse",
+        "Evaluate",
+        "Report",
+        "Upload the results and the report",
+        "The evaluation executed",
+    ]
+    by_name = {step.get("name"): step for step in job["steps"]}
+    assert "exit 1" not in by_name["Evaluate"]["run"]
+    assert by_name["Report"]["if"] == "always()"
+    assert "python -m evalkit.report eval-results.json --top" in by_name["Report"]["run"]
+    assert "--out eval-report.md" in by_name["Report"]["run"]
+    upload = by_name["Upload the results and the report"]
+    assert upload["if"] == "always()" and upload["with"]["name"] == "eval-results"
+    assert upload["with"]["path"].split() == ["eval-results.json", "eval-report.md"]
+    verdict = by_name["The evaluation executed"]["run"]
+    assert 'if [ "$code" != "0" ] || [ ! -f eval-results.json ]' in verdict
+    # Nothing in the workflow looks at the score.
+    text = EVAL.read_text()
+    assert "correct" not in text.lower().replace("a low score is a result", "")
+    assert "A low score is a result, not a" in text
+
+
+def test_the_fetch_script_names_the_files_by_date_and_variant_and_never_overwrites():
+    script = (config.REPO_ROOT / "scripts" / "fetch_eval_results.sh").read_text()
+    assert 'gh run download "$run_id" --name eval-results' in script
+    assert (
+        'target="$root/evals/results"' in script and "$name.json" in script and "$name.md" in script
+    )
+    assert "already exists; nothing was written" in script
+    assert "git " not in script.replace("git push", "")  # it commits and pushes nothing
+    done = subprocess.run(  # noqa: S603 - this repository's script, stopped by its own check
+        ["bash", str(config.REPO_ROOT / "scripts" / "fetch_eval_results.sh"), "not-a-number"],  # noqa: S607
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 2 and "usage:" in done.stderr
 
 
 # --- the summary script, run as the workflow runs it --------------------------------------

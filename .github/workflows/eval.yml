@@ -1,0 +1,149 @@
+# Run an evaluation of the agent, by hand.
+#
+# In the image of agent.yml. Started from the Actions tab only (workflow_dispatch). The job
+# runs in the `agent-eval` environment, which holds the model key; a run that the
+# environment makes wait for an approval does not start until the owner gives it.
+#
+# The warehouse is not the real one: a throw-away ClickHouse started in the runner by
+# scripts/ci_warehouse.sh, with the read-only user and the committed marts fixture. The
+# golden set's answers were computed on that same fixture.
+#
+# The job fails only when the evaluation could not execute. A low score is a result, not a
+# failure, and so is a run that stopped on its budget: both are in the report.
+#
+# Two rules this file keeps, and tests/test_workflows.py checks:
+#   - the inputs reach the shell through `env:`. No GitHub expression is written inside a
+#     `run:` script;
+#   - the model key is given to one step, the one that runs the evaluation, and to no other.
+#
+# The actions are the ones agent.yml pins, at the same commits.
+name: eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "A name for this run: letters, digits, dot, dash, underscore. Goes into the file"
+        required: true
+        type: string
+      split:
+        description: "Which cases"
+        required: false
+        default: "dev"
+        type: choice
+        options: ["dev", "test", "all"]
+      model:
+        description: "A model id with a price in src/agent/llm.py. Empty: the default in the code"
+        required: false
+        default: ""
+        type: string
+      repetitions:
+        description: "How many times each case is asked"
+        required: false
+        default: "1"
+        type: string
+      max_usd:
+        description: "Dollars for the whole run"
+        required: false
+        default: "5"
+        type: string
+      limit:
+        description: "Only the first N cases, for a cheap first run. Empty: all of them"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    name: run the evaluation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: agent-eval
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.16" # the version demo/Dockerfile installs
+
+      - name: uv sync --frozen --group agent
+        run: uv sync --frozen --group agent
+
+      # ClickHouse with the read-only user and the fixture. Exports AGENT_READER_*.
+      - name: Start the warehouse
+        run: bash scripts/ci_warehouse.sh
+
+      # The only step that sees the key. It never fails the job by itself: whether the run
+      # executed is judged at the end, after the summary and the artifact.
+      - name: Evaluate
+        env:
+          VARIANT: ${{ inputs.variant }}
+          SPLIT: ${{ inputs.split }}
+          MODEL: ${{ inputs.model }}
+          REPETITIONS: ${{ inputs.repetitions }}
+          MAX_USD: ${{ inputs.max_usd }}
+          LIMIT: ${{ inputs.limit }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          arguments=(--variant "$VARIANT" --split "$SPLIT" --repetitions "$REPETITIONS")
+          arguments+=(--max-usd "$MAX_USD" --out eval-results.json)
+          if [ -n "$MODEL" ]; then
+            arguments+=(--model "$MODEL")
+          fi
+          if [ -n "$LIMIT" ]; then
+            arguments+=(--limit "$LIMIT")
+          fi
+          set +e
+          PYTHONPATH=src uv run --frozen --group agent python -m evalkit.run evals/golden.jsonl \
+            "${arguments[@]}" 2> eval-stderr.txt
+          code=$?
+          set -e
+          echo "$code" > eval-exit-code.txt
+          echo "python -m evalkit.run exited with $code"
+          cat eval-stderr.txt >&2
+
+      # The whole report to a file, its first tables to the job summary. No key here.
+      - name: Report
+        if: always()
+        run: |
+          if [ -f eval-results.json ]; then
+            PYTHONPATH=src uv run --frozen python -m evalkit.report eval-results.json --out eval-report.md
+            PYTHONPATH=src uv run --frozen python -m evalkit.report eval-results.json --top \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### The evaluation did not run"
+              echo ""
+              echo "\`python -m evalkit.run\` exited with \`$(cat eval-exit-code.txt 2>/dev/null || echo unknown)\` and wrote no results file. What it wrote to standard error:"
+              echo ""
+              echo "<pre>"
+              sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' eval-stderr.txt 2>/dev/null || true
+              echo "</pre>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the results and the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-results
+          path: |
+            eval-results.json
+            eval-report.md
+          if-no-files-found: warn
+
+      # Only this can fail the job: the run did not execute. A low score does not.
+      - name: The evaluation executed
+        run: |
+          code=$(cat eval-exit-code.txt 2>/dev/null || echo "none")
+          if [ "$code" != "0" ] || [ ! -f eval-results.json ]; then
+            echo "::error::the evaluation did not execute (exit code $code)"
+            exit 1
+          fi
+          echo "the evaluation executed; its score is in the summary and in the artifact"

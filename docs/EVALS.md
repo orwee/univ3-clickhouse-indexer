@@ -179,6 +179,45 @@ results file. What it holds to:
 [`evalkit.report`](../src/evalkit/report.py) turns a results file into Markdown: tables
 only, and nothing in it that is not in the file.
 
+## Running an evaluation from GitHub
+
+The workflow [`eval`](../.github/workflows/eval.yml) runs the same command on GitHub's
+runner, against the fixture, with the model key of the `agent-eval` environment. It is
+started by hand and by nothing else.
+
+1. On GitHub, open the **Actions** tab, choose the workflow **eval** on the left, and press
+   **Run workflow**.
+2. Leave the branch on `main` and fill in the form:
+   - `variant`: a name for this run, for example `baseline`. Letters, digits, dot, dash and
+     underscore. Required; it goes into the results file and into its name.
+   - `split`: `dev` (the default), `test` or `all`.
+   - `model`: empty for the default in the code.
+   - `repetitions`: how many times each case is asked, 1 unless changed.
+   - `max_usd`: dollars for the whole run, 5 unless changed.
+   - `limit`: only the first N cases. **For a first run, put 5 here**: it shows that the
+     whole chain works for a few cents before a full run is paid for.
+3. **Approve the run** if the environment asks for it: **Review deployments**, then
+   **Approve and deploy**.
+4. **Read the result** on the page of the run. Under **Summary**: what was run, the headline
+   metrics with their intervals, the refusal table and the costs. At the bottom of the
+   page, the artifact **`eval-results`** holds the whole results file and the whole report.
+
+The job is red only when the evaluation could not execute: no read-only user, no key, a
+bad argument. A low score is a result, not a failure, and the job is green. So is a run
+that stopped on its budget: the summary then opens with `PARTIAL RUN`.
+
+To keep a result in the repository, for a later pull request:
+
+```sh
+scripts/fetch_eval_results.sh RUN_ID    # the number in the run's URL
+```
+
+It downloads the artifact with `gh` into `evals/results/`, as `<date>_<variant>.json` and
+`<date>_<variant>.md`, never overwrites a file, and commits nothing.
+
+**On 2026-10-11 neither the workflow nor the script has run.** A workflow started by hand
+only exists for GitHub once its file is on `main`, and there is no run to download yet.
+
 ## The metrics
 
 [`evalkit.score`](../src/evalkit/score.py) is deterministic and uses no model. A case that
