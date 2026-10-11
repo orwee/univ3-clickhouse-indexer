@@ -131,8 +131,8 @@ mart that outgrows the limit can still be queried, but not fetched whole.
 
 ## Results
 
-Three parties, kept apart: what the session that wrote this saw, what a separate review
-session saw, and what nobody has run yet.
+Four sources, kept apart: what the session that wrote this saw, what a separate review
+session saw, what GitHub's runner ran, and what nobody has run yet.
 
 **2026-10-10, the session that wrote the code.** It ran as root, with Docker available, and
 did not use Docker: no container was started, recreated or touched, and `make demo` was not
@@ -155,11 +155,65 @@ result, recorded here as reported:
 - `scripts/demo.py` from commit `418987c` was run there and ended in `DEMO OK`, with all 32
   lines of step 7 `ok`.
 
+**2026-10-11, GitHub's runner, the `tests` workflow.** A result of the workflow run, not of
+a session on this server: [run 38128501429](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38128501429), on
+commit `3f29c76` of pull request #54. Two of its jobs are about the reader.
+
+- **`make demo` under Docker passed.** The compose mount, the image's entrypoint and the
+  runner container together, for the first time. Step 7 as the job printed it, 32 lines
+  `ok` and none `FAILED`:
+
+  ```
+  === 7. the read-only user: what it may read and everything it is refused
+  connected as agent_reader with clickhouse-connect
+    ok     SELECT on dim_pools: works
+    ok     SELECT on fct_pool_daily: works
+    ok     SELECT on fct_pool_daily_round_trips: works
+    ok     SELECT on fct_pool_daily_smart_money: works
+    ok     SELECT on fct_round_trip_legs: works
+    ok     DESCRIBE on a granted mart: works
+    ok     SELECT on the staging view: refused with 497
+    ok     SELECT on the seed: refused with 497
+    ok     SELECT on the raw table: refused with 497
+    ok     INSERT of zero rows into a mart: refused with 497
+    ok     CREATE TABLE: refused with 497
+    ok     SETTINGS max_execution_time in the statement: refused with 164
+    ok     a result over the row limit: refused with 396
+    ok     INSERT of a row: refused with 497
+    ok     ALTER DELETE: refused with 497
+    ok     TRUNCATE: refused with 497
+    ok     DROP TABLE: refused with 497
+    ok     CREATE TEMPORARY TABLE: refused with 497
+    ok     url(): refused with 497
+    ok     file(): refused with 497
+    ok     remote(): refused with 497
+    ok     SET readonly = 0: refused with 164
+    ok     a query that runs past max_execution_time: refused with 159
+    ok     SHOW TABLES lists the granted marts and nothing else
+    ok     system.columns shows the granted marts and nothing else
+    ok     max_execution_time as a URL parameter: refused with 164
+    ok     clickhouse-connect refuses a per-query setting before sending it
+    ok     clickhouse-connect insert: refused with 497
+    ok     a mart after EXCHANGE TABLES is readable
+    ok     the table it was exchanged with is not
+    ok     a mart after DROP and CREATE is readable
+    ok     nothing the reader tried left a trace: the mart still has its rows
+
+  DEMO OK
+  ```
+
+- **The tests that connect as the reader ran, against a real server.** The job `warehouse`
+  starts ClickHouse 26.3.33.24 in Docker with this file mounted and the demo's password,
+  loads the marts fixture into `onchain_dbt` (`scripts/ci_warehouse.sh`) and runs the tests
+  that can run on the fixture alone: `223 passed in 2.17s`, none skipped, and all 13 tests
+  that connect as `agent_reader` among them. Until this run those 13 had been skipped
+  everywhere. That server is thrown away with the job: it is not the real one.
+
 **Not run by anyone yet.**
 
-- `make demo` under Docker: the compose mount, the image's entrypoint and the runner
-  container together.
-- `make up-reader` on the real server, and with it the server tests as the reader.
+- `make up-reader` on the real server, and with it the server tests as the reader there.
+  On the real server the reader is still defined and not in force.
 
-**To be filled in by the owner after steps 1 to 4:** the date, the last lines of
-`make demo`, and the `make test` summary line.
+**To be filled in by the owner after steps 2 to 4:** the date and the `make test` summary
+line. Step 1, `make demo`, has the result above from the workflow; running it by hand as
+root before `make up-reader` is still the first step.

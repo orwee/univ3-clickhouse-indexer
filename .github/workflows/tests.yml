@@ -1,0 +1,212 @@
+# Lint, tests and the demo, on every pull request and on every push to main.
+#
+# No secret and no environment. Three jobs:
+#   lint-and-test  has no ClickHouse server, so the tests that need one skip and say so;
+#   demo           starts its own throw-away server with docker compose inside the runner;
+#   warehouse      starts a ClickHouse with the read-only user and the marts fixture, and
+#                  runs the tests that need a server and can run on the fixture alone.
+#
+# `pull_request`, never `pull_request_target`: the code of a pull request must not run with
+# anything but a read-only token.
+#
+# Every action is pinned to a full commit SHA; the version is in the comment next to it.
+# Looked up with `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` on 2026-10-10, and again
+# on 2026-10-11.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels the run of the push before it. Runs on main are
+# keyed by commit, so none of them is ever cancelled.
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: make lint, make test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.16" # the version demo/Dockerfile installs
+
+      - name: uv sync --frozen
+        run: uv sync --frozen
+
+      - name: make lint
+        run: make lint
+
+      # -rs makes pytest list every skipped test with its reason, for the summary below.
+      - name: make test
+        env:
+          PYTEST_ADDOPTS: "-rs"
+        run: |
+          set -o pipefail
+          make test 2>&1 | tee test-output.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ ! -f test-output.txt ]; then
+            echo "make test did not run." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          last=$(grep -E "^=+ .* in [0-9.]+s" test-output.txt | tail -n 1 || true)
+          count() { echo "$last" | grep -oE "[0-9]+ $1" | grep -oE "[0-9]+" || echo 0; }
+          skipped_elsewhere=$(grep -E "^SKIPPED" test-output.txt | grep -vc "ClickHouse" || true)
+          {
+            echo "### make test"
+            echo ""
+            echo "$(count passed) passed, $(count skipped) skipped, $(count failed) failed."
+            echo ""
+            if [ "$skipped_elsewhere" = "0" ]; then
+              echo "The skipped tests are the ones that need a ClickHouse server: this job has none."
+            else
+              echo "Skipped for a reason other than a missing ClickHouse server:"
+              echo ""
+              echo "\`\`\`"
+              grep -E "^SKIPPED" test-output.txt | grep -v "ClickHouse"
+              echo "\`\`\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  demo:
+    name: make demo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The whole pipeline on the committed fixtures, against a ClickHouse that mounts
+      # clickhouse/users.d/agent_reader.xml. Step 7 connects as the read-only user and tries
+      # everything it must be refused; the demo exits non-zero if one line is not ok.
+      - name: make demo
+        run: |
+          set -o pipefail
+          make demo 2>&1 | tee demo-output.txt
+
+      - name: Step 7 is all ok
+        run: |
+          sed -n "/=== 7\./,\$p" demo-output.txt > step7.txt
+          ok=$(grep -cE "\| +ok +" step7.txt || true)
+          bad=$(grep -cE "\| +FAILED" step7.txt || true)
+          echo "step 7: $ok lines ok, $bad lines FAILED"
+          grep -q "DEMO OK" demo-output.txt
+          test "$bad" = "0"
+          test "$ok" -ge 1
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### make demo"
+            echo ""
+            if [ -f demo-output.txt ]; then
+              echo "\`\`\`"
+              sed -n "/=== 7\./,\$p" demo-output.txt | sed -E "s/^demo-runner-1 +\| //" | tail -n 45
+              echo "\`\`\`"
+            else
+              echo "make demo did not run."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  warehouse:
+    name: reader, tools, loop and fixture tests on a server
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.16" # the version demo/Dockerfile installs
+
+      - name: uv sync --frozen
+        run: uv sync --frozen
+
+      # ClickHouse 26.3.33.24 with clickhouse/users.d/agent_reader.xml mounted, the fixture
+      # in onchain_dbt, and the connection variables exported for the next steps. The
+      # credentials are the demo's, which are not secrets.
+      - name: Start the warehouse
+        run: bash scripts/ci_warehouse.sh
+
+      # The test files that need a server and can run on the marts fixture alone:
+      #   test_agent_reader.py      what the server refuses the read-only user. Skipped
+      #                             everywhere else: no other server has that user;
+      #   test_agent_tools.py       describe_schema and run_sql on the fixture;
+      #   test_agent_loop.py        the loop and the command line, scripted, on the fixture;
+      #   test_agent_budget_fit.py  how many calls fit on the default budget, per model;
+      #   test_agent_guard.py       the guard's lists against this server's table functions;
+      #   test_marts_fixture.py     the fixture loaded and dumped again. Here the "live"
+      #                             marts it compares with are the fixture itself, so only
+      #                             the round trip is checked; on the real server the same
+      #                             test compares with the warehouse.
+      # The other test files that need a server are not run here. They do not use the
+      # marts fixture: they build raw tables of their own in test_* databases (loader,
+      # materialized view, sanity, reconciliation, analysis and the rest), which is the
+      # pipeline the demo job runs end to end. They were not tried on this server.
+      - name: The tests that run on the fixture
+        env:
+          PYTEST_ADDOPTS: "-rs -v"
+        run: |
+          set -o pipefail
+          uv run pytest \
+            tests/test_agent_reader.py \
+            tests/test_agent_tools.py \
+            tests/test_agent_loop.py \
+            tests/test_agent_budget_fit.py \
+            tests/test_agent_guard.py \
+            tests/test_marts_fixture.py 2>&1 | tee warehouse-output.txt
+
+      # A skipped test here is a failure: this job exists so that they run. The 13 tests
+      # that connect as the read-only user are counted by name.
+      - name: Nothing was skipped, and the 13 reader tests ran
+        run: |
+          skipped=$(grep -cE "^SKIPPED| SKIPPED " warehouse-output.txt || true)
+          reader=$(grep -cE "test_the_server_enforces_it_for_the_reader\[.*\] PASSED" warehouse-output.txt || true)
+          echo "skipped: $skipped, reader tests passed: $reader"
+          if [ "$skipped" != "0" ]; then
+            echo "::error::$skipped tests were skipped in the job that exists to run them"
+            grep -E "^SKIPPED" warehouse-output.txt || true
+            exit 1
+          fi
+          if [ "$reader" != "13" ]; then
+            echo "::error::$reader of the 13 tests that connect as the read-only user passed"
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Tests on a server with the read-only user and the fixture"
+            echo ""
+            if [ -f warehouse-output.txt ]; then
+              reader=$(grep -cE "test_the_server_enforces_it_for_the_reader\[.*\] PASSED" warehouse-output.txt || true)
+              echo "\`\`\`"
+              grep -E "^=+ .* in [0-9.]+s" warehouse-output.txt | tail -n 1 || true
+              echo "\`\`\`"
+              echo ""
+              echo "$reader of the 13 tests that connect as the read-only user passed."
+            else
+              echo "The tests did not run: the warehouse did not start."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
