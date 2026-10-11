@@ -51,10 +51,11 @@ def server_side(client, database: str, table: fixture.Table) -> dict:
     """The same figures as ``fixture.fingerprint_of``, computed by ClickHouse."""
     name = ch.qualified(database, table.name)
     out: dict = {"rows": int(client.command(f"SELECT count() FROM {name}"))}
-    if "block_date" in table.columns:
-        first, last = client.query(f"SELECT min(block_date), max(block_date) FROM {name}").first_row
+    date = fixture.DATE_COLUMN
+    if date in table.columns:
+        first, last = client.query(f"SELECT min({date}), max({date}) FROM {name}").first_row
         out["first_date"], out["last_date"] = str(first), str(last)
-    for column in ("swaps", "volume_usd"):
+    for column in fixture.SUM_COLUMNS:
         if column in table.columns:
             total = client.query(f"SELECT sum({column}) FROM {name}").first_row[0]
             out[f"sum_{column}"] = fixture.decimal_text(Decimal(str(total)))

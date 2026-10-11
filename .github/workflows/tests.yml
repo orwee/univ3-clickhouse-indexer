@@ -155,6 +155,8 @@ jobs:
       #   test_agent_loop.py        the loop and the command line, scripted, on the fixture;
       #   test_agent_budget_fit.py  how many calls fit on the default budget, per model;
       #   test_agent_guard.py       the guard's lists against this server's table functions;
+      #   test_golden.py            every reference query of the golden set returns its
+      #                             stored answer, and regenerating gives the same bytes;
       #   test_marts_fixture.py     the fixture loaded and dumped again. Here the "live"
       #                             marts it compares with are the fixture itself, so only
       #                             the round trip is checked; on the real server the same
@@ -174,6 +176,7 @@ jobs:
             tests/test_agent_loop.py \
             tests/test_agent_budget_fit.py \
             tests/test_agent_guard.py \
+            tests/test_golden.py \
             tests/test_marts_fixture.py 2>&1 | tee warehouse-output.txt
 
       # A skipped test here is a failure: this job exists so that they run. The 13 tests

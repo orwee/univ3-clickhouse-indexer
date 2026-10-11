@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 DEMO = docker compose -f docker-compose.demo.yml
 
-.PHONY: help demo up up-reader down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis eval-fixture dbt-seed dbt-build dbt-test dbt-prove dashboard
+.PHONY: help demo up up-reader down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis eval-fixture golden dbt-seed dbt-build dbt-test dbt-prove dashboard
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -83,6 +83,9 @@ analysis: ## round trips and cross-pool analysis from sql/analysis/, read-only, 
 
 eval-fixture: ## copy the five dbt marts into evals/fixture/ (SELECT only): what the evaluation and CI run on
 	PYTHONPATH=src uv run python scripts/export_marts_fixture.py
+
+golden: ## compute evals/golden.jsonl: every answer by SQL on the fixture, in a throw-away test_* database
+	PYTHONPATH=src uv run python -m evalkit.golden --templates evals/golden_templates.py --out evals/golden.jsonl
 
 fetch-external: ## daily volume per pool from the public GeckoTerminal API (no key) into ClickHouse
 	PYTHONPATH=src uv run python -m univ3_indexer.external --fetch

@@ -19,32 +19,28 @@ from dataclasses import dataclass
 from decimal import Decimal, localcontext
 from pathlib import Path
 
+import yaml
+
 from univ3_indexer import clickhouse as ch
 from univ3_indexer import config
 
 FIXTURE_DIR = config.REPO_ROOT / "evals" / "fixture"
+SPEC_FILE = config.REPO_ROOT / "evals" / "fixture.yml"
 SCHEMA_FILE = "schema.sql"
 FINGERPRINT_FILE = "fingerprint.json"
 FORMAT = "TabSeparatedWithNamesAndTypes"
-TABLES = (
-    "dim_pools",
-    "fct_pool_daily",
-    "fct_pool_daily_round_trips",
-    "fct_pool_daily_smart_money",
-    "fct_round_trip_legs",
-)
-# Marts whose rows are NOT published: the fixture holds the two header lines of the file and
+
+# Nothing of the warehouse is named in this module. Which tables the fixture holds, which of
+# them are kept as a schema and no rows, and which columns the fingerprint summarises all
+# come from the spec file, under evals/.
+_SPEC = yaml.safe_load(SPEC_FILE.read_text(encoding="utf-8"))
+TABLES: tuple[str, ...] = tuple(_SPEC["tables"])
+# Tables whose rows are NOT published: the fixture holds the two header lines of the file and
 # the CREATE TABLE, so the table exists wherever the fixture is loaded, and it is empty there.
 # The value is the reason, and it is copied into fingerprint.json.
-SCHEMA_ONLY = {
-    "fct_pool_daily_smart_money": (
-        "Not published. A pool-day that holds a single smart-money swap gives its USD amount "
-        "to six decimals; the swaps are public on chain, so pool, day and amount identify "
-        "the transaction and through it the wallet Nansen classifies. Nansen's "
-        "redistribution guidelines require that published output cannot be "
-        "reverse-engineered to their classification."
-    ),
-}
+SCHEMA_ONLY: dict[str, str] = dict(_SPEC["schema_only"])
+DATE_COLUMN: str = _SPEC["fingerprint"]["date_column"]
+SUM_COLUMNS: tuple[str, ...] = tuple(_SPEC["fingerprint"]["sum_columns"])
 # Above this a file does not go into the repository without the owner deciding how.
 MAX_FILE_BYTES = 3 * 1024 * 1024
 
@@ -122,13 +118,13 @@ def fingerprint_of(table: Table) -> dict:
     out: dict = {"rows": len(table.rows)}
     if not table.rows:
         return out
-    if "block_date" in table.columns:
-        dates = table.column("block_date")
+    if DATE_COLUMN in table.columns:
+        dates = table.column(DATE_COLUMN)
         out["first_date"], out["last_date"] = min(dates), max(dates)
-    for name in ("swaps", "volume_usd"):
+    for name in SUM_COLUMNS:
         if name in table.columns:
             with localcontext() as exact:
-                exact.prec = 200  # a Decimal(76, 18) sum must not be rounded to 28 digits
+                exact.prec = 200  # a wide decimal sum must not be rounded to 28 digits
                 total = sum((Decimal(v) for v in table.column(name) if v is not None), Decimal(0))
             out[f"sum_{name}"] = decimal_text(total)
     return out
