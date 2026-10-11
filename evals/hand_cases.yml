@@ -101,7 +101,7 @@
     both days included? Answer in WETH, not in dollars.
   answer_type: number
   unit: WETH
-  tolerance: sum
+  tolerance: quantity
   reference_sql: >-
     SELECT sum(if(p.token0 = 'WETH', d.volume_token0, d.volume_token1)) AS volume
     FROM fct_pool_daily AS d INNER JOIN dim_pools AS p ON p.pool_address = d.pool_address
@@ -185,7 +185,7 @@
   question: How much USDC was traded in the WETH/USDC 0.01% pool on 2026-09-02? Answer in USDC.
   answer_type: number
   unit: USDC
-  tolerance: sum
+  tolerance: quantity
   reference_sql: >-
     SELECT if(p.token0 = 'USDC', d.volume_token0, d.volume_token1) AS volume
     FROM fct_pool_daily AS d INNER JOIN dim_pools AS p ON p.pool_address = d.pool_address

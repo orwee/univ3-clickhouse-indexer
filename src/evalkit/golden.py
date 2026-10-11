@@ -55,12 +55,18 @@ DEV_SHARE = 3  # one case in three goes to dev, the rest to test
 DEFAULT_SEED = 20260925
 
 # A number passes when it is within EITHER bound. Both zero means exact.
-#   count  an integer that was counted: exact.
-#   sum    an amount added up: a cent, or a tenth of a percent, whichever is looser.
-#   ratio  a ratio, a share or a price: half a percent, relative only.
+#   count     an integer that was counted: exact.
+#   sum       an amount of money added up: a cent, or a tenth of a percent, whichever is
+#             looser.
+#   quantity  an amount added up in a unit that has no cent: a tenth of a percent, relative
+#             only. One unit may be worth a cent or thousands of dollars, so an absolute
+#             bound that suits one such unit accepts almost any number, zero included, for
+#             another.
+#   ratio     a ratio, a share or a price: half a percent, relative only.
 TOLERANCES: dict[str, dict[str, str]] = {
     "count": {"abs": "0", "rel": "0"},
     "sum": {"abs": "0.01", "rel": "0.001"},
+    "quantity": {"abs": "0", "rel": "0.001"},
     "ratio": {"abs": "0", "rel": "0.005"},
 }
 
