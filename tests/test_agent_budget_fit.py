@@ -122,3 +122,52 @@ def test_the_documentation_says_the_same(model):
     """docs/AGENT.md has one row per model with the number recorded here."""
     row = f"| `{model}` | {CALLS_THAT_FIT[model]} of 6 | about ${SPENT[model]} |"
     assert row in AGENT_DOC.read_text(), row
+
+
+# --- the ceiling of the variant that runs another model -------------------------------------
+
+
+class Watching(budget.DollarBudget):
+    """A budget that keeps, for every call, the room it was asked for: spent plus worst."""
+
+    def __init__(self, max_usd):
+        super().__init__(max_usd)
+        self.room: list[Decimal] = []
+
+    def check(self, worst_case):
+        self.room.append(self.spent + Decimal(str(worst_case)))
+        super().check(worst_case)
+
+
+def test_the_sonnet_variant_has_a_ceiling_that_lets_all_six_calls_through(
+    clickhouse, marts_database
+):
+    """evals/variants/sonnet.yml sets the model and the ceiling per question, nothing else.
+    The ceiling is the room the sixth call of the six turns above needs, and a little over."""
+    from evalkit import variants
+
+    variant = variants.load("sonnet", config.REPO_ROOT / "evals" / "variants", config.REPO_ROOT)
+    assert variant.model == "claude-sonnet-5-5" and variant.model in llm.PRICES
+    assert (variant.descriptions, variant.prompt_addendum) == (None, "")
+    assert set(variant.files) == {"evals/variants/sonnet.yml"}
+    real = warehouse.load(WAREHOUSE_YML)
+    house = warehouse.Warehouse(
+        marts_database, real.tables, real.row_cap, real.max_iterations, real.max_usd
+    )
+    purse = Watching(variant.max_usd_per_question)
+    result = loop.run(
+        "Which is it?",
+        SixTurns(variant.model),
+        tools.Tools(ch.connect(database=marts_database), house),
+        purse,
+        max_iterations=house.max_iterations,
+        row_cap=house.row_cap,
+    )
+    assert result.status == "answered" and result.iterations == 6, result.reason
+    needed = max(purse.room)
+    assert needed == purse.room[-1], "the sixth call is the one that needs the most room"
+    # The figure written in the variant file, to the cent: it moves with the prompt.
+    assert round(needed, 2) == Decimal("0.51")
+    assert needed < variant.max_usd_per_question <= needed * Decimal("1.25")
+    # And the default ceiling would not do: that is why the file sets one.
+    assert needed > real.max_usd
