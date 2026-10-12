@@ -1,0 +1,15 @@
+id,kind,family,correct,value,cause,still_ungrounded
+t-volume-day-001,template,volume-day,True,11068.824688,a cell of another query of the last turn,False
+t-token-volume-day-001,template,token-volume-day,True,0.16285259528637228,"the same number as a cell of the last turn, read as a double",False
+t-token-volume-day-005,template,token-volume-day,True,17961.32006319908,"the same number as a cell of the last turn, read as a double",False
+t-token-volume-day-007,template,token-volume-day,True,23362.186254016848,"the same number as a cell of the last turn, read as a double",False
+t-volume-range-001,template,volume-range,True,29781.72778,a cell of another query of the last turn,False
+t-vwap-day-001,template,vwap-day,True,2849.870677042685,"the same number as a cell of the last turn, read as a double",False
+t-vwap-day-002,template,vwap-day,True,2524.6513423514716,"the same number as a cell of the last turn, read as a double",False
+t-vwap-day-006,template,vwap-day,True,3065.724982778232,"the same number as a cell of the last turn, read as a double",False
+t-fees-009,template,fees,True,4755.4508326255,a cell of another query of the last turn,False
+h-multi-step-002,hand,multi-step,True,-1.496551319927391,"the same number as a cell of the last turn, read as a double",False
+h-gross-net-004,hand,gross-net,True,9.8156,a cell of another query of the last turn,False
+h-ambiguous-002,hand,ambiguous,True,878,a cell of another query of the last turn,False
+h-missing-row-004,hand,missing-row,True,1,a cell of an earlier turn,True
+h-dates-003,hand,dates,True,"""2026-08-22""",a cell of another query of the last turn,False
