@@ -491,7 +491,7 @@ PYTHONPATH=src uv run python -m evalkit.calibration build evals/results/*_baseli
 PYTHONPATH=src uv run python -m evalkit.calibration agree evals/calibration/sheet.csv verdicts.json
 ```
 
-`build` writes `evals/calibration/sheet.csv`, which does not exist yet: thirty answered
+`build` writes [`evals/calibration/sheet.csv`](../evals/calibration/sheet.csv): thirty answered
 questions, each a different case, drawn with a fixed seed and stratified by the kind of
 case, from the `dev` split only. Fifteen keep the explanation the agent wrote. The other
 fifteen have an explanation altered on purpose, by code and not by a model: a number
@@ -506,6 +506,10 @@ Cohen's kappa and the two-by-two table. A test checks the kappa against two valu
 out by hand in the test. With the key it also says how many of the altered rows each of the
 two called unfaithful.
 
-**None of this has run.** No model has judged anything, the owner has not labelled a sheet,
-and there is no agreement figure. Until there is one, a verdict of the judge is not a
-measurement, and no report in this repository uses one.
+**The sheet is built and not labelled.** It was built on 2026-10-12 from the three baseline
+results files, `evals/results/2026-10-12_baseline_*.json`, with the default seed: 30 rows, 15
+of them altered (4 with a number changed, 8 with a date moved or a name replaced, 3 with a
+claim added; none with the unit changed, because the draw gave none). Its `label` column is
+empty: the owner fills it. No model has judged anything and there is no agreement figure.
+Until there is one, a verdict of the judge is not a measurement, and no report in this
+repository uses one.
