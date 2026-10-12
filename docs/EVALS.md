@@ -301,19 +301,31 @@ several times on one day. It then downloads `eval-transcripts` into the data dir
 `<data directory>/evals/github-run-<RUN_ID>/`, which is never inside the working copy: the
 transcripts are not for the repository.
 
-**When this was written, on 2026-10-11, the `eval` workflow had never run**, and so neither
-had the script. Everything above about them is what the code and its tests say, not what a
-run showed.
+**First run on 2026-10-12.** The owner started the `eval` workflow by hand on `main` at
+`b6befdc`: a smoke run of five `dev` cases
+([38242270322](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38242270322))
+and then the baseline three times. The script above brought the three baseline runs into
+`evals/results/`. A fifth run, 38244959690, stopped before asking anything because the
+variant name was mistyped; it has no results and is in no figure.
 
-### What a run costs: an estimate, not yet a measurement
+### What a run costs: measured
 
-No evaluation has been measured yet. The only real question asked so far is the one of the
-`agent` workflow's run
-[38150882341](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38150882341),
-whose artifact `agent-result` says: 3 model calls, 9,329 input and 535 output tokens,
-0.0012004 USD, 4.1 seconds, with `claude-haiku-5-5`. If every question cost that, the 180
-cases would come to about 0.22 USD and about 12 minutes. That is one question multiplied by
-180, and nothing more: the first full run replaces this paragraph with what it measured.
+Three runs of the baseline variant, all 180 cases, one repetition, `claude-haiku-5-5`, budget
+1.50 USD each. Dollars are `spent_usd` of each results file; minutes are from `started` to
+`ended` of the same file, so they leave out the runner's set-up.
+
+| Run | Results file | Asked | Errors | Spent, USD | Time |
+|---|---|---|---|---|---|
+| [38242644460](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38242644460) | `evals/results/2026-10-12_baseline_38242644460.json` | 180 of 180 | 0 | 0.3085183 | 16 min 50 s |
+| [38245003388](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38245003388) | `evals/results/2026-10-12_baseline_38245003388.json` | 180 of 180 | 0 | 0.3104654 | 17 min 28 s |
+| [38247610883](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38247610883) | `evals/results/2026-10-12_baseline_38247610883.json` | 180 of 180 | 0 | 0.3061546 | 17 min 1 s |
+
+Together 0.9251383 USD. No run waited for a 429 or a 529, none stopped on its budget, and
+no question ended in an error. A question cost 0.00171 USD and 5.68 seconds on average over
+the three runs (`evals/results/2026-10-12_baseline.md`, the report of
+[`evalkit.runs`](../src/evalkit/runs.py) over the three files). The estimate this paragraph
+replaces, one question of the `agent` workflow multiplied by 180, was 0.22 USD and 12
+minutes: the measurement is about 0.31 USD and 17 minutes.
 
 ## The metrics
 

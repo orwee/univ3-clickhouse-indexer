@@ -176,11 +176,14 @@ apart, and not a wrong answer. Every variant is run three times, because the mod
 answer the same question the same way twice, and a difference smaller than the spread between
 runs is reported as no difference.
 
-**The numbers.** There are none yet. The evaluation is built and tested without a model, and
-it has not run: the code it runs on is waiting to be merged, and after that each run needs
-the owner's approval. Neither the baseline nor a change to it has been measured. When they
-have, this paragraph will carry the baseline, the figure after one change and the file each
-one comes from.
+**The numbers.** Only the baseline is measured: three runs of the 180 cases on 2026-10-12,
+with no question ending in an error. Over the three runs together the agent was right in
+523 of 540 answers, 96.9%, with a 95% interval of [94.6%, 98.7%] that resamples cases; on
+the `test` cases alone it was 365 of 381 = 95.8% [92.7%, 98.4%]. The figures are in
+[`evals/results/2026-10-12_baseline.md`](evals/results/2026-10-12_baseline.md), and the cost
+of each run is in [docs/EVALS.md](docs/EVALS.md#what-a-run-costs-measured). No change to the
+agent has been measured yet; when one has, this paragraph will carry the figure after it
+beside the baseline.
 
 **Not tied to this domain.** `src/agent/` and `src/evalkit/` name no table, no column and no
 token of this warehouse, and two tests keep it that way. To point them at another warehouse
@@ -196,7 +199,7 @@ ClickHouse.
 - **The judge is not calibrated.** A model that reads the agent's explanations and says
   whether they are faithful to the query is written
   ([`src/evalkit/judge.py`](src/evalkit/judge.py)), and so is the code that builds a sheet for
-  a person to label. It has never run, nobody has labelled a sheet, and no verdict of it is
+  a person to label. It has never run, nobody has labelled the sheet, and no verdict of it is
   used anywhere.
 - **There is no regression check on pull requests.** An evaluation is started by hand, costs
   money and waits for the owner's approval. CI runs the tests, not the evaluation.
