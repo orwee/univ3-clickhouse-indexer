@@ -1,0 +1,10 @@
+# One change against the baseline: the model. The ceiling per question is raised with it,
+# because the budget is checked against the worst case of each call before it is sent, and
+# at this model's prices the default 0.25 USD stops it after three of its six calls.
+#
+# 0.55 is worked out, not chosen: tests/test_agent_budget_fit.py asks six calls of this
+# model, five of them a query that returns 150 rows, and the sixth call needs 0.505722 USD
+# of room (what the five before it cost, plus its own worst case). 0.55 is that with a
+# little over, since the figure moves with every byte of the prompt.
+model: claude-sonnet-5-5
+max_usd_per_question: 0.55
