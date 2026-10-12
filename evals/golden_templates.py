@@ -151,7 +151,7 @@ def token_volume_day(f: Facts, rng: random.Random, i: int):
         f"WHERE d.pool_label = {lit(label)} AND d.block_date = {lit(day.isoformat())}"
     )
     question = wording.format(token=token, label=label, day=said(day, i))
-    return {"label": label, "day": day, "token": token}, question, "number", token, "sum", sql, None  # fmt: skip
+    return {"label": label, "day": day, "token": token}, question, "number", token, "quantity", sql, None  # fmt: skip
 
 
 def volume_all_day(f: Facts, rng: random.Random, i: int):
@@ -398,7 +398,7 @@ FAMILIES = {
     ),  # fmt: skip
     "fees": (
         fees,
-        "The fee is stored in hundredths of a basis point; the mart already has the dollar estimate. Catches a model that recomputes it with the wrong unit.",
+        "The fee is stored in hundredths of a basis point; the mart already has the dollar estimate. Catches a model that recomputes it with the wrong unit. On the tolerance: fees are small amounts, and for a few of them the cent of the dollar tolerance is more than a tenth of a percent of the value. The cent stays, because a dollar amount given to the cent is right.",
     ),  # fmt: skip
     "share": (
         share,

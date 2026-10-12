@@ -28,9 +28,12 @@ def case(answer_type="number", expected="100", accepted=(), tolerance=SUM, kind=
 
 
 def result(status="answered", value=None, calls=(), usd="0.01", seconds=1.0, tokens=1000, **more):
-    answer = None if status == "no_answer" else {"value": value, **more}
+    reason, waits = more.pop("reason", ""), more.pop("waits", [])
+    answer = None if status in ("no_answer", "error") else {"value": value, **more}
     return {
         "status": status,
+        "reason": reason,
+        "waits": waits,
         "answer": answer,
         "tool_calls": [{"name": name, "summary": {"ok": ok}} for name, ok in calls],
         "usd": usd,
@@ -333,3 +336,51 @@ def test_with_repetitions_each_case_says_how_many_runs_passed_and_the_spread_bet
     assert rep["spread"]["lowest"] == pytest.approx(1 / 3)
     assert rep["spread"]["range"] == pytest.approx(1 / 3)
     assert math.isclose(score.summarize(records, cases)["overall"]["correct"]["value"], 4 / 9)
+
+
+def test_an_error_is_not_a_wrong_answer_it_is_counted_apart_and_enters_no_figure():
+    """Six questions. Two ended because of the API or the budget: nothing was learned about
+    the model. One ended at the cap of model calls: that is the model's, and it is wrong."""
+    a, b, c, d, e, f = ({**case(), "label": name, "split": "dev"} for name in "abcdef")
+    e["split"] = f["split"] = "test"
+    waited = [{"seconds": 2.0}, {"seconds": 60.0}]
+    records, cases = records_of(
+        (a, result(value="100", calls=[("run_sql", True)]), 1),
+        (b, result(value="1", calls=[("run_sql", True)]), 1),
+        (c, result("no_answer", reason="iteration_cap: 6 model calls without an answer"), 1),
+        (d, result("error", reason="llm_error: APIConnectionError", usd="0.30"), 1),
+        (e, result("error", reason="budget: a call does not fit", usd="0.02", waits=waited), 1),
+        (f, result(value="100", waits=[{"seconds": 5.0}]), 1),
+    )
+    by_id = {record["id"]: record["score"] for record in records}
+    assert by_id["d"]["error"] is True and by_id["d"]["correct"] is False
+    assert by_id["c"]["error"] is False and by_id["c"]["correct"] is False
+    assert (by_id["e"]["waits"], by_id["e"]["waited_seconds"]) == (2, 62.0)
+    summary = score.summarize(records, cases)
+    assert (summary["records"], summary["ran"], summary["scored"]) == (6, 6, 4)
+    assert summary["partial"] is False  # every question was asked
+    assert summary["errors"] == {
+        "count": 2,
+        "usd": "0.32",
+        "reasons": {"budget: a call does not fit": 1, "llm_error: APIConnectionError": 1},
+        "cases": [{"id": "d", "repetition": 1}, {"id": "e", "repetition": 1}],
+    }
+    assert summary["waits"] == {"count": 3, "questions": 2, "seconds": 67.0}
+    overall = summary["overall"]
+    assert (overall["correct"]["k"], overall["correct"]["n"]) == (2, 4)  # not 2 of 6
+    assert (overall["execution_accuracy"]["k"], overall["execution_accuracy"]["n"]) == (2, 4)
+    assert overall["cases"] == 4 and overall["usd"]["total"] == "0.04"  # the errors' cost is apart
+    assert (overall["valid_sql"]["k"], overall["valid_sql"]["n"]) == (2, 2)
+    # dev and test apart, each over what was scored there.
+    assert {k: v["correct"]["n"] for k, v in summary["by_split"].items()} == {"dev": 3, "test": 1}
+    assert summary["by_split"]["test"]["correct"]["k"] == 1
+
+
+def test_with_repetitions_an_error_is_not_a_run_that_failed():
+    a, b = ({**case(), "label": name} for name in "ab")
+    right, broken = result(value="100"), result("error", reason="llm_error: x")
+    records, cases = records_of((a, right, 1), (b, right, 1), (a, right, 2), (b, broken, 2))
+    rep = score.summarize(records, cases)["repetitions"]
+    assert rep["per_case"] == {"a": {"passed": 2, "runs": 2}, "b": {"passed": 1, "runs": 1}}
+    assert [(p["k"], p["n"]) for p in rep["correct_per_run"]] == [(2, 2), (1, 1)]
+    assert rep["always_passed"] == 2 and rep["spread"]["range"] == 0

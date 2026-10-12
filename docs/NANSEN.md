@@ -72,13 +72,14 @@ by `fct_pool_daily`. 30 complete days, 120 pool-days, 2026-08-21 to 2026-09-19:
 |---|---|---|---|---|---|---|
 | USDC/WETH 0.05% | 227,562 | 153 | 2,438,587,799 | 1,698,906 | 0.067% | 0.070% |
 | USDC/WETH 0.01% | 626,933 | 521 | 1,368,378,340 | 1,320,570 | 0.083% | 0.097% |
-| **All four** | 859,691 | 677 | 3,833,375,884 | 3,023,721 | 0.079% | 0.079% |
+| **Pools shown** | 854,495 | 674 | 3,806,966,139 | 3,019,476 | 0.079% | 0.079% |
 
-A pool with fewer than 5 smart-money swaps is not shown on its own. Such pools are merged into one row, "other pools", and that row is left out too when it is still under 5. The total counts every pool.
+Pools with fewer than 5 smart-money swaps are left out of every figure in this table, the total included: the total row covers only the pools that are shown. Such pools are merged into one row, "other pools", when together they reach 5; when they do not, they are in no row and in no total.
 
 Of the 1,498 transactions Nansen lists, 666 pool-transactions are in `raw_swaps` (a
-transaction routed through two of the pools counts once in each). What these shares mean is
-not decided here.
+transaction routed through two of the pools counts once in each). That count is over all
+four pools, shown or not; the table has no column it could be set against. What these
+shares mean is not decided here.
 
 **Five more days (2026-09-25).** One more call, for the five days the landing gained: 329
 trades in one page, the window closed (newest trade 23:53 UTC on 2026-09-24), cached like the
@@ -88,13 +89,14 @@ others and crossed the same way. 20 pool-days, 2026-09-20 to 2026-09-24:
 |---|---|---|---|---|---|---|
 | USDC/WETH 0.01% | 110,804 | 145 | 414,591,114 | 602,432 | 0.131% | 0.145% |
 | USDC/WETH 0.05% | 34,124 | 42 | 341,467,959 | 545,946 | 0.123% | 0.160% |
-| **All four** | 145,670 | 188 | 756,116,935 | 1,148,383 | 0.129% | 0.152% |
+| **Pools shown** | 144,928 | 187 | 756,059,073 | 1,148,378 | 0.129% | 0.152% |
 
-A pool with fewer than 5 smart-money swaps is not shown on its own. Such pools are merged into one row, "other pools", and that row is left out too when it is still under 5. The total counts every pool.
+Pools with fewer than 5 smart-money swaps are left out of every figure in this table, the total included: the total row covers only the pools that are shown. Such pools are merged into one row, "other pools", when together they reach 5; when they do not, they are in no row and in no total.
 
-Over the 35 days now fetched (2026-08-21 to 2026-09-24, 140 pool-days): 865 of 1,005,361 swaps
-(0.086%) and 4,172,105 of 4,589,492,820 USD (0.091%). The five new days are higher than the
-thirty before them in both pools of USDC/WETH; five days are too few to say more.
+Over the 35 days now fetched (2026-08-21 to 2026-09-24), in the two pools shown, 70 pool-days:
+861 of 999,423 swaps (0.086%) and 4,167,854 of 4,563,025,212 USD
+(0.091%). The five new days are higher than the thirty before them in both pools
+of USDC/WETH; five days are too few to say more.
 
 What this measures and what it does not:
 

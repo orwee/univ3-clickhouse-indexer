@@ -63,10 +63,21 @@ A number passes when it is within the absolute bound **or** within the relative 
 | Kind of number | `abs` | `rel` | Why |
 |---|---|---|---|
 | a count | 0 | 0 | A count is an integer. One swap off is wrong |
-| a sum, in dollars or in a token | 0.01 | 0.001 | A cent covers rounding to two decimals. A tenth of a percent covers a sum done in floating point over many rows, and nothing else: an off-by-one day on a range moves a sum by far more |
+| a sum in dollars | 0.01 | 0.001 | A cent covers rounding to two decimals. A tenth of a percent covers a sum done in floating point over many rows, and nothing else: an off-by-one day on a range moves a sum by far more |
+| an amount of a token | 0 | 0.001 | A token has no cent. One unit of one token is worth a dollar and one unit of another thousands, so an absolute bound that suits the first accepts almost any number for the second. Relative only |
 | a ratio, a share or a price | 0 | 0.005 | A ratio has no natural absolute scale. Half a percent accepts a price computed from rounded volumes and rejects a different definition, such as an average that is not weighted |
 
-A case may override them, and then its `notes` say why. No template case does.
+The second row was one row with the first until 2026-10-11, and that was a defect: three
+cases (`t-token-volume-day-001`, `-002` and `-004`) expect less than 0.2 of a token, and
+with a bound of 0.01 two of them accepted any number between 0 and 0.01, zero included. Now
+every case whose unit is a token has no absolute bound, and a test checks it.
+
+A case may override the defaults, and then its `notes` say why. A test holds every case to
+one rule: **no absolute bound may be larger than 0.1% of the expected value**, unless the
+expected value is 0 (where a relative bound accepts nothing but 0) or the `notes` of the
+case explain the tolerance. Today that leaves one case at 0 and three with a reason: two
+fees of a few dollars, where the cent is kept because a dollar amount given to the cent is
+right, and one difference of two shares that can be close to zero.
 
 A label is compared exactly, after trimming and case-folding. A date is compared as a
 date. A list is compared element by element, in order.
@@ -157,27 +168,89 @@ readings agree.
 PYTHONPATH=src uv run --group agent python -m evalkit.run evals/golden.jsonl \
     --variant baseline [--split dev|test|all] [--ids FILE] [--limit N] [--model ID] \
     [--repetitions N] [--max-usd 5] [--out results.json]
+PYTHONPATH=src uv run --group agent python -m evalkit.run evals/golden.jsonl \
+    --only-errors results.json [--max-usd 5] [--out merged.json]
 PYTHONPATH=src uv run python -m evalkit.report results.json [--out report.md] [--top]
+PYTHONPATH=src uv run python -m evalkit.rescore results.json [--out rescored.json]
 ```
 
 [`evalkit.run`](../src/evalkit/run.py) asks the agent every selected case and writes one
 results file. What it holds to:
 
 - **It connects as the read-only user**, as `python -m agent` does, and as nobody else.
+- **A variant is a file.** `--variant NAME` loads `evals/variants/NAME.yml`; a name with no
+  file stops the run. See [Variants](#variants).
 - **One budget for the whole run.** Before every question it checks that the question's own
   ceiling (0.25 USD by default) still fits in what is left. When it does not, the run stops
   and every case left is recorded as `not_run`. A partial run is never reported as a whole
   one: the file says how many were not asked, and the report opens with it.
-- **Nothing is retried.** A question that ends in a model error is recorded as it ended.
-- **The results file says what was run**: the commit, the model, the variant, the SHA-256 of
-  the system prompt and of the golden file, the fixture's fingerprint, start and end, the
-  budget and what was spent, and for every case and repetition the agent's whole result
-  and its score.
-- **Full transcripts stay out of the repository.** Every row the model saw is written under
-  the data directory, `<data directory>/evals/<run>/transcripts/`, next to the ledger.
+- **The results file is written after every question**, and replaced in one step: it is
+  written to a temporary file next to it and moved over the old one, so a reader finds the
+  old file or the new one and never half of one. While the run is going the file says
+  `"state": "unfinished"` and lists under `not_reached` the cases it has not got to. A job
+  that is killed leaves exactly that file, and its report opens with `UNFINISHED RUN`. The
+  last write sets `"state": "complete"`.
+- **A question is asked once, and a request is sent again in one case only.** When the API
+  answers 429 or 529 the request was not served and nothing was billed. The agent waits
+  what the `retry-after` header says, at most 60 seconds, and sends the same request again,
+  at most three times for one call ([AGENT.md](AGENT.md#how-a-question-ends)). Every wait
+  is in the result of the question, under `waits`, and the report adds them up.
+- **An error is not a wrong answer.** A question that ended because of the API or the
+  network after those waits, or because the budget refused a call, has the status `error`.
+  It is counted apart and is in no accuracy and no cost figure. A question that ended at
+  the cap of model calls, or because the model stopped, is the model's outcome and counts
+  as wrong. A run with any error says so at the top of its report, with the reasons.
+- **`--only-errors RESULTS` asks again the cases that ended in error** in an earlier file,
+  and only those, and writes the earlier file with those records replaced. It refuses to
+  merge two different things: the golden file, the files of the variant and the system
+  prompt must be what they were. The merged file keeps the run it came from and adds an
+  entry under `reruns` with the new commit, what was asked again and what it cost; each
+  replaced record carries the reason of the error it replaces.
+- **The results file says what was run**: the commit, the model, the variant with the
+  SHA-256 of its file and of every file it points at, the SHA-256 of the system prompt and
+  of the golden file, the fixture's fingerprint, start and end, the budget and what was
+  spent, and for every case and repetition the agent's whole result and its score.
+- **The last result is in the file.** For every question, `last_result` holds the column
+  names and the first 50 rows of the last query that ran: what the answer was checked
+  against. The fixture is public data, so these rows can be published with the results.
+- **Full transcripts stay out of the repository.** Every turn, with every row the model
+  saw, is written under the data directory, `<data directory>/evals/<run>/transcripts/`,
+  next to the ledger.
 
 [`evalkit.report`](../src/evalkit/report.py) turns a results file into Markdown: tables
 only, and nothing in it that is not in the file.
+
+[`evalkit.rescore`](../src/evalkit/rescore.py) scores a results file again against the
+golden file as it is now. When a case is corrected (a tolerance, an accepted reading), the
+runs already paid for are not paid for again: what the agent answered is in their file, and
+only the judgement of it changes. It writes a new file, never over the old one, with every
+score and every figure computed again. `golden_sha256` is then the golden file it is scored
+against, and `rescored` has one entry per rescoring with both hashes, the old and the new,
+and the cases whose verdict changed. No model and no database take part.
+
+## Variants
+
+A variant says what one run changes, in one file,
+[`evals/variants/<name>.yml`](../evals/variants/baseline.yml). It may set four things, all
+optional:
+
+| Key | What it changes |
+|---|---|
+| `model` | the model, in place of the default in the code. It needs a price in `src/agent/llm.py` |
+| `schema_notes` | a file of table and column descriptions. `describe_schema` then returns them next to the names and the types, and one sentence of the system prompt says so instead of saying there are none |
+| `prompt_addendum` | a file of text, appended to the system prompt after a blank line |
+| `max_usd_per_question` | dollars one question may cost, in place of the limit in `evals/warehouse.yml` |
+
+`baseline.yml` sets none of them: it is the agent as the code has it. Any other key in a
+variant file is refused, so a typo cannot pass for a setting. The two paths are relative
+to `evals/variants/`.
+
+A run is pinned to the content of these files, not to their names: `variant_files` in the
+results holds the SHA-256 of the variant file and of every file it points at.
+
+`src/agent/` knows nothing of this. The loop takes an addendum and the tools take
+descriptions, both as plain arguments; reading the files is
+[`evalkit.variants`](../src/evalkit/variants.py). `python -m agent` passes neither.
 
 ## Running an evaluation from GitHub
 
@@ -188,23 +261,32 @@ started by hand and by nothing else.
 1. On GitHub, open the **Actions** tab, choose the workflow **eval** on the left, and press
    **Run workflow**.
 2. Leave the branch on `main` and fill in the form:
-   - `variant`: a name for this run, for example `baseline`. Letters, digits, dot, dash and
-     underscore. Required; it goes into the results file and into its name.
+   - `variant`: the name of a file in `evals/variants/`, without `.yml`, for example
+     `baseline`. Required; it goes into the results file and into its name.
    - `split`: `dev` (the default), `test` or `all`.
    - `model`: empty for the default in the code.
    - `repetitions`: how many times each case is asked, 1 unless changed.
    - `max_usd`: dollars for the whole run, 5 unless changed.
    - `limit`: only the first N cases. **For a first run, put 5 here**: it shows that the
      whole chain works for a few cents before a full run is paid for.
+   - `only_errors`: empty for a normal run. With the path of a results file in the
+     repository, for example `evals/results/2026-10-11_baseline_123.json`, only the cases
+     that ended in error in that file are asked again, and the artifact is the merged file.
+     `split`, `model`, `repetitions` and `limit` are then ignored.
 3. **Approve the run** if the environment asks for it: **Review deployments**, then
    **Approve and deploy**.
 4. **Read the result** on the page of the run. Under **Summary**: what was run, the headline
    metrics with their intervals, the refusal table and the costs. At the bottom of the
-   page, the artifact **`eval-results`** holds the whole results file and the whole report.
+   page there are two artifacts. **`eval-results`** holds the whole results file and the
+   whole report. **`eval-transcripts`** holds every turn of every question, with the rows
+   the model saw.
 
 The job is red only when the evaluation could not execute: no read-only user, no key, a
-bad argument. A low score is a result, not a failure, and the job is green. So is a run
-that stopped on its budget: the summary then opens with `PARTIAL RUN`.
+bad argument, or a run that took longer than the 50 minutes the step is given. A low score
+is a result, not a failure, and the job is green. So is a run that stopped on its budget:
+the summary then opens with `PARTIAL RUN`. A run stopped by the time limit is red, and
+what it had written is still reported and uploaded: the summary opens with `UNFINISHED
+RUN`.
 
 To keep a result in the repository, for a later pull request:
 
@@ -212,16 +294,37 @@ To keep a result in the repository, for a later pull request:
 scripts/fetch_eval_results.sh RUN_ID    # the number in the run's URL
 ```
 
-It downloads the artifact with `gh` into `evals/results/`, as `<date>_<variant>.json` and
-`<date>_<variant>.md`, never overwrites a file, and commits nothing.
+It downloads the artifact `eval-results` with `gh` into `evals/results/`, as
+`<date>_<variant>_<RUN_ID>.json` and `<date>_<variant>_<RUN_ID>.md`, never overwrites a
+file, and commits nothing. The run's number is in the name because one variant is run
+several times on one day. It then downloads `eval-transcripts` into the data directory, as
+`<data directory>/evals/github-run-<RUN_ID>/`, which is never inside the working copy: the
+transcripts are not for the repository.
 
-**On 2026-10-11 neither the workflow nor the script has run.** A workflow started by hand
-only exists for GitHub once its file is on `main`, and there is no run to download yet.
+**When this was written, on 2026-10-11, the `eval` workflow had never run**, and so neither
+had the script. Everything above about them is what the code and its tests say, not what a
+run showed.
+
+### What a run costs: an estimate, not yet a measurement
+
+No evaluation has been measured yet. The only real question asked so far is the one of the
+`agent` workflow's run
+[38150882341](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38150882341),
+whose artifact `agent-result` says: 3 model calls, 9,329 input and 535 output tokens,
+0.0012004 USD, 4.1 seconds, with `claude-haiku-5-5`. If every question cost that, the 180
+cases would come to about 0.22 USD and about 12 minutes. That is one question multiplied by
+180, and nothing more: the first full run replaces this paragraph with what it measured.
 
 ## The metrics
 
 [`evalkit.score`](../src/evalkit/score.py) is deterministic and uses no model. A case that
-was not run is in none of these figures.
+was not run is in none of these figures, and neither is a question that ended in an error.
+
+**Error.** A question that ended because of the API or the network, after the waits the
+agent allows, or because the budget refused a call. Nothing was learned about the model, so
+it is not a wrong answer: it is counted apart, with its reason and its cost, and it is in
+none of the figures below. The report says how many there were before it says anything
+else.
 
 **Correct.** For a case with an answer, the submitted value equals `expected` or one of
 `accepted`: within the tolerance for numbers, exactly after trimming and case-folding for
@@ -248,7 +351,7 @@ answer is the whole cost of the run over the number of correct cases.
 **Intervals and breakdowns.** Every proportion is printed as `k of n = p% [low, high]`,
 where the bracket is the 95% Wilson interval. With a few dozen cases the interval is wide,
 and it is there so that two runs are not read as different when they are not. Every figure
-is also broken down by kind and by family.
+is also broken down by split (`dev` and `test` apart), by kind and by family.
 
 **Repetitions.** With `--repetitions N` every case is asked N times. The file then says,
 per case, how many of the runs passed, how many cases passed every run, some runs or none,
@@ -264,5 +367,7 @@ Details that the definitions above leave open, and how the scorer settles them:
 - In a list, an element is compared as a date when both sides are dates, as a number
   (exactly) when both are numbers, and otherwise as a label.
 - `no_answer` is wrong for every case, and is not a hallucination: nothing was made up.
+- `error` is neither right nor wrong. With repetitions, a case that ended in an error in one
+  run has one run fewer, not one failed run.
 - A case with no answer that got a value counts once in the hallucination rate, even when
   that value was also ungrounded.

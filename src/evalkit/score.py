@@ -28,8 +28,15 @@ cost, tokens, seconds
     Per question: mean, median and 95th percentile (nearest rank). Cost per correct answer
     is the whole cost over the number of correct cases.
 
-A case that was not run is in none of these: it is counted apart, and a run with any such
-case is partial.
+error
+    A question that ended because of the API or the network, after the waits the loop
+    allows, or because the budget refused a call. Nothing was learned about the model, so
+    it is not a wrong answer: it is counted apart and enters no figure above, neither the
+    accuracies nor the costs. A question that ended at the cap of model calls, or because
+    the model stopped, is the model's outcome and counts as wrong.
+
+A case that was not run is in none of these either: it is counted apart, and a run with any
+such case is partial.
 """
 
 from __future__ import annotations
@@ -126,8 +133,12 @@ def score_case(case: dict, result: dict) -> dict:
     queries = [call for call in result.get("tool_calls") or [] if call.get("name") == "run_sql"]
     ran = sum(1 for call in queries if (call.get("summary") or {}).get("ok"))
     tokens = result.get("tokens") or {}
+    waits = result.get("waits") or []
     return {
-        "correct": bool(correct),
+        "error": status == "error",
+        "waits": len(waits),
+        "waited_seconds": float(sum(wait.get("seconds", 0) for wait in waits)),
+        "correct": bool(correct) and status != "error",
         "should_refuse": should_refuse,
         "refused": refused,
         "gave_value": gave_value,
@@ -220,18 +231,40 @@ def _figures(scores: list[dict]) -> dict:
     }
 
 
+def _errors(ended_in_error: list[dict]) -> dict:
+    """The questions that ended in an error: how many, why, and what they cost."""
+    reasons: dict[str, int] = {}
+    for record in ended_in_error:
+        reason = str((record.get("result") or {}).get("reason", ""))[:160]
+        reasons[reason] = reasons.get(reason, 0) + 1
+    spent = sum((Decimal(r["score"]["usd"]) for r in ended_in_error), Decimal(0))
+    return {
+        "count": len(ended_in_error),
+        "usd": str(spent),
+        "reasons": dict(sorted(reasons.items())),
+        "cases": [{"id": r["id"], "repetition": r["repetition"]} for r in ended_in_error],
+    }
+
+
 def summarize(records: list[dict], cases: dict[str, dict]) -> dict:
     """The figures of a run. ``records`` are its lines; ``cases`` the cases by id.
 
     A record that was not run has no score and enters no figure. It is counted in
-    ``not_run``, and ``partial`` is true when there is at least one.
+    ``not_run``, and ``partial`` is true when there is at least one. A record that ended
+    in an error has a result and a score, and enters no figure either: it is counted in
+    ``errors``, with its reason and its cost. Every figure is over ``scored``, the records
+    that ran and did not end in an error.
     """
     ran = [r for r in records if r["status"] == "ran"]
-    scores = [r["score"] for r in ran]
+    failed = [r for r in ran if r["score"].get("error")]
+    scored = [r for r in ran if not r["score"].get("error")]
+    scores = [r["score"] for r in scored]
+    by_split: dict[str, list[dict]] = {}
     by_kind: dict[str, list[dict]] = {}
     by_family: dict[str, list[dict]] = {}
-    for record in ran:
+    for record in scored:
         case = cases[record["id"]]
+        by_split.setdefault(case.get("split") or "none", []).append(record["score"])
         by_kind.setdefault(case["kind"], []).append(record["score"])
         by_family.setdefault(f"{case['kind']} / {case['family']}", []).append(record["score"])
     summary = {
@@ -239,11 +272,20 @@ def summarize(records: list[dict], cases: dict[str, dict]) -> dict:
         "ran": len(ran),
         "not_run": len(records) - len(ran),
         "partial": len(ran) < len(records),
+        "errors": _errors(failed),
+        "scored": len(scored),
+        "waits": {
+            "count": sum(r["score"].get("waits", 0) for r in ran),
+            "questions": sum(1 for r in ran if r["score"].get("waits", 0)),
+            "seconds": sum(r["score"].get("waited_seconds", 0.0) for r in ran),
+        },
         "overall": _figures(scores),
+        "by_split": {split: _figures(group) for split, group in sorted(by_split.items())},
         "by_kind": {kind: _figures(group) for kind, group in sorted(by_kind.items())},
         "by_family": {family: _figures(group) for family, group in sorted(by_family.items())},
     }
     repetitions = sorted({r["repetition"] for r in records})
+    ran = scored  # the repetitions below compare answers, and an error is not one
     if len(repetitions) > 1:
         per_case: dict[str, list[bool]] = {}
         for record in ran:

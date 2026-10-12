@@ -43,7 +43,7 @@ def test_the_prompt_names_no_table_and_no_limit_of_this_warehouse():
         assert table not in prompt
     for number in ("396", "10,000", "10000", "200", "0.25"):
         assert number not in prompt, number
-    assert re.findall(r"\{\{(\w+)\}\}", prompt) == ["row_cap", "max_iterations"]
+    assert re.findall(r"\{\{(\w+)\}\}", prompt) == ["descriptions", "row_cap", "max_iterations"]
 
 
 def test_src_agent_imports_nothing_of_the_indexer_but_its_config():
@@ -158,6 +158,39 @@ def test_describe_schema_gives_names_and_types_and_nothing_else(kit, loaded):
         table = fixture.read_table(name)
         expected = [{"name": c, "type": t} for c, t in zip(table.columns, table.types, strict=True)]
         assert out["tables"][name] == expected
+    json.dumps(out)
+
+
+def test_describe_schema_returns_the_descriptions_it_was_given_next_to_names_and_types(loaded):
+    """What the descriptions say and where they were written is the caller's business."""
+    database, client = loaded
+    real = warehouse.load(WAREHOUSE_YML)
+    house = warehouse.Warehouse(database, real.tables, 5, real.max_iterations, real.max_usd)
+    plain = tools.Tools(client, house)
+    assert plain.has_descriptions is False
+    given = {
+        "dim_pools": {"description": "One row per thing.", "columns": {"pool_label": "Its name."}},
+        "fct_pool_daily": {"columns": {"swaps": "How many.", "no_such_column": "Ignored."}},
+        "no_such_table": {"description": "Ignored."},
+    }
+    kit = tools.Tools(client, house, given)
+    assert kit.has_descriptions is True
+    out, bare = kit.describe_schema(), plain.describe_schema()
+    assert out["descriptions"] == {"dim_pools": "One row per thing."} and "descriptions" not in bare
+    with_text = {
+        (table, column["name"]): column["description"]
+        for table, columns in out["tables"].items()
+        for column in columns
+        if "description" in column
+    }
+    assert with_text == {
+        ("dim_pools", "pool_label"): "Its name.",
+        ("fct_pool_daily", "swaps"): "How many.",
+    }
+    # Names and types are what they were without descriptions.
+    strip = lambda columns: [{"name": c["name"], "type": c["type"]} for c in columns]  # noqa: E731
+    assert {t: strip(c) for t, c in out["tables"].items()} == bare["tables"]
+    assert "descriptions" not in kit.describe_schema(["fct_pool_daily"])
     json.dumps(out)
 
 

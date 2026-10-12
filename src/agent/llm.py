@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
@@ -105,6 +106,9 @@ class UnknownModel(ValueError):
 
 
 ERROR_MESSAGE_CHARS = 300
+# The two statuses with which the API says "not now": too many requests, and overloaded.
+# Neither request was served, so neither was billed.
+RATE_LIMIT_STATUSES = (429, 529)
 
 
 class LLMError(RuntimeError):
@@ -112,8 +116,10 @@ class LLMError(RuntimeError):
 
     When the API answered with an error status, ``status_code`` is that status,
     ``error_type`` the API's own name for the error and ``detail`` the start of its message,
-    all three read from the body of the response. For a timeout or a connection error there
-    was no answer, and the three are empty.
+    all three read from the body of the response. ``retry_after`` is the number of seconds
+    in the ``retry-after`` header of that response, when it has one: one number, and the
+    only thing read from the headers. For a timeout or a connection error there was no
+    answer, and all four are empty.
     """
 
     def __init__(
@@ -123,14 +129,37 @@ class LLMError(RuntimeError):
         status_code: int | None = None,
         error_type: str | None = None,
         detail: str = "",
+        retry_after: float | None = None,
     ):
         super().__init__(message)
         self.status_code, self.error_type, self.detail = status_code, error_type, detail
+        self.retry_after = retry_after
+
+    @property
+    def rate_limited(self) -> bool:
+        """The API answered 429 or 529: the request was not served, and may be sent again."""
+        return self.status_code in RATE_LIMIT_STATUSES
 
     @property
     def rejected(self) -> bool:
-        """The API refused the request with a 4xx status: it was not served."""
-        return self.status_code is not None and 400 <= self.status_code < 500
+        """The API refused the request, with a 4xx status or a 529: it was not served."""
+        if self.status_code is None:
+            return False
+        return 400 <= self.status_code < 500 or self.rate_limited
+
+
+def retry_after_seconds(headers: object) -> float | None:
+    """The ``retry-after`` header as seconds, when it is a plain non-negative number.
+
+    The header may also be a date; that form is not read, and gives None like no header.
+    """
+    get = getattr(headers, "get", None)
+    raw = get("retry-after") if callable(get) else None
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return seconds if math.isfinite(seconds) and seconds >= 0 else None
 
 
 def _api_error(body: object) -> tuple[str | None, str]:
@@ -267,8 +296,10 @@ class LLM(Protocol):
 class AnthropicLLM:
     """The official SDK, with no automatic retry and an explicit timeout.
 
-    No retry: a retried request is a second billed request the budget did not approve. The
-    loop stops at a failed call, and books it at its worst case unless the API rejected it.
+    The SDK retries nothing here: a retried request is a second billed request the budget
+    did not approve. The one request that is sent again is sent by the loop, after a 429 or
+    a 529, which say the request was not served. Any other failed call ends the question,
+    booked at its worst case unless the API rejected it.
     """
 
     def __init__(
@@ -308,6 +339,9 @@ class AnthropicLLM:
                 status_code=exc.status_code,
                 error_type=kind,
                 detail=detail,
+                retry_after=retry_after_seconds(
+                    getattr(getattr(exc, "response", None), "headers", None)
+                ),
             ) from None
         except self._anthropic.APIError as exc:  # timeouts and connection errors
             raise LLMError(type(exc).__name__) from None

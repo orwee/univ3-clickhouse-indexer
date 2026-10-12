@@ -11,6 +11,13 @@
 # The job fails only when the evaluation could not execute. A low score is a result, not a
 # failure, and so is a run that stopped on its budget: both are in the report.
 #
+# The results file is written after every question. The step that asks them has a time
+# limit of its own, shorter than the job's, so a run that takes too long is stopped there
+# and what it had written is still reported and uploaded.
+#
+# Two artifacts: `eval-results`, the results file and its report, for the repository; and
+# `eval-transcripts`, every turn of every question, which stays out of the repository.
+#
 # Two rules this file keeps, and tests/test_workflows.py checks:
 #   - the inputs reach the shell through `env:`. No GitHub expression is written inside a
 #     `run:` script;
@@ -23,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       variant:
-        description: "A name for this run: letters, digits, dot, dash, underscore. Goes into the file"
+        description: "The name of a file in evals/variants/, without .yml. Goes into the results"
         required: true
         type: string
       split:
@@ -49,6 +56,11 @@ on:
         type: string
       limit:
         description: "Only the first N cases, for a cheap first run. Empty: all of them"
+        required: false
+        default: ""
+        type: string
+      only_errors:
+        description: "A results file in the repository: ask again only its cases that ended in error. Empty: a normal run"
         required: false
         default: ""
         type: string
@@ -82,6 +94,7 @@ jobs:
       # The only step that sees the key. It never fails the job by itself: whether the run
       # executed is judged at the end, after the summary and the artifact.
       - name: Evaluate
+        timeout-minutes: 50
         env:
           VARIANT: ${{ inputs.variant }}
           SPLIT: ${{ inputs.split }}
@@ -89,15 +102,21 @@ jobs:
           REPETITIONS: ${{ inputs.repetitions }}
           MAX_USD: ${{ inputs.max_usd }}
           LIMIT: ${{ inputs.limit }}
+          ONLY_ERRORS: ${{ inputs.only_errors }}
+          UNIV3_DATA_DIR: ${{ runner.temp }}/eval-data
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          arguments=(--variant "$VARIANT" --split "$SPLIT" --repetitions "$REPETITIONS")
-          arguments+=(--max-usd "$MAX_USD" --out eval-results.json)
-          if [ -n "$MODEL" ]; then
-            arguments+=(--model "$MODEL")
-          fi
-          if [ -n "$LIMIT" ]; then
-            arguments+=(--limit "$LIMIT")
+          arguments=(--variant "$VARIANT" --max-usd "$MAX_USD" --out eval-results.json)
+          if [ -n "$ONLY_ERRORS" ]; then
+            arguments+=(--only-errors "$ONLY_ERRORS")
+          else
+            arguments+=(--split "$SPLIT" --repetitions "$REPETITIONS")
+            if [ -n "$MODEL" ]; then
+              arguments+=(--model "$MODEL")
+            fi
+            if [ -n "$LIMIT" ]; then
+              arguments+=(--limit "$LIMIT")
+            fi
           fi
           set +e
           PYTHONPATH=src uv run --frozen --group agent python -m evalkit.run evals/golden.jsonl \
@@ -136,6 +155,16 @@ jobs:
           path: |
             eval-results.json
             eval-report.md
+          if-no-files-found: warn
+
+      # Every turn of every question, rows included. Not for the repository:
+      # scripts/fetch_eval_results.sh puts them in the data directory.
+      - name: Upload the transcripts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-transcripts
+          path: ${{ runner.temp }}/eval-data/evals/
           if-no-files-found: warn
 
       # Only this can fail the job: the run did not execute. A low score does not.

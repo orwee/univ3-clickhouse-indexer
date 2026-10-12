@@ -158,6 +158,7 @@ def test_the_default_tolerances(cases):
     assert golden.TOLERANCES == {
         "count": {"abs": "0", "rel": "0"},
         "sum": {"abs": "0.01", "rel": "0.001"},
+        "quantity": {"abs": "0", "rel": "0.001"},
         "ratio": {"abs": "0", "rel": "0.005"},
     }
     by_family = {}
@@ -172,6 +173,63 @@ def test_the_default_tolerances(cases):
     assert by_family["swaps-day"] == by_family["swaps-all-range"] == {exact}
     assert by_family["vwap-day"] == {(("abs", "0"), ("rel", "0.005"))}
     assert by_family["volume-day"] == {(("abs", "0.01"), ("rel", "0.001"))}
+    assert by_family["token-volume-day"] == {(("abs", "0"), ("rel", "0.001"))}
+
+
+def _token_symbols():
+    pools = fixture.read_table("dim_pools")
+    return set(pools.column("token0")) | set(pools.column("token1"))
+
+
+def test_an_amount_of_a_token_passes_within_a_tenth_of_a_percent_and_nothing_else(cases):
+    """No absolute bound: a cent of one token is nothing, a cent of another is everything.
+
+    Three cases used to accept almost any number, zero included, because their expected
+    amount is smaller than the cent they were allowed to be off by.
+    """
+    from evalkit import score
+
+    tokens = _token_symbols()
+    assert {"USDC", "WETH", "wstETH"} <= tokens
+    in_a_token = [case for case in cases if case["unit"] in tokens]
+    assert len(in_a_token) >= 12 and {case["kind"] for case in in_a_token} == {"template", "hand"}
+    for case in in_a_token:
+        assert case["tolerance"] == {"abs": "0", "rel": "0.001"}, case["id"]
+        assert not score.number_matches("0", case["expected"], case["tolerance"]), case["id"]
+    by_id = {case["id"]: case for case in cases}
+    for small in ("t-token-volume-day-001", "t-token-volume-day-002", "t-token-volume-day-004"):
+        case = by_id[small]
+        expected = Decimal(case["expected"])
+        assert expected < Decimal("0.2")  # under the cent's reach, or close to it
+        passes = lambda value: score.number_matches(str(value), case["expected"], case["tolerance"])  # noqa: E731, B023
+        assert passes(expected * Decimal("1.0009"))
+        assert not passes(expected * Decimal("1.002"))
+        assert not passes(expected + Decimal("0.004"))
+
+
+def test_no_absolute_bound_is_above_a_tenth_of_a_percent_of_the_value_unless_notes_say_why(cases):
+    """An absolute bound larger than 0.1% of the expected value decides the case by itself.
+
+    That is allowed in two situations only: the expected value is 0, where a relative bound
+    accepts nothing but 0; or the case's notes say why, with the word tolerance in them.
+    """
+    explained, zero = [], []
+    for case in cases:
+        if case["answer_type"] != "number":
+            continue
+        bound, expected = Decimal(case["tolerance"]["abs"]), abs(Decimal(case["expected"]))
+        if bound <= expected * Decimal("0.001"):
+            continue
+        if expected == 0:
+            zero.append(case["id"])
+            continue
+        assert "tolerance" in case["notes"], (
+            f"{case['id']}: an absolute bound of {bound} on an expected {expected} "
+            "is over 0.1% of it, and the notes do not say why"
+        )
+        explained.append(case["id"])
+    assert zero == ["h-missing-row-002"]
+    assert explained == ["t-fees-003", "t-fees-005", "h-multi-step-002"]
 
 
 def test_two_or_three_wordings_per_family_and_every_question_states_its_unit(cases):

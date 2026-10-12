@@ -182,12 +182,13 @@ class _APIError(Exception):
 class _APIStatusError(_APIError):
     """Shaped like the SDK's: a status code, the parsed body, and a response with headers."""
 
-    def __init__(self, status_code, body=None):
+    def __init__(self, status_code, body=None, retry_after=None):
         super().__init__(f"request with key {KEY} failed")
         self.status_code = status_code
         self.body = body
+        waiting = {} if retry_after is None else {"retry-after": retry_after}
         self.response = types.SimpleNamespace(
-            headers={"x-api-key": KEY, "request-id": "req_from_a_header"},
+            headers={"x-api-key": KEY, "request-id": "req_from_a_header", **waiting},
             request=types.SimpleNamespace(content=f"the request, with {KEY}"),
         )
 
@@ -335,7 +336,7 @@ def test_an_error_status_carries_the_code_the_apis_error_type_and_the_start_of_i
         (429, {"error": {"type": "rate_limit_error", "message": "Slow down"}},
          "_APIStatusError: HTTP 429, rate_limit_error: Slow down", True),
         (529, {"error": {"type": "overloaded_error", "message": "Overloaded"}},
-         "_APIStatusError: HTTP 529, overloaded_error: Overloaded", False),
+         "_APIStatusError: HTTP 529, overloaded_error: Overloaded", True),
         (502, "<html>bad gateway</html>", "_APIStatusError: HTTP 502", False),
         (400, None, "_APIStatusError: HTTP 400", True),
         (400, {"error": "not an object"}, "_APIStatusError: HTTP 400", True),
@@ -350,6 +351,42 @@ def test_what_an_error_says_for_each_shape_of_body(sdk, status, body, says, reje
         llm.AnthropicLLM(KEY).complete(system="", messages=[], tools=[], max_tokens=1)
     assert str(err.value) == says and err.value.rejected is rejected
     assert err.value.status_code == status and KEY not in str(err.value)
+
+
+@pytest.mark.parametrize(
+    ("header", "seconds"),
+    [
+        ("7", 7.0),
+        ("0.5", 0.5),
+        ("0", 0.0),
+        (None, None),
+        ("Wed, 21 Oct 2026 07:28:00 GMT", None),  # the date form is not read
+        ("-3", None),
+        ("nan", None),
+        ("soon", None),
+    ],
+)
+@pytest.mark.parametrize("status", [429, 529])
+def test_the_retry_after_header_is_read_as_seconds_and_no_other_header_is(
+    sdk, status, header, seconds
+):
+    sdk.answer = _APIStatusError(status, {"error": {"type": "x", "message": "m"}}, header)
+    with pytest.raises(llm.LLMError) as err:
+        llm.AnthropicLLM(KEY).complete(system="", messages=[], tools=[], max_tokens=1)
+    assert err.value.retry_after == seconds
+    assert err.value.rate_limited is True and err.value.rejected is True
+    for hidden in (KEY, "req_from_a_header"):
+        assert hidden not in str(err.value) and hidden not in repr(err.value.__dict__)
+
+
+def test_only_429_and_529_are_rate_limits():
+    assert llm.RATE_LIMIT_STATUSES == (429, 529)
+    for status, limited, rejected in [(429, True, True), (529, True, True), (400, False, True),
+                                      (500, False, False), (503, False, False),
+                                      (None, False, False)]:  # fmt: skip
+        error = llm.LLMError("x", status_code=status)
+        assert (error.rate_limited, error.rejected) == (limited, rejected), status
+    assert llm.retry_after_seconds(None) is None and llm.retry_after_seconds({}) is None
 
 
 def test_a_timeout_has_no_status_and_is_not_a_rejection(sdk):

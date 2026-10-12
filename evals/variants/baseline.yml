@@ -1,0 +1,12 @@
+# The baseline: the agent as the code has it. This file sets nothing, on purpose.
+#
+# A variant is one file in this directory, named by `--variant NAME`. It may set:
+#
+#   model: <id>                     a model with a price in src/agent/llm.py
+#   schema_notes: <file>            table and column descriptions; describe_schema returns
+#                                   them next to the names and the types
+#   prompt_addendum: <file>         text appended to the system prompt
+#   max_usd_per_question: <number>  in place of the limit in evals/warehouse.yml
+#
+# Both paths are relative to this directory. Anything else in the file is refused. The
+# results of a run record the SHA-256 of the variant file and of every file it points at.

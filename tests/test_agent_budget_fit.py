@@ -112,7 +112,7 @@ def test_how_many_calls_fit_is_what_is_recorded(measured, model):
     assert str(round(result.usd, 2)) == SPENT[model]
     if CALLS_THAT_FIT[model] < 6:
         # Stopped by the bound, not by the money: most of the budget was never spent.
-        assert result.status == "no_answer" and result.reason.startswith("budget: ")
+        assert result.status == "error" and result.reason.startswith("budget: ")
         assert result.answer is None
         assert result.usd < Decimal("0.25")
 

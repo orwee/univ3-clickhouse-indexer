@@ -150,17 +150,21 @@ def test_the_agent_workflow_steps_in_order_and_the_summary_is_written_either_way
 
 def test_the_eval_workflow_pins_the_same_commits_as_the_agent_workflow():
     def pins(path):
-        return sorted(step["uses"] for step in steps(load(path)) if "uses" in step)
+        return {step["uses"] for step in steps(load(path)) if "uses" in step}
 
-    assert pins(EVAL) == pins(AGENT)
+    assert pins(EVAL) == pins(AGENT)  # the same actions at the same commits; one is used twice
 
 
 def test_the_eval_workflow_is_started_by_hand_only_in_the_agent_eval_environment():
     workflow = load(EVAL)
     assert list(workflow["on"]) == ["workflow_dispatch"]
     inputs = workflow["on"]["workflow_dispatch"]["inputs"]
-    assert list(inputs) == ["variant", "split", "model", "repetitions", "max_usd", "limit"]
+    assert list(inputs) == [
+        "variant", "split", "model", "repetitions", "max_usd", "limit", "only_errors",
+    ]  # fmt: skip
     assert inputs["variant"]["required"] is True
+    assert "evals/variants/" in inputs["variant"]["description"]
+    assert inputs["only_errors"]["default"] == ""
     assert (
         inputs["split"]["options"] == ["dev", "test", "all"] and inputs["split"]["default"] == "dev"
     )
@@ -186,15 +190,22 @@ def test_the_model_key_is_given_to_the_step_that_runs_the_evaluation_and_to_no_o
         "REPETITIONS": "${{ inputs.repetitions }}",
         "MAX_USD": "${{ inputs.max_usd }}",
         "LIMIT": "${{ inputs.limit }}",
+        "ONLY_ERRORS": "${{ inputs.only_errors }}",
+        "UNIV3_DATA_DIR": "${{ runner.temp }}/eval-data",
         "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
     }
+    assert config.DATA_DIR_POINTER == "UNIV3_DATA_DIR"  # where the transcripts are written
     run = evaluate["run"]
     assert "python -m evalkit.run evals/golden.jsonl" in run and "--group agent" in run
     for flag, variable in [("--variant", "$VARIANT"), ("--split", "$SPLIT"), ("--limit", "$LIMIT"),
                            ("--repetitions", "$REPETITIONS"), ("--max-usd", "$MAX_USD"),
-                           ("--model", "$MODEL")]:  # fmt: skip
+                           ("--model", "$MODEL"), ("--only-errors", "$ONLY_ERRORS")]:  # fmt: skip
         assert f'{flag} "{variable}"' in run, flag
     assert "--out eval-results.json" in run
+    # With a file of earlier results, only its errors are asked: no split, no limit.
+    only, normal = run.split('if [ -n "$ONLY_ERRORS" ]; then')[1].split("else", 1)
+    assert "--only-errors" in only and "--split" not in only and "--limit" not in only
+    assert "--split" in normal and "--repetitions" in normal
 
 
 def test_the_eval_workflow_fails_only_when_the_run_could_not_execute():
@@ -208,6 +219,7 @@ def test_the_eval_workflow_fails_only_when_the_run_could_not_execute():
         "Evaluate",
         "Report",
         "Upload the results and the report",
+        "Upload the transcripts",
         "The evaluation executed",
     ]
     by_name = {step.get("name"): step for step in job["steps"]}
@@ -218,6 +230,15 @@ def test_the_eval_workflow_fails_only_when_the_run_could_not_execute():
     upload = by_name["Upload the results and the report"]
     assert upload["if"] == "always()" and upload["with"]["name"] == "eval-results"
     assert upload["with"]["path"].split() == ["eval-results.json", "eval-report.md"]
+    # The step that asks has a limit of its own, under the job's: a run that takes too long
+    # is stopped there, and what it had written is still reported and uploaded.
+    assert 0 < by_name["Evaluate"]["timeout-minutes"] < job["timeout-minutes"]
+    # The transcripts are a second artifact, taken from the data directory, never from the
+    # working copy; they are uploaded whatever happened.
+    transcripts = by_name["Upload the transcripts"]
+    assert transcripts["if"] == "always()" and transcripts["with"]["name"] == "eval-transcripts"
+    assert transcripts["with"]["path"] == "${{ runner.temp }}/eval-data/evals/"
+    assert transcripts["uses"] == upload["uses"]
     verdict = by_name["The evaluation executed"]["run"]
     assert 'if [ "$code" != "0" ] || [ ! -f eval-results.json ]' in verdict
     # Nothing in the workflow looks at the score.
@@ -232,7 +253,18 @@ def test_the_fetch_script_names_the_files_by_date_and_variant_and_never_overwrit
     assert (
         'target="$root/evals/results"' in script and "$name.json" in script and "$name.md" in script
     )
+    # One variant is run several times on one day: the run's number is in the name.
+    assert ')_$run_id"' in script and "<date>_<variant>_<RUN_ID>.json" in script
     assert "already exists; nothing was written" in script
+    # The transcripts go to the data directory, which the project resolves and which is
+    # never inside the working copy. Nothing of them is copied under the repository.
+    assert 'gh run download "$run_id" --name eval-transcripts' in script
+    assert "config.data_dir()" in script and 'kept="$data/evals/github-run-$run_id"' in script
+    copies = [line.strip() for line in script.splitlines() if line.strip().startswith("cp ")]
+    assert [line for line in copies if "transcripts" in line] == [
+        'cp -R "$download/transcripts" "$kept"'
+    ]
+    assert all('"$target/' in line or '"$kept"' in line for line in copies)
     assert "git " not in script.replace("git push", "")  # it commits and pushes nothing
     done = subprocess.run(  # noqa: S603 - this repository's script, stopped by its own check
         ["bash", str(config.REPO_ROOT / "scripts" / "fetch_eval_results.sh"), "not-a-number"],  # noqa: S607

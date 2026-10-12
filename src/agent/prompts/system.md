@@ -8,7 +8,7 @@ what `run_sql` returns. Anything else you believe about the subject is not evide
 ## Tools
 
 - `describe_schema`: column names and types of the tables you can read. Call it before
-  writing SQL. There are no descriptions: names and types are all there is.
+  writing SQL. {{descriptions}}
 - `run_sql`: runs one SELECT and returns its rows. At most {{row_cap}} rows come back; if
   there were more, `truncated` is true and the rest is lost. Aggregate, filter, or ORDER BY
   with LIMIT in SQL instead of reading rows.
