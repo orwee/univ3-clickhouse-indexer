@@ -372,6 +372,28 @@ Details that the definitions above leave open, and how the scorer settles them:
 - A case with no answer that got a value counts once in the hallucination rate, even when
   that value was also ungrounded.
 
+## Several runs of one variant
+
+One run is one draw: the model does not answer the same question the same way twice. So a
+variant is run several times, and the runs are read together.
+
+```sh
+PYTHONPATH=src uv run python -m evalkit.runs evals/results/A.json evals/results/B.json \
+    evals/results/C.json --out evals/results/report.md
+```
+
+[`evalkit.runs`](../src/evalkit/runs.py) puts the results files side by side. For every
+metric it prints each run, the mean, the lowest and the highest, and the spread between
+runs, three times: over all cases, over `dev` and over `test`. Over the runs together it
+adds a 95% interval that resamples cases, not answers: a case the agent gets wrong it tends
+to get wrong every time, so three runs of one case are not three independent draws. It also
+counts how many cases were right in every run, in some and in none. Errors are in a table
+of their own and in no figure.
+
+The files must be runs of the same thing (the same variant files, model, golden file,
+system prompt, limits and cases), or nothing is written and the command says what differs.
+The report names no case: it can be read without learning which `test` case failed.
+
 ## The judge: what code cannot check
 
 The scorer decides whether an answer is right, and no model takes part in that. One thing
