@@ -1,8 +1,25 @@
 # univ3-clickhouse-indexer
 
-Uniswap v3 `Swap` events from an Ethereum JSON-RPC node, landed as raw JSONL, loaded into
-ClickHouse, modelled with dbt, and reconciled against an independent source. 1,240,618 swaps,
-4 pools, 48 days (2026-08-09 to 2026-09-25, up to the node's finalized block).
+1.24 million financial transactions from a public ledger, loaded into a database and
+verified against the ledger itself and against an independent provider. On top of that data
+sits an agent that answers questions about it by writing SQL, and an evaluation that measures
+how often the agent is right. That number is not in yet: the evaluation is built and has
+not run.
+
+The ledger is Ethereum and the transactions are trades on Uniswap v3, an exchange that runs
+on it: 1,240,618 swaps in 4 pools over 48 days (2026-08-09 to 2026-09-25, up to the node's
+finalized block). Three words are enough to follow the rest:
+
+- **Token.** A currency that lives on the ledger. USDC is a dollar. WETH is ether, the
+  ledger's own currency, in a form a contract can hold.
+- **Pool.** A contract that holds two tokens and trades one for the other with anyone, for a
+  fixed fee. `USDC/WETH 0.05%` is a pool. This repository follows four of them.
+- **Swap.** One trade against a pool: some of one token in, some of the other out. Every
+  swap leaves a public record, and those records are the rows here.
+
+The pipeline reads `Swap` events from an Ethereum JSON-RPC node, lands them as raw JSONL,
+loads them into ClickHouse, models them with dbt and reconciles them against an independent
+source.
 
 - **The pipeline agrees with itself exactly.** A recomputation from `raw_swaps` and the
   materialized view match on all 188 pool-days, in raw integer units: 0 differences.
@@ -14,9 +31,9 @@ ClickHouse, modelled with dbt, and reconciled against an independent source. 1,2
 - **Main limitation:** the external source publishes no methodology, so a difference can be
   located but not settled. Closing that needs a second source with per-swap rows.
 
-**[Dashboard](https://orwee.github.io/univ3-clickhouse-indexer/)** — the whole result on one page, three minutes ·
-**Run it: `make demo`** — Docker only, no API key, no network data ·
-**[10-minute walkthrough](docs/WALKTHROUGH.md)** — what to open and in what order
+**[Dashboard](https://orwee.github.io/univ3-clickhouse-indexer/)**: the whole result on one page, three minutes ·
+**Run it with `make demo`**: Docker only, no API key, no network data ·
+**[10-minute walkthrough](docs/WALKTHROUGH.md)**: what to open and in what order
 
 > Built over one weekend (18–21 September 2026) as a hands-on way to learn
 > ClickHouse, and extended in the following week (see [CHANGELOG](CHANGELOG.md)).
@@ -24,9 +41,10 @@ ClickHouse, modelled with dbt, and reconciled against an independent source. 1,2
 > contain mistakes. Issues and corrections are welcome.
 
 A third source, the Nansen API, adds what a Swap log cannot carry: a classification of the
-account that signed the transaction. **Smart-money data: Powered by Nansen API** — the repository publishes only
-totals per pool over the days fetched, derived from their classification: no figure per pool
-and day, and never an address, a label or a transaction hash from their responses, following their
+account that signed the transaction. **Smart-money data: Powered by Nansen API.** The repository
+publishes only totals per pool over the days fetched, derived from their classification, and
+only for pools with at least five smart-money swaps: no figure per pool and day, and never an
+address, a label or a transaction hash from their responses, following their
 [redistribution guidelines](https://docs.nansen.ai/mcp/redistribution-guidelines.md). See
 [docs/NANSEN.md](docs/NANSEN.md).
 
@@ -68,6 +86,11 @@ flowchart TD
     recompute["sql/reconciliation/01_recompute_daily_raw.sql"]
     reconcile["src/univ3_indexer/reconcile.py"]
     sanity["src/univ3_indexer/sanity.py<br/>sql/sanity/"]
+    fixture["evals/fixture/fingerprint.json<br/>the marts, committed"]
+    reader["clickhouse/users.d/agent_reader.xml"]
+    agent["src/agent/loop.py<br/>src/agent/tools.py"]
+    golden["evals/golden.jsonl"]
+    runner["src/evalkit/run.py<br/>src/evalkit/score.py"]
 
     verify --> pools
     pools --> backfill
@@ -95,12 +118,89 @@ flowchart TD
     nansentable --> smartmart
     mart --> smartmart
     raw --> sanity
+    mart -- "export" --> fixture
+    fixture -- "reference queries" --> golden
+    fixture --> agent
+    reader -- "read-only, five tables" --> agent
+    golden --> runner
+    agent --> runner
 ```
 
 The JSONL landing zone sits between the node and the database on purpose: the backfill
 costs about 22,000 provider calls, and with the raw logs on disk ClickHouse can be dropped
 and reloaded as often as the schema changes without making another call. Each file is
 named after its block range, which makes a repeated delivery rewrite the same file.
+
+## The agent and its evaluation
+
+**What the agent is.** A loop around a language model with three tools: look at the schema,
+run one `SELECT`, and submit an answer ([docs/AGENT.md](docs/AGENT.md)). It is asked a
+question in plain English, writes SQL for ClickHouse against the five dbt marts, reads what
+comes back, and answers with one value, the query that produced it and a sentence of
+explanation. The value has to be a cell of the last query's result. When it is not, the
+answer is kept and marked as ungrounded. When the data cannot answer the question, the right
+answer is a refusal that says why.
+
+**What it cannot do.** It cannot write anything, and it cannot read the raw table or anything
+else outside the five marts. It makes at most 6 model calls and spends at most 0.25 USD on a
+question. It remembers nothing from one question to the next. It has never been run against
+the live warehouse: the only real questions so far are two that the owner asked on GitHub's
+runner, against the copy of the marts committed under
+[`evals/fixture/`](evals/fixture/fingerprint.json), where the smart-money table is empty on
+purpose. And it is one model from one provider.
+
+**Which guardrails the database enforces.** The agent connects as a ClickHouse user,
+`agent_reader`, defined in [one file](clickhouse/users.d/agent_reader.xml): read-only,
+`SELECT` on five tables by name, and three limits it cannot change (10 seconds, 10,000 result
+rows and 500 MB of memory for a query). Those hold whatever the code does. The rest is code,
+and a bug can weaken it: a guard that accepts one `SELECT` statement and nothing else, at
+most 200 rows of a result handed to the model, the cap on model calls, and a dollar budget
+checked before every call. On the real server that user is defined and not turned on
+([docs/AGENT_ACCESS.md](docs/AGENT_ACCESS.md)). On GitHub's runner it is in force, and 13
+tests check there that it refuses what it should.
+
+**How the right answers are computed.** Nobody types an answer and no model produces one.
+Each of the 180 cases in [`evals/golden.jsonl`](evals/golden.jsonl) holds a question and a
+reference query, and the right answer is whatever that query returns on the fixture
+([docs/EVALS.md](docs/EVALS.md)). 120 cases are drawn from twelve templates, 30 are harder
+ones written by hand, and 30 have no answer in the data and must be refused. 53 of the cases
+are `dev`, the ones that may be looked at to improve the agent. The other 127 are `test`, and
+the number that gets reported is theirs.
+
+**What is measured.** Execution accuracy, which is right answers over the cases that have
+one. Refusals: how many of the questions with no answer were refused, and how many of the
+refusals were due. The hallucination rate: answers given where a refusal was due, plus
+answers not grounded in a result. The share of queries that ran. The dollars and the seconds
+a question costs. A question that ended because of the API or the budget is an error, counted
+apart, and not a wrong answer. Every variant is run three times, because the model does not
+answer the same question the same way twice, and a difference smaller than the spread between
+runs is reported as no difference.
+
+**The numbers.** There are none yet. The evaluation is built and tested without a model, and
+it has not run: the code it runs on is waiting to be merged, and after that each run needs
+the owner's approval. Neither the baseline nor a change to it has been measured. When they
+have, this paragraph will carry the baseline, the figure after one change and the file each
+one comes from.
+
+**Not tied to this domain.** `src/agent/` and `src/evalkit/` name no table, no column and no
+token of this warehouse, and two tests keep it that way. To point them at another warehouse
+you would replace what is under `evals/`: [`warehouse.yml`](evals/warehouse.yml) (the
+database, the tables, the limits), the fixture and its `fixture.yml`, the templates and the
+hand-written cases, and the examples in the judge's rubric. You would also grant the
+read-only user its tables in `agent_reader.xml`. `make golden` then computes the answers
+again. What stays tied is the SQL dialect: the guard and the prompt are written for
+ClickHouse.
+
+**What is not done.**
+
+- **The judge is not calibrated.** A model that reads the agent's explanations and says
+  whether they are faithful to the query is written
+  ([`src/evalkit/judge.py`](src/evalkit/judge.py)), and so is the code that builds a sheet for
+  a person to label. It has never run, nobody has labelled a sheet, and no verdict of it is
+  used anywhere.
+- **There is no regression check on pull requests.** An evaluation is started by hand, costs
+  money and waits for the owner's approval. CI runs the tests, not the evaluation.
+- **No other model or provider has been compared.** Every figure is `claude-haiku-5-5`.
 
 ## How to run it
 
@@ -231,20 +331,35 @@ fails at least once, because about 30 of the previous 55 could not fail at all o
 pass, given only the repository and no history, found 14 objective errors and 10 claims the
 repo did not support; all of them are fixed and listed. The central hypothesis was
 [pre-registered](docs/H2_PREREGISTRATION.md) before the hold-out data was fetched, then
-evaluated out of sample and against a placebo — and the result, which weakened it on one
-criterion, is reported as it came out. What is not explained is labelled UNEXPLAINED.
+evaluated out of sample and against a placebo. The result weakened it on one criterion and
+is reported as it came out. What is not explained is labelled UNEXPLAINED.
 
-**Systems.** The agents run as a separate system user that cannot read the secrets directory
-and is not in the `docker` group. Their GitHub token is scoped to these repositories and is
-granted per session by the owner, who can withdraw it; they never hold it directly. A ruleset
-on `main` is the barrier that matters, because local hooks are a convention an agent could
-skip with one flag, not a barrier — [AGENTS.md](AGENTS.md) ends with a table saying, rule by
-rule, which is which, and it is honest about the ones that have no barrier at all.
+**Systems.** The rules for agents are in [AGENTS.md](AGENTS.md), which ends with a table
+saying, rule by rule, whether a barrier backs it. Three things are worth saying plainly, as
+they stand on 2026-10-11:
 
-**Numbers of the process.** 42 pull requests merged, none by an agent. 422 Python tests and 29
-dbt tests, each of the latter demonstrated capable of failing. 33,256 provider calls for the
-whole backfill (10 blocks per call is the free tier's limit). 10 Nansen credits spent of 100,
-with a hard budget check before every call and no retries.
+- **Which user.** The sessions that built the agent and its evaluation ran as root on the
+  owner's server, and ran the tests, the linter and git as a separate system user. That user
+  cannot read the owner's secrets directory and is not in the `docker` group. Root can do
+  both. So for those sessions "no Docker" and "no secrets file" were rules that were
+  followed, not barriers.
+- **What the credential can do.** Pushes and pull requests go through the GitHub login of
+  `orwee`, the account that owns the repository. A ruleset on `main` requires a pull request
+  and refuses a force-push, for everyone. It asks for no approving review, so this credential
+  could merge its own pull request. The `agent-eval` environment asks for an approval before
+  a job gets the model key, and its one reviewer is that same account, so this credential
+  could approve its own run. The rule is that it does neither, and nothing but the rule stops
+  it. GitHub's record cannot tell an agent session from the owner.
+- **Where the model key lives.** Not on the server. It is a secret of the `agent-eval`
+  environment on GitHub, given to one step of each workflow that needs it, on `main` only,
+  after an approval. No model is called from the server.
+
+**Numbers of the process.** 60 pull requests merged on 2026-10-11, counted with
+`gh pr list --state merged`; the rule for agents is never to merge, and the owner merges from
+the web. 975 Python tests, 13 of which need the read-only user and so run only in CI, and
+29 dbt tests, each of the latter demonstrated capable of failing. 33,256 provider calls for the whole backfill (10 blocks per call is the free tier's
+limit). 10 Nansen credits spent of 100, with a hard budget check before every call and no
+retries.
 
 > Drafted with AI assistance from the measurements in this repo and checked by an independent review pass. Design decisions were proposed with AI assistance, tested by measurement and approved by Roberto. Where an agent got something wrong it is in
 > [Agent corrections](DECISIONS.md#agent-corrections); where the owner did, in
@@ -307,8 +422,14 @@ located to one to three hours, listed at the end of the draft.
   numbers, not a fact about GeckoTerminal.
 - **Batch backfill.** No continuous ingestion, no orchestration, no alerting: `make` targets
   run by hand.
-- **"`onchain` is read-only for agents" is a rule without a barrier**: there is one ClickHouse
-  user and it can drop anything.
+- **"`onchain` is read-only for agents" is a rule without a barrier on the real server**: its
+  one ClickHouse user can drop anything. A read-only user limited to the five marts is
+  defined, and it is what the agent connects as on GitHub's runner. The real server has not
+  turned it on.
+- **The agent is measured on a copy, with one model.** 180 cases on a committed copy of the
+  marts, one model, three runs of each variant. The smart-money table is empty in that copy,
+  so nothing about smart money is measured except that the agent refuses. The explanations
+  the agent writes are not graded: the judge that would do it is not calibrated.
 - **Weekend scale.** 1,240,618 rows. What [DECISIONS.md](DECISIONS.md) and
   [docs/QUERY_PERFORMANCE.md](docs/QUERY_PERFORMANCE.md) conclude about `ORDER BY`,
   partitions, projections and indexes was measured at 863,587 to 1,110,676 rows, before the
@@ -320,11 +441,15 @@ located to one to three hours, listed at the end of the draft.
 This is a batch pipeline on one chain, at weekend scale. What it is missing, in the order I
 would build it.
 
-**Status on 2026-09-25:** none of the nine is built yet. The second week went into depth on
-the data rather than into infrastructure: more days up to the finalized block, round trips
+**Status on 2026-10-11:** two of the first nine are partly built, and the other seven are
+not started. CI exists: a workflow runs lint, the tests, `make demo` and the read-only user's
+tests on every pull request (item 7; there is still no orchestrator). The read-only user is
+defined and is in force in CI and in the demo, not in the real server (item 8). The second
+week went into depth on the data: more days up to the finalized block, round trips
 ([docs/ROUND_TRIPS.md](docs/ROUND_TRIPS.md)), the gap between two fee tiers
-([docs/CROSS_POOL.md](docs/CROSS_POOL.md)) and the receipts of the largest open case; see
-[CHANGELOG.md](CHANGELOG.md).
+([docs/CROSS_POOL.md](docs/CROSS_POOL.md)) and the receipts of the largest open case
+([CHANGELOG.md](CHANGELOG.md)). The weeks after it went into the agent and its evaluation,
+described above, and items 10 to 12 are what those are missing.
 
 1. **Streaming ingestion.** A tailing ingester at the finalized head
    ([`safe_head`](src/univ3_indexer/cli.py) already resolves it) writing to Kafka or
@@ -349,13 +474,22 @@ the data rather than into infrastructure: more days up to the finalized block, r
    by hand, freshness and volume checks against their own history rather than fixed
    thresholds, alerting on the result, and a second external source with per-swap rows to
    close the [open findings](docs/RECONCILIATION_FINDINGS.md#what-is-still-open).
-7. **Orchestration and CI.** An orchestrator with asset checks (Dagster or Airflow) in place
-   of `make` targets run by hand, and CI running lint, tests and `make demo` on every pull
-   request.
-8. **Access.** A read-only ClickHouse user for readers and agents; today there is one user
-   and it can drop anything, which [AGENTS.md](AGENTS.md) admits is a rule without a barrier.
+7. **Orchestration.** An orchestrator with asset checks (Dagster or Airflow) in place of
+   `make` targets run by hand. The other half of this item is done: since 2026-10-11 CI runs
+   lint, the tests, `make demo` and the read-only user's tests on every pull request
+   ([tests.yml](.github/workflows/tests.yml)).
+8. **Access.** Turn the read-only user on in the real server. It is defined, tested in CI
+   and used by the agent there ([docs/AGENT_ACCESS.md](docs/AGENT_ACCESS.md)); the real
+   server still has one user, and it can drop anything.
 9. **Scale.** Redo the measurements at production size, where the answers may change, and
    move cold partitions to object storage with a TTL.
+10. **Calibrate the judge.** Label the sheet, run the judge on the same rows, and use its
+    verdicts only if its agreement with a person is good enough to state as a number.
+11. **A regression check for the agent.** The `dev` cases on every pull request that touches
+    the agent or the cases, within a budget, failing when accuracy drops by more than the
+    spread between runs.
+12. **More than one model.** The same cases on a second model and on a second provider. A
+    variant can already name a model; nothing has been compared.
 
 **What I would do first at production scale:** streaming ingestion, because a daily batch
 cannot answer "what happened in the last five minutes"; reorg handling, because streaming at
@@ -378,6 +512,10 @@ the one decision that is expensive to change once the table is large.
 | [docs/evidence/2026-09-25/](docs/evidence/2026-09-25/README.md) | Snapshot of the run with five more days, up to the finalized block: reconciliation over 48 days, the analysis report, the receipts of the largest open case |
 | [docs/ROUND_TRIPS.md](docs/ROUND_TRIPS.md) | How much of the volume is swaps undone in the same block by the same sender, and how much that depends on the definition |
 | [docs/CROSS_POOL.md](docs/CROSS_POOL.md) | The price gap between the two USDC/WETH fee tiers, with ASOF JOIN: how wide, how long, who crosses first, and what ClickHouse reads |
+| [docs/AGENT.md](docs/AGENT.md) | The agent: its loop, its three tools, its limits and the ways a question can end |
+| [docs/EVALS.md](docs/EVALS.md) | The evaluation: how the right answers are computed, the metrics, variants, the judge |
+| [evals/](evals/golden.jsonl) | The 180 cases, the copy of the marts they are computed on, the variants and the results |
+| [docs/AGENT_ACCESS.md](docs/AGENT_ACCESS.md) | The read-only user: what it can read, and where it is in force |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, by date |
 | [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md) | The provider's limits and the size of the data, measured |
 | [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md) | Candidate schemas measured on the real data, before the decision |

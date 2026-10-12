@@ -75,7 +75,20 @@ so is `make dbt-prove`: it breaks the data on purpose in throw-away databases an
 one of the 29 dbt tests failing, because a test that cannot fail checks nothing
 ([scripts/prove_dbt_tests_can_fail.py](../scripts/prove_dbt_tests_can_fail.py)).
 
-## 7. If there is time left
+## 7. The agent, and how it is graded (2 minutes)
+
+[docs/AGENT.md](AGENT.md), the table under "How a question ends", then
+[docs/EVALS.md](EVALS.md), "How the answers are computed". *Questions answered: what stops an
+agent that writes SQL from doing harm or from making things up, and how do you know how often
+it is right?* The database refuses what must never happen: a write, a read outside five
+tables, a query that runs too long. The code checks that the answer is a cell of the last
+result. And the right answer to each of the 180 questions is computed by a reference query on
+a committed copy of the marts, never typed. Open one case of
+[evals/golden.jsonl](../evals/golden.jsonl), then one of the 30 that have no answer and must
+be refused. What has been measured, and what has not, is in the section "The agent and its
+evaluation" of the [README](../README.md#the-agent-and-its-evaluation).
+
+## 8. If there is time left
 
 - The second week, in [CHANGELOG.md](../CHANGELOG.md): [docs/ROUND_TRIPS.md](ROUND_TRIPS.md)
   (how much of the volume is swaps undone in the same block, and how much that figure depends
