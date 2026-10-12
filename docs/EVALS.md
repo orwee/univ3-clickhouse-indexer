@@ -606,6 +606,8 @@ PYTHONPATH=src uv run --group agent python -m evalkit.judge evals/results/FILE.j
 
 ### Calibration: the judge against a person
 
+<!-- The labels now in evals/calibration/sheet.csv were written by a model (Claude, in a separate session, applying evals/judge_rubric.md, without the key), not by a person. They are a test of the calibration pipeline. Any kappa computed from them is agreement between two models, not a human calibration, and must never be described as one. -->
+
 A judge is only worth what its agreement with a person is worth, so that is measured before
 any verdict is used.
 
@@ -629,10 +631,21 @@ Cohen's kappa and the two-by-two table. A test checks the kappa against two valu
 out by hand in the test. With the key it also says how many of the altered rows each of the
 two called unfaithful.
 
-**The sheet is built and not labelled.** It was built on 2026-10-12 from the three baseline
-results files, `evals/results/2026-10-12_baseline_*.json`, with the default seed: 30 rows, 15
-of them altered (4 with a number changed, 8 with a date moved or a name replaced, 3 with a
-claim added; none with the unit changed, because the draw gave none). Its `label` column is
-empty: the owner fills it. No model has judged anything and there is no agreement figure.
-Until there is one, a verdict of the judge is not a measurement, and no report in this
-repository uses one.
+The sheet cannot say who labelled it, so a file beside it does:
+`evals/calibration/sheet.labels.json`, with `labelled_by` set to `person` or `model`.
+`agree` refuses to print anything without it. When it says `model`, the report opens with
+"NOT A HUMAN CALIBRATION", and every figure in it is named as agreement between two models.
+
+**The sheet is built, and no person has labelled it.** It was built on 2026-10-12 from the
+three baseline results files, `evals/results/2026-10-12_baseline_*.json`, with the default
+seed: 30 rows, 15 of them altered (4 with a number changed, 8 with a date moved or a name
+replaced, 3 with a claim added; none with the unit changed, because the draw gave none).
+
+**The labels in it today were written by a model, not by a person.** Claude, in a separate
+session, applied `evals/judge_rubric.md` to the 30 rows without the key: 18 `unfaithful`
+and 12 `faithful`. They are there to test the calibration pipeline end to end. Agreement
+computed from them is agreement between two models. It is **not** a human calibration of
+the judge and must never be described as one. The judge has not run, so there is no
+agreement figure of any kind yet. A calibration needs a person's labels: when the owner
+labels the sheet, `sheet.labels.json` changes to `person`. Until then a verdict of the judge
+is not a measurement, and no report in this repository uses one.

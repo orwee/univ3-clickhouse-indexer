@@ -475,5 +475,52 @@ def test_every_row_needs_a_label_before_anything_is_compared(tmp_path, capsys):
     verdicts = tmp_path / "verdicts.json"
     said = [{"key": row["row"], "verdict": row["label"].strip()} for row in rows]
     verdicts.write_text(json.dumps({"verdicts": said}))
+    # The sheet cannot say who labelled it, so a file beside it has to, or nothing is printed.
+    assert calibration.main(["agree", str(sheet), str(verdicts)]) == calibration.SETUP_ERROR
+    printed = capsys.readouterr()
+    assert printed.out == "" and "has to say who wrote the labels" in printed.err
+    beside = calibration.labels_file(sheet)
+    assert beside.name == "sheet.labels.json"
+    beside.write_text(json.dumps({"labelled_by": "somebody", "who": "x"}))
+    assert calibration.main(["agree", str(sheet), str(verdicts)]) == calibration.SETUP_ERROR
+    assert "labelled_by must be one of person, model" in capsys.readouterr().err
+    beside.write_text(json.dumps({"labelled_by": "person", "who": "the owner"}))
     assert calibration.main(["agree", str(sheet), str(verdicts)]) == 0
-    assert "| Cohen's kappa | 1.000 |" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "| Cohen's kappa | 1.000 |" in printed and "Labels written by: the owner" in printed
+    assert "NOT A HUMAN CALIBRATION" not in printed
+
+
+def test_labels_written_by_a_model_are_never_reported_as_a_persons(tmp_path, capsys):
+    rows, key = calibration.build([("r.json", many_results())])
+    for n, row in enumerate(rows):
+        row["label"] = "faithful" if n % 2 else "unfaithful"
+    sheet, verdicts = tmp_path / "sheet.csv", tmp_path / "verdicts.json"
+    sheet.write_text(calibration.sheet_text(rows))
+    verdicts.write_text(
+        json.dumps({"verdicts": [{"key": r["row"], "verdict": r["label"]} for r in rows]})
+    )
+    calibration.labels_file(sheet).write_text(
+        json.dumps({"labelled_by": "model", "who": "a model, in a test"})
+    )
+    key_file = tmp_path / "key.json"
+    key_file.write_text(json.dumps({"rows": key}))
+    assert calibration.main(["agree", str(sheet), str(verdicts), "--key", str(key_file)]) == 0
+    printed = capsys.readouterr().out
+    assert printed.startswith(calibration.NOT_A_PERSON + "\n")
+    assert "Labels written by: a model, in a test" in printed
+    assert "| Agreement between the labelling model and the judge | |" in printed
+    assert "| Cohen's kappa, between two models | 1.000 |" in printed
+    assert "| Percent agreement, between two models | 1.000 |" in printed
+    assert "| Labelling model, down; judge, across |" in printed
+    assert "| Expected | Labelling model | Judge |" in printed
+    assert "person" not in printed.replace(calibration.NOT_A_PERSON, "").lower()
+
+
+def test_the_committed_sheet_says_a_model_labelled_it():
+    """The labels in the repository are a test of the pipeline, written by a model. Until a
+    person labels the sheet, the file beside it has to keep saying so."""
+    said = calibration.read_labeller(calibration.DEFAULT_SHEET)
+    assert said["labelled_by"] == "model" and "not by a person" in said["who"]
+    labels = calibration.read_labels(calibration.DEFAULT_SHEET)
+    assert len(labels) == 30 and sorted(labels.values()).count("unfaithful") == 18
