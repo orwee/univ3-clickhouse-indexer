@@ -394,6 +394,50 @@ The files must be runs of the same thing (the same variant files, model, golden 
 system prompt, limits and cases), or nothing is written and the command says what differs.
 The report names no case: it can be read without learning which `test` case failed.
 
+## Reading the failures, on `dev` only
+
+A change to the agent is designed from what it gets wrong. That reading is done on `dev`
+and on nothing else: once a `test` case has been looked at to choose a change, its result
+is no longer a test of that change.
+
+```sh
+PYTHONPATH=src uv run python -m evalkit.failures evals/results/A.json evals/results/B.json \
+    evals/results/C.json --out failures.csv --unstable unstable.csv
+```
+
+[`evalkit.failures`](../src/evalkit/failures.py) writes one row for every `dev` case that
+was wrong in at least two of the runs: its id, kind and family, what happened in each run,
+an empty `category` and `note` to fill in by hand, and one line of evidence (the final SQL
+of the first run that was wrong, or the reason it gave for refusing). Cases wrong in exactly
+one run go to a second file, listed and not classified: one failure in three is as likely
+to be the draw as the agent. A question that ended in an error is in neither. With the
+default split, no `test` case is listed, counted or printed.
+
+## Comparing two variants
+
+```sh
+PYTHONPATH=src uv run python -m evalkit.compare --baseline B1.json B2.json B3.json \
+    --variant V1.json V2.json V3.json [--failures failures.csv] --out report.md
+```
+
+[`evalkit.compare`](../src/evalkit/compare.py) takes the runs of two variants. The number
+it reports is execution accuracy on `test`, the cases the change was not designed on: each
+run, the mean, the lowest and the highest, and a 95% interval for each variant; then the
+difference, with an interval of its own from a paired resampling of the cases. Case by
+case, by majority of the runs, it counts how many cases the change fixed, how many it broke
+and how many stayed as they were. Refusals, hallucination rate, valid SQL, dollars and
+seconds are printed for both. `dev` is in a table of its own, labelled as the cases the
+change was designed on: a gain there is expected and is not evidence.
+
+One sentence then says whether the difference on `test` is larger than the spread between
+runs of the same variant, which is the largest gap between the best and the worst run of
+either variant. When it is not larger, the sentence says so: these runs do not show that
+the change did anything.
+
+The two variants must have been run on the same golden file and the same cases, or nothing
+is written. `--failures` is the classified failures of the variant on `dev`; its counts per
+category are printed as they are, with the largest named.
+
 ## The judge: what code cannot check
 
 The scorer decides whether an answer is right, and no model takes part in that. One thing
