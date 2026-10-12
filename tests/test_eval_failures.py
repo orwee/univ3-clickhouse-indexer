@@ -121,3 +121,37 @@ def test_runs_of_different_things_are_refused(monkeypatch, tmp_path, capsys):
     code = failures.main([*paths, "--out", str(out), "--unstable", str(tmp_path / "u.csv")])
     assert code == 2 and not out.exists()
     assert "model is not the same" in capsys.readouterr().err
+
+
+def test_every_case_with_no_answer_of_the_split_and_how_each_run_ended(monkeypatch, tmp_path):
+    files = three(monkeypatch)
+    assert failures.refusals(files, "dev") == [
+        {
+            "id": "d-u",
+            "family": "f",
+            "runs": 3,
+            "not_refused_in": 2,
+            "refused_by_majority": False,
+            "each_run": "run 1: refused; run 2: answered; run 3: answered",
+        }
+    ]
+    assert [row["id"] for row in failures.refusals(files, "all")] == ["d-u", "t-u"]
+    for _, results in files:
+        for record in results["records"]:
+            record["result"]["iterations"] = 4
+    assert failures.refusals(files, "dev")[0]["each_run"].startswith(
+        "run 1: refused in 4 model calls; run 2: answered in 4 model calls; "
+    )
+    paths = []
+    for name, results in files:
+        paths.append(tmp_path / name)
+        paths[-1].write_text(json.dumps(results))
+    out = [tmp_path / "f.csv", tmp_path / "u.csv", tmp_path / "r.csv"]
+    args = [*map(str, paths), "--out", str(out[0]), "--unstable", str(out[1])]
+    assert failures.main([*args, "--refusals", str(out[2])]) == 0
+    with out[2].open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert [(row["id"], row["not_refused_in"], row["refused_by_majority"]) for row in rows] == [
+        ("d-u", "2", "False")
+    ]
+    assert "t-u" not in out[2].read_text()

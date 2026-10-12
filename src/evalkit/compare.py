@@ -7,7 +7,9 @@ The number that is reported is execution accuracy on ``test``: the cases the cha
 designed on. For each variant it prints every run, the mean, the lowest and the highest,
 and a 95% interval; then the difference with an interval of its own, and case by case, by
 majority of the runs, how many cases the change fixed, how many it broke and how many
-stayed as they were. Refusals, hallucination rate, valid SQL, dollars and seconds are
+stayed as they were. The cases with no answer have a table of their own: how many each
+variant refused by majority of its runs, with a Wilson interval, and how the answers that
+were not refusals ended. Refusals, hallucination rate, valid SQL, dollars and seconds are
 printed for both. ``dev`` is in a table of its own, and is labelled for what it is: the
 cases the change was designed on.
 
@@ -30,7 +32,7 @@ import random
 import sys
 from pathlib import Path
 
-from evalkit import runs
+from evalkit import runs, score
 from evalkit.runs import DASH, pct, points, table
 
 BETWEEN = ("variant_files", "model", "system_prompt_sha256", "limits")
@@ -100,6 +102,52 @@ def moves(before: dict[str, list[bool]], after: dict[str, list[bool]]) -> dict[s
         else:
             out["broke"] += 1
     return out
+
+
+def refusals_due(files: list[tuple[str, dict]], split: str) -> dict:
+    """The cases of one split that have no answer: per case, whether each run refused it,
+    and over all runs how the answers that were not refusals ended."""
+    per_case: dict[str, list[bool]] = {}
+    ended = {"no_answer": 0, "gave a value": 0, "answers": 0}
+    for _, results in files:
+        for record in runs.of_split(results, split):
+            if record["status"] != "ran" or record["score"].get("error"):
+                continue
+            if not record["score"]["should_refuse"]:
+                continue
+            per_case.setdefault(record["id"], []).append(bool(record["score"]["refused"]))
+            ended["answers"] += 1
+            ended["no_answer"] += record["result"]["status"] == "no_answer"
+            ended["gave a value"] += bool(record["score"]["gave_value"])
+    by_majority = [runs.majority(refused) for refused in per_case.values()]
+    return {
+        "per_case": per_case,
+        "by_majority": score.proportion(sum(1 for m in by_majority if m), len(by_majority)),
+        "ended": ended,
+    }
+
+
+def refusals_table(before: dict, after: dict, names: tuple[str, str], split: str) -> list[str]:
+    def by_majority(due: dict) -> str:
+        p = due["by_majority"]
+        if not p["n"]:
+            return DASH
+        return f"{runs.prop(p)} [{pct(p['low'])}, {pct(p['high'])}]"
+
+    def over(due: dict, what: str) -> str:
+        return f"{due['ended'][what]} of {due['ended']['answers']}"
+
+    return table(
+        [f"Cases with no answer on `{split}`", names[0], names[1]],
+        [
+            ["Refused, by majority of the runs, with its 95% Wilson interval",
+             by_majority(before), by_majority(after)],
+            ["Ended without an answer (the cap, or the model stopped), all runs",
+             over(before, "no_answer"), over(after, "no_answer")],
+            ["Gave a value where a refusal was due, all runs",
+             over(before, "gave a value"), over(after, "gave a value")],
+        ],
+    )  # fmt: skip
 
 
 def accuracy(files: list[tuple[str, dict]], split: str) -> dict:
@@ -259,7 +307,12 @@ def render(
             runs.outcomes(before, "test", with_answer), runs.outcomes(after, "test", with_answer)
         )
         rows.append([label, *moved.values()])
+    due_before, due_after = refusals_due(before, "test"), refusals_due(after, "test")
+    rows.append(
+        ["Cases with no answer", *moves(due_before["per_case"], due_after["per_case"]).values()]
+    )
     lines += table(header, rows)
+    lines += refusals_table(due_before, due_after, names, "test")
     both = ["mean of the runs (lowest to highest)", names[0], names[1]]
     lines += table(["On `test`, " + both[0], *both[1:]], both_rows(before, after, "test"))
 
@@ -273,6 +326,7 @@ def render(
     ]
     lines += accuracy_table(dev_before, dev_after, names, count)
     lines += table(["On `dev`, " + both[0], *both[1:]], both_rows(before, after, "dev"))
+    lines += refusals_table(refusals_due(before, "dev"), refusals_due(after, "dev"), names, "dev")
 
     lines += ["## The largest failure category left on `dev`", ""]
     if failures is None:

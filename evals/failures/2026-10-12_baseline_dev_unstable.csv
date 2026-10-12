@@ -1,0 +1,2 @@
+id,kind,family,what_happened,evidence
+u-smart-money-001,unanswerable,smart-money,wrong in 1 of 3. run 1: no answer (iteration_cap: 6 model calls without an answer); run 2: right; run 3: right,"run 1: SELECT count() AS n, min(block_date) AS first_day, max(block_date) AS last_day, uniqExact(block_date) AS days, uniqExact(fetched_by_token) AS tokens FROM fct_pool_daily_smart_money WHERE pool_address = '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640'"

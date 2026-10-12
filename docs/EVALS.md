@@ -480,6 +480,18 @@ one run go to a second file, listed and not classified: one failure in three is 
 to be the draw as the agent. A question that ended in an error is in neither. With the
 default split, no `test` case is listed, counted or printed.
 
+With `--refusals FILE` it also writes every case of the split that has no answer, missed
+or not: how each run ended and in how many model calls, in how many runs it was not
+refused, and whether it was refused by majority. A case missed in one run of three is the
+draw; a case missed in all three is a failure.
+
+**The baseline, read on 2026-10-12**:
+[evals/failures/2026-10-12_baseline_dev.md](../evals/failures/2026-10-12_baseline_dev.md).
+No `dev` case is wrong in two runs of three, and one is wrong in one: a question with no
+answer that used its six model calls without answering. The change that follows from it, and
+the rule it will be judged by, were written before any run of it:
+[EVAL_PREREGISTRATION.md](EVAL_PREREGISTRATION.md).
+
 ## Comparing two variants
 
 ```sh
@@ -504,6 +516,11 @@ the change did anything.
 The two variants must have been run on the same golden file and the same cases, or nothing
 is written. `--failures` is the classified failures of the variant on `dev`; its counts per
 category are printed as they are, with the largest named.
+
+The cases with no answer have a table of their own, on `test` and on `dev`: how many each
+variant refused by majority of its runs, with a 95% Wilson interval, and over all runs how
+many answers ended without an answer and how many gave a value where a refusal was due.
+The case-by-case table has a row for them too: fixed, broke, stayed.
 
 ## The judge: what code cannot check
 
