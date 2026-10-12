@@ -17,7 +17,9 @@ from agent import llm
 from univ3_indexer import config
 
 WORKFLOWS = config.REPO_ROOT / ".github" / "workflows"
-TESTS, AGENT, EVAL = (WORKFLOWS / f"{name}.yml" for name in ("tests", "agent", "eval"))
+TESTS, AGENT, EVAL, JUDGE = (
+    WORKFLOWS / f"{name}.yml" for name in ("tests", "agent", "eval", "judge")
+)
 SUMMARY = config.REPO_ROOT / "scripts" / "agent_summary.py"
 PINNED = re.compile(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 EXPRESSION = "${{"
@@ -34,7 +36,7 @@ def steps(workflow):
     return [step for job in workflow["jobs"].values() for step in job["steps"]]
 
 
-@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL, JUDGE], ids=lambda p: p.name)
 def test_every_action_is_pinned_to_a_commit_with_its_version_next_to_it(path):
     used = [step["uses"] for step in steps(load(path)) if "uses" in step]
     assert used and all(PINNED.fullmatch(action) for action in used), used
@@ -54,7 +56,7 @@ def test_the_agent_workflow_pins_the_same_commits_as_the_tests_workflow():
     assert set(agent) - set(tests) == {"actions/upload-artifact"}
 
 
-@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL, JUDGE], ids=lambda p: p.name)
 def test_read_only_token_and_a_timeout_on_every_job(path):
     workflow = load(path)
     assert workflow["permissions"] == {"contents": "read"}
@@ -97,7 +99,7 @@ def test_the_agent_workflow_is_started_by_hand_only_in_the_agent_eval_environmen
     assert workflow["jobs"]["ask"]["environment"] == "agent-eval"
 
 
-@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL, JUDGE], ids=lambda p: p.name)
 def test_no_github_expression_is_written_inside_a_run_script(path):
     """An input or any other expression reaches the shell through `env:`, as a variable."""
     for step in steps(load(path)):
@@ -415,3 +417,66 @@ def test_the_summary_is_what_the_command_line_prints_with_json(tmp_path):
     ):
         assert key in produced and key in RESULT
     assert set(produced["tokens"]) == set(RESULT["tokens"])
+
+
+# --- the judge workflow, in the image of the eval one ----------------------------------------
+
+
+def test_the_judge_workflow_is_started_by_hand_only_in_the_agent_eval_environment():
+    workflow = load(JUDGE)
+    assert list(workflow["on"]) == ["workflow_dispatch"]
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    assert list(inputs) == ["source", "model", "max_usd", "limit"]
+    assert inputs["source"]["required"] is True
+    assert all(not inputs[name]["required"] for name in inputs if name != "source")
+    assert inputs["model"]["default"] == "" and inputs["max_usd"]["default"] == "2"
+    assert list(workflow["jobs"]) == ["judge"]
+    assert workflow["jobs"]["judge"]["environment"] == "agent-eval"
+    pins = lambda path: {s["uses"] for s in steps(load(path)) if "uses" in s}  # noqa: E731
+    assert pins(JUDGE) == pins(EVAL)
+
+
+def test_the_model_key_is_given_to_the_step_that_runs_the_judge_and_to_no_other():
+    workflow = load(JUDGE)
+    job = workflow["jobs"]["judge"]
+    assert len(SECRET.findall(JUDGE.read_text())) == 1
+    assert "env" not in workflow and "env" not in job
+    with_key = [s for s in job["steps"] if "ANTHROPIC_API_KEY" in json.dumps(s.get("env", {}))]
+    assert [s["name"] for s in with_key] == ["Judge"]
+    assert with_key[0]["env"] == {
+        "SOURCE": "${{ inputs.source }}",
+        "MODEL": "${{ inputs.model }}",
+        "MAX_USD": "${{ inputs.max_usd }}",
+        "LIMIT": "${{ inputs.limit }}",
+        "UNIV3_DATA_DIR": "${{ runner.temp }}/judge-data",
+        "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
+    }
+    run = with_key[0]["run"]
+    assert 'python -m evalkit.judge "$SOURCE"' in run and "--group agent" in run
+    assert '--max-usd "$MAX_USD"' in run and "--out judge-verdicts.json" in run
+    assert '--model "$MODEL"' in run and '--limit "$LIMIT"' in run
+
+
+def test_the_judge_workflow_needs_no_warehouse_and_fails_only_when_it_could_not_execute():
+    job = load(JUDGE)["jobs"]["judge"]
+    names = [step.get("name", step.get("uses", "").split("@")[0]) for step in job["steps"]]
+    assert names == [
+        "actions/checkout",
+        "Install uv",
+        "uv sync --frozen --group agent",
+        "Judge",
+        "Summary",
+        "Upload the verdicts",
+        "The judge executed",
+    ]
+    text = JUDGE.read_text()
+    assert "ci_warehouse" not in text and "docker" not in text  # it runs no query
+    by_name = {step.get("name"): step for step in job["steps"]}
+    assert "exit 1" not in by_name["Judge"]["run"]
+    assert 0 < by_name["Judge"]["timeout-minutes"] < job["timeout-minutes"]
+    assert by_name["Summary"]["if"] == "always()"
+    upload = by_name["Upload the verdicts"]
+    assert upload["if"] == "always()" and upload["with"]["name"] == "judge-verdicts"
+    assert upload["with"]["path"] == "judge-verdicts.json"
+    verdict = by_name["The judge executed"]["run"]
+    assert 'if [ "$code" != "0" ] || [ ! -f judge-verdicts.json ]' in verdict
