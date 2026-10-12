@@ -426,7 +426,8 @@ def test_the_cross_report_applies_the_rule_and_its_total_covers_only_the_pools_s
     assert nansen.SMALL_COUNTS_NOTE in text
     assert "the total included" in nansen.SMALL_COUNTS_NOTE
     assert "covers only the pools that are shown" in nansen.SMALL_COUNTS_NOTE
-    assert "This last count is over every pool, shown or not" in text
+    # No count over every pool, shown or not, is printed next to the table.
+    assert "Present in `raw_swaps`" not in text
 
 
 def test_no_published_smart_money_table_has_a_small_row_or_points_at_a_day():

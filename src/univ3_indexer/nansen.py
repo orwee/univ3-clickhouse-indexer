@@ -692,10 +692,7 @@ def render(result: Cross) -> str:
         "each, and the total row adds them up.",
         "",
         "Distinct transactions of the response inside the window: "
-        f"{result.transactions_in_window:,}. "
-        f"Present in `raw_swaps`, in any of the pools: {result.transactions_found:,}. This "
-        "last count is over every pool, shown or not, and each transaction counts once: it is "
-        "not a column of the table and cannot be set against its rows.",
+        f"{result.transactions_in_window:,}.",
         "",
     ]
     return "\n".join(out)
