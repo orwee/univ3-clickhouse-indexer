@@ -1,0 +1,10 @@
+id,family,runs,not_refused_in,refused_by_majority,each_run
+u-forecast-001,forecast,3,1,True,run 1: refused in 4 model calls; run 2: refused in 3 model calls; run 3: answered in 5 model calls
+u-legs-trap-001,legs-trap,3,0,True,run 1: refused in 3 model calls; run 2: refused in 5 model calls; run 3: refused in 3 model calls
+u-legs-trap-002,legs-trap,3,0,True,run 1: refused in 3 model calls; run 2: refused in 4 model calls; run 3: refused in 3 model calls
+u-not-in-data-002,not-in-data,3,0,True,run 1: refused in 5 model calls; run 2: refused in 5 model calls; run 3: refused in 5 model calls
+u-not-in-marts-001,not-in-marts,3,0,True,run 1: refused in 3 model calls; run 2: refused in 3 model calls; run 3: refused in 3 model calls
+u-not-in-marts-004,not-in-marts,3,0,True,run 1: refused in 2 model calls; run 2: refused in 3 model calls; run 3: refused in 3 model calls
+u-other-chain-003,other-chain,3,0,True,run 1: refused in 6 model calls; run 2: refused in 5 model calls; run 3: refused in 5 model calls
+u-out-of-range-003,out-of-range,3,0,True,run 1: refused in 3 model calls; run 2: refused in 5 model calls; run 3: refused in 4 model calls
+u-smart-money-001,smart-money,3,0,True,run 1: refused in 5 model calls; run 2: refused in 6 model calls; run 3: refused in 6 model calls
