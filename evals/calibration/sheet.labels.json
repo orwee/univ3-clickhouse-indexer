@@ -1,0 +1,5 @@
+{
+ "labelled_by": "model",
+ "who": "Claude, in a separate session, applying evals/judge_rubric.md without the key, on 2026-10-12. Written by a model and not by a person: a test of the calibration pipeline.",
+ "note": "Agreement computed from these labels is agreement between two models. It is not a human calibration of the judge and must never be described as one. When a person labels the sheet, this file changes to labelled_by: person."
+}

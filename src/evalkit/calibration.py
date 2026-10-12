@@ -308,6 +308,42 @@ def read_labels(sheet: Path) -> dict[str, str]:
     return labels
 
 
+LABELLERS = ("person", "model")
+NOT_A_PERSON = (
+    "**NOT A HUMAN CALIBRATION.** The labels of this sheet were written by a model, not by a "
+    "person. Every figure below is agreement between two models. It does not say how well "
+    "the judge agrees with a person, and must not be reported as a calibration of the judge."
+)
+
+
+def labels_file(sheet: Path) -> Path:
+    """The file beside a sheet that says who wrote its labels."""
+    return sheet.with_suffix(".labels.json")
+
+
+def read_labeller(sheet: Path) -> dict:
+    """Who wrote the labels of a sheet: ``{"labelled_by": "person" or "model", "who": text}``.
+
+    It is asked for, not assumed: an agreement is a calibration of the judge only when a
+    person labelled the sheet, and the sheet itself cannot say who did.
+    """
+    path = labels_file(sheet)
+    try:
+        said = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise CalibrationError(
+            f"{path} is missing: it has to say who wrote the labels, as "
+            '{"labelled_by": "person" or "model", "who": "..."}'
+        ) from None
+    except json.JSONDecodeError:
+        raise CalibrationError(f"{path}: not JSON") from None
+    if not isinstance(said, dict) or said.get("labelled_by") not in LABELLERS:
+        raise CalibrationError(f"{path}: labelled_by must be one of {', '.join(LABELLERS)}")
+    if not isinstance(said.get("who"), str) or not said["who"].strip():
+        raise CalibrationError(f"{path}: who must say who wrote the labels")
+    return said
+
+
 def agree(labels: dict[str, str], verdicts: list[dict], key: list[dict] | None = None) -> dict:
     """Agreement between a person's labels and the judge's verdicts on the same rows."""
     judged = {v["key"]: v["verdict"] for v in verdicts if v.get("verdict") in VERDICTS}
@@ -339,21 +375,33 @@ def agree(labels: dict[str, str], verdicts: list[dict], key: list[dict] | None =
     return out
 
 
-def render(result: dict) -> str:
+def render(result: dict, labeller: dict | None = None) -> str:
+    """The agreement as tables. ``labeller`` is what ``read_labeller`` gave; when a model
+    wrote the labels, the report says so first and never calls the labels a person's."""
+
     def share(value: float | None) -> str:
         return "not defined" if value is None else f"{value:.3f}"
 
+    by_model = labeller is not None and labeller["labelled_by"] == "model"
+    who = "the labelling model" if by_model else "the person"
+    column = "Labelling model" if by_model else "Person"
+    between = ", between two models" if by_model else ""
     t = result["table"]
-    lines = [
-        "| Agreement between the person and the judge | |",
+    lines = []
+    if by_model:
+        lines += [NOT_A_PERSON, ""]
+    if labeller is not None:
+        lines += [f"Labels written by: {' '.join(labeller['who'].split())}", ""]
+    lines += [
+        f"| Agreement between {who} and the judge | |",
         "|---|---|",
         f"| Rows of the sheet | {result['rows']} |",
         f"| Rows with a label and a verdict | {result['compared']} |",
         f"| Rows the judge gave no verdict on | {len(result['without_a_verdict'])} |",
-        f"| Percent agreement | {share(result['agreement'])} |",
-        f"| Cohen's kappa | {share(result['kappa'])} |",
+        f"| Percent agreement{between} | {share(result['agreement'])} |",
+        f"| Cohen's kappa{between} | {share(result['kappa'])} |",
         "",
-        "| Person, down; judge, across | faithful | unfaithful |",
+        f"| {column}, down; judge, across | faithful | unfaithful |",
         "|---|---|---|",
         f"| faithful | {t['faithful/faithful']} | {t['faithful/unfaithful']} |",
         f"| unfaithful | {t['unfaithful/faithful']} | {t['unfaithful/unfaithful']} |",
@@ -361,7 +409,7 @@ def render(result: dict) -> str:
     ]
     if "against_the_key" in result:
         lines += [
-            "| Rows, by what the key says | Rows | Expected | Person | Judge |",
+            f"| Rows, by what the key says | Rows | Expected | {column} | Judge |",
             "|---|---|---|---|---|",
         ]
         lines += [
@@ -427,11 +475,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"key: {key_path} (outside the repository)")
             return 0
         labels = read_labels(args.sheet)
+        labeller = read_labeller(args.sheet)
         verdicts = json.loads(args.verdicts.read_text(encoding="utf-8"))["verdicts"]
         key = None
         if args.key is not None:
             key = json.loads(args.key.read_text(encoding="utf-8"))["rows"]
-        sys.stdout.write(render(agree(labels, verdicts, key)))
+        sys.stdout.write(render(agree(labels, verdicts, key), labeller))
         return 0
     except CalibrationError as problem:
         return _stop(str(problem))
