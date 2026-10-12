@@ -176,18 +176,29 @@ apart, and not a wrong answer. Every variant is run three times, because the mod
 answer the same question the same way twice, and a difference smaller than the spread between
 runs is reported as no difference.
 
-**The numbers.** Only the baseline is measured: three runs of the 180 cases on 2026-10-12,
-with no question ending in an error. Over the three runs together the agent was right in
-523 of 540 answers, 96.9%, with a 95% interval of [94.6%, 98.7%] that resamples cases; on
-the `test` cases alone it was 365 of 381 = 95.8% [92.7%, 98.4%]. The figures are in
-[`evals/results/2026-10-12_baseline.md`](evals/results/2026-10-12_baseline.md), and the cost
-of each run is in [docs/EVALS.md](docs/EVALS.md#what-a-run-costs-measured). The set is easy for this model: on the `dev` cases it was right in 158 of 159 answers, and
-no `dev` case was wrong in two runs of three
-([the analysis](evals/failures/2026-10-12_baseline_dev.md)), so there is little room for a
-change to show anything. No change to the agent has been measured yet. The one that will be
-is written down, with the rule it will be judged by, in
-[docs/EVAL_PREREGISTRATION.md](docs/EVAL_PREREGISTRATION.md); when it has run, this
-paragraph will carry the figure after it beside the baseline.
+**The numbers.** Baseline and one change, three runs of the 180 cases each, on 2026-10-12,
+with no question ending in an error. The metric was fixed before the change ran
+([docs/EVAL_PREREGISTRATION.md](docs/EVAL_PREREGISTRATION.md)): of the 21 held-out questions
+that have no answer, how many the agent refuses in at least two of its three runs.
+
+- **Baseline: 17 of 21 = 81.0%**, 95% Wilson interval [60.0%, 92.3%].
+- **After the change: 17 of 21 = 81.0%**, the same interval. The change, a paragraph telling
+  the agent to refuse as soon as a result shows the data is not there, fixed 1 case and broke
+  1 other. By the rule written beforehand that is **no measurable difference**, and the
+  baseline stays as it is.
+- **Main remaining failure: refusals.** 4 of the 21 are missed by majority with or without
+  the change. Counting answers and not cases, after the change 6 of 63 gave a value where a
+  refusal was due and 5 of 63 ran out of model calls without answering.
+
+Whether the answer is right, over all cases and the three runs together: 523 of 540 = 96.9%
+[94.6%, 98.7%] for the baseline and 524 of 540 = 97.0% [95.0%, 98.9%] after, with intervals
+that resample cases. The set is easy for this model: on the `dev` cases it was right in 158
+of 159 answers both times, and no `dev` case was wrong in two runs of three
+([the analysis](evals/failures/2026-10-12_baseline_dev.md)). A set this easy, with 21
+held-out questions of the kind it still gets wrong, cannot tell a gain of two or three cases
+from chance. The figures are in
+[`evals/results/2026-10-12_baseline_vs_refuse-early.md`](evals/results/2026-10-12_baseline_vs_refuse-early.md),
+and what each run cost is in [docs/EVALS.md](docs/EVALS.md#what-a-run-costs-measured).
 
 **Not tied to this domain.** `src/agent/` and `src/evalkit/` name no table, no column and no
 token of this warehouse, and two tests keep it that way. To point them at another warehouse

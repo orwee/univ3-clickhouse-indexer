@@ -522,6 +522,57 @@ variant refused by majority of its runs, with a 95% Wilson interval, and over al
 many answers ended without an answer and how many gave a value where a refusal was due.
 The case-by-case table has a row for them too: fixed, broke, stayed.
 
+### The one change measured: `refuse-early`, no measurable difference
+
+Three runs of the variant on `main` at `5caae398c7147032adf61ba890f544430e6cea92`, which has
+the corrected grounding check. Each results file records the two variant files with the
+SHA-256 written in [EVAL_PREREGISTRATION.md](EVAL_PREREGISTRATION.md) before they ran.
+
+| Run | Results file | Asked | Errors | Spent, USD | Time |
+|---|---|---|---|---|---|
+| [38255611726](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38255611726) | `evals/results/2026-10-12_refuse-early_38255611726.json` | 180 of 180 | 0 | 0.3133477 | 16 min 52 s |
+| [38255631966](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38255631966) | `evals/results/2026-10-12_refuse-early_38255631966.json` | 180 of 180 | 0 | 0.3203692 | 17 min 3 s |
+| [38255651233](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38255651233) | `evals/results/2026-10-12_refuse-early_38255651233.json` | 180 of 180 | 0 | 0.3179268 | 16 min 48 s |
+
+Together 0.9516437 USD. These are all the runs of the variant that were dispatched; none is
+left out. They are compared with the three baseline files checked again for grounding, in
+`evals/results/2026-10-12_baseline_vs_refuse-early.md`.
+
+**The rule, applied.** On the 21 `test` cases with no answer, by majority of three runs:
+
+| | Baseline | `refuse-early` |
+|---|---|---|
+| Refused by majority | 17 of 21 = 81.0% [60.0%, 92.3%] | 17 of 21 = 81.0% [60.0%, 92.3%] |
+| Fixed / broke | | 1 / 1 |
+| Answers that ended without an answer, three runs | 4 of 63 | 5 of 63 |
+| Answers that gave a value where a refusal was due, three runs | 7 of 63 | 6 of 63 |
+
+Fixed minus broke is 0. The page said beforehand that -1, 0 or 1 is **no measurable
+difference**, and that is the result. Both guards hold, on the 106 `test` cases that have an
+answer: 105 are right by majority in both, none fixed and none broken; and 1 is refused by
+majority in both (counted from the six results files with `evalkit.runs.majority`; the
+report does not print that figure).
+
+**What else the runs say, deciding nothing.**
+
+- The change did what it was written for on `dev` and not on `test`. Answers to a question
+  with no answer that used all six model calls went from 7 of 27 to 3 of 27 on `dev`
+  (`evals/failures/2026-10-12_baseline_dev_refusals.csv` and
+  `evals/failures/2026-10-12_refuse-early_dev_refusals.csv`), and from 10 of 63 to 13 of 63
+  on `test` (`result.iterations` of the six results files). On `dev` the answer that ran out
+  of calls is gone, and one answer of 27 now gives a value where a refusal was due, a
+  forecast, in one run of three (`evals/failures/2026-10-12_refuse-early_dev_unstable.csv`).
+  A gain on the cases a change was designed on is not evidence, and here it did not carry
+  over.
+- Execution accuracy on `test` went from 98.4% to 98.7%, a difference of +0.3 points with
+  an interval of [-0.6, +1.6] points, inside the 0.9 points the runs of one variant differ
+  by among themselves.
+- A question cost 0.00171 USD with the baseline and 0.00177 USD with the variant, on
+  `test`: the paragraph is sent with every call.
+
+The variant file stays in `evals/variants/` as the record of what was run. The agent's
+default is still the baseline.
+
 ## The judge: what code cannot check
 
 The scorer decides whether an answer is right, and no model takes part in that. One thing
