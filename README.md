@@ -214,9 +214,11 @@ ClickHouse.
 - **The judge is not calibrated.** A model that reads the agent's explanations and says
   whether they are faithful to the query is written
   ([`src/evalkit/judge.py`](src/evalkit/judge.py)), and so is the code that builds a sheet for
-  a person to label. It has never run, and no person has labelled the sheet: the labels in it were
-  written by a model, to test the pipeline, and agreement with them is not a calibration. No
-  verdict of the judge is used anywhere.
+  a person to label. No person has labelled the sheet: the labels in it were written by a
+  model, to test the pipeline, and agreement with them is not a calibration. The judge has
+  run once, on that sheet, and called every error planted by code unfaithful
+  ([the report](evals/calibration/2026-10-12_agree_model-labels.md)). No verdict of the judge
+  is used in any figure.
 - **There is no regression check on pull requests.** An evaluation is started by hand, costs
   money and waits for the owner's approval. CI runs the tests, not the evaluation.
 - **No other model or provider has been compared.** Every figure is `claude-haiku-5-5`.
