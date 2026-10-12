@@ -16,6 +16,12 @@ Two files are written from several runs of the same variant:
 ``--unstable``  the cases that were wrong in exactly one run. They are listed and not
                 classified: one failure in three is as likely to be the draw as the agent.
 
+``--refusals``  optional: one row for every case of the split that has no answer, missed or
+                not: how each run ended and in how many model calls, in how many runs it was
+                not refused, and whether it
+                was refused by majority. A case missed in one run of three is the draw; one
+                missed in all three is a failure.
+
 A question that ended in an error is not a failure of the agent and is in neither file. The
 category is a person's judgement and is not computed here; ``--keep`` carries the categories
 and notes already written in an earlier file over to the new one, by case id.
@@ -33,6 +39,7 @@ from evalkit import runs
 
 COLUMNS = ("id", "kind", "family", "what_happened", "category", "note", "evidence")
 UNSTABLE_COLUMNS = ("id", "kind", "family", "what_happened", "evidence")
+REFUSAL_COLUMNS = ("id", "family", "runs", "not_refused_in", "refused_by_majority", "each_run")
 EVIDENCE_CHARS = 600
 SETUP_ERROR = 2
 
@@ -113,6 +120,36 @@ def collect(files: list[tuple[str, dict]], split: str) -> tuple[list[dict], list
     return failures, unstable
 
 
+def refusals(files: list[tuple[str, dict]], split: str) -> list[dict]:
+    """Every case of one split that has no answer, with how each run ended."""
+    cases = files[0][1]["cases"]
+    per_case: dict[str, list[str]] = {}
+    for _, results in files:
+        for record in runs.of_split(results, split):
+            if cases[record["id"]]["answer_type"] != "refusal":
+                continue
+            if record["status"] != "ran" or record["score"].get("error"):
+                continue
+            status, calls = record["result"]["status"], record["result"].get("iterations")
+            told = f"{status} in {calls} model calls" if calls else status
+            per_case.setdefault(record["id"], []).append(told)
+    rows = []
+    for case_id in sorted(per_case):
+        ended = per_case[case_id]
+        refused = [text.split()[0] == "refused" for text in ended]
+        rows.append(
+            {
+                "id": case_id,
+                "family": cases[case_id]["family"],
+                "runs": len(ended),
+                "not_refused_in": len(ended) - sum(refused),
+                "refused_by_majority": runs.majority(refused),
+                "each_run": "; ".join(f"run {n}: {text}" for n, text in enumerate(ended, 1)),
+            }
+        )
+    return rows
+
+
 def to_csv(rows: list[dict], columns: tuple[str, ...]) -> str:
     out = io.StringIO()
     writer = csv.DictWriter(out, fieldnames=columns, lineterminator="\n")
@@ -134,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--split", choices=("dev", "test", "all"), default="dev")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--unstable", type=Path, required=True)
+    parser.add_argument("--refusals", type=Path, default=None, help="every case with no answer")
     parser.add_argument("--keep", type=Path, default=None, help="an earlier file with categories")
     args = parser.parse_args(argv)
     try:
@@ -151,6 +189,14 @@ def main(argv: list[str] | None = None) -> int:
         row["category"], row["note"] = earlier.get("category", ""), earlier.get("note", "")
     args.out.write_text(to_csv(failures, COLUMNS), encoding="utf-8")
     args.unstable.write_text(to_csv(unstable, UNSTABLE_COLUMNS), encoding="utf-8")
+    if args.refusals is not None:
+        due = refusals(files, args.split)
+        args.refusals.write_text(to_csv(due, REFUSAL_COLUMNS), encoding="utf-8")
+        missed = sum(1 for row in due if not row["refused_by_majority"])
+        print(
+            f"{args.split}: {len(due)} cases with no answer, {missed} not refused by majority "
+            f"({args.refusals})"
+        )
     print(
         f"{args.split}: {len(failures)} cases wrong in at least two of {len(files)} runs "
         f"({args.out}), {len(unstable)} wrong in one ({args.unstable})"

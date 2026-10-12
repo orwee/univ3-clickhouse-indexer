@@ -181,9 +181,13 @@ with no question ending in an error. Over the three runs together the agent was 
 523 of 540 answers, 96.9%, with a 95% interval of [94.6%, 98.7%] that resamples cases; on
 the `test` cases alone it was 365 of 381 = 95.8% [92.7%, 98.4%]. The figures are in
 [`evals/results/2026-10-12_baseline.md`](evals/results/2026-10-12_baseline.md), and the cost
-of each run is in [docs/EVALS.md](docs/EVALS.md#what-a-run-costs-measured). No change to the
-agent has been measured yet; when one has, this paragraph will carry the figure after it
-beside the baseline.
+of each run is in [docs/EVALS.md](docs/EVALS.md#what-a-run-costs-measured). The set is easy for this model: on the `dev` cases it was right in 158 of 159 answers, and
+no `dev` case was wrong in two runs of three
+([the analysis](evals/failures/2026-10-12_baseline_dev.md)), so there is little room for a
+change to show anything. No change to the agent has been measured yet. The one that will be
+is written down, with the rule it will be judged by, in
+[docs/EVAL_PREREGISTRATION.md](docs/EVAL_PREREGISTRATION.md); when it has run, this
+paragraph will carry the figure after it beside the baseline.
 
 **Not tied to this domain.** `src/agent/` and `src/evalkit/` name no table, no column and no
 token of this warehouse, and two tests keep it that way. To point them at another warehouse

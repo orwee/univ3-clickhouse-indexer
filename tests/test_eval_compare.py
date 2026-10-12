@@ -190,3 +190,34 @@ def test_the_command_writes_what_render_gives(two, tmp_path, capsys):
     assert compare.main([*arguments, "--failures", str(failures)]) == 2
     assert "no category column" in capsys.readouterr().err
     assert runs.differences(before) == []
+
+
+def test_the_cases_with_no_answer_have_a_table_of_their_own(two):
+    """t-u: the baseline refused it, gave a value, refused it; the variant refused it three
+    times. Refused by majority in both, so it stayed right. d-u was refused six times."""
+    text = compare.render(*two)
+    test = text[text.index("## On `test`") : text.index("## On `dev`")]
+    assert "| Cases with no answer | 0 | 0 | 1 | 0 | 0 |" in test
+    one_of_one = "1 of 1 = 100.0% [20.7%, 100.0%]"
+    assert "| Cases with no answer on `test` | baseline | notes |" in test
+    assert f"Wilson interval | {one_of_one} | {one_of_one} |" in test
+    assert (
+        "| Ended without an answer (the cap, or the model stopped), all runs | 0 of 3 | 0 of 3 |"
+        in test
+    )
+    assert "| Gave a value where a refusal was due, all runs | 1 of 3 | 0 of 3 |" in test
+    dev = text[text.index("## On `dev`") :]
+    assert "| Cases with no answer on `dev` | baseline | notes |" in dev
+    assert "| Gave a value where a refusal was due, all runs | 0 of 3 | 0 of 3 |" in dev
+    before, _ = two
+    for _, results in before:
+        for record in results["records"]:
+            if record["id"] == "t-u" and record["result"]["status"] == "answered":
+                record["result"]["status"] = "no_answer"
+                record["result"]["answer"] = None
+                record["score"] = compare.score.score_case(
+                    results["cases"]["t-u"], record["result"]
+                )
+    due = compare.refusals_due(before, "test")
+    assert due["ended"] == {"no_answer": 1, "gave a value": 0, "answers": 3}
+    assert (due["by_majority"]["k"], due["by_majority"]["n"]) == (1, 1)
