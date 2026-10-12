@@ -645,7 +645,23 @@ replaced, 3 with a claim added; none with the unit changed, because the draw gav
 session, applied `evals/judge_rubric.md` to the 30 rows without the key: 18 `unfaithful`
 and 12 `faithful`. They are there to test the calibration pipeline end to end. Agreement
 computed from them is agreement between two models. It is **not** a human calibration of
-the judge and must never be described as one. The judge has not run, so there is no
-agreement figure of any kind yet. A calibration needs a person's labels: when the owner
-labels the sheet, `sheet.labels.json` changes to `person`. Until then a verdict of the judge
-is not a measurement, and no report in this repository uses one.
+the judge and must never be described as one. A calibration needs a person's labels: when
+the owner labels the sheet, `sheet.labels.json` changes to `person`. Until then a verdict of
+the judge is not a measurement, and no evaluation report in this repository uses one.
+
+**The judge ran once on this sheet**, on 2026-10-12: the `judge` workflow's run
+[38275101405](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38275101405),
+`claude-opus-5-5`, 30 of 30 rows judged, 0.400788 USD. Its verdicts are
+`evals/calibration/2026-10-12_judge-verdicts_38275101405.json`, and the report of `agree`
+with the key is
+[`evals/calibration/2026-10-12_agree_model-labels.md`](../evals/calibration/2026-10-12_agree_model-labels.md).
+
+- **The clean figure: 15 of 15 planted errors caught.** Which rows were altered is decided
+  by code, not by a reader, and the judge called every one of them `unfaithful`.
+- **Agreement with the labels was 30 of 30, between two models.** That is not a human
+  calibration and says nothing about agreement with a person.
+- **3 of the 15 unaltered rows were called `unfaithful`, by both.** In all three the
+  explanation cites a value or a table from an earlier query of the same question, and the
+  judge is shown the last query only. The explanations are true to what the agent saw: the
+  judge sees less than the agent did, as the grounding check did before it was corrected.
+  The rubric is not changed; which way to settle it is the owner's decision.
