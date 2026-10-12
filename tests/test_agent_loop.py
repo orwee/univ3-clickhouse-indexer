@@ -356,6 +356,42 @@ def test_an_addendum_is_appended_to_the_system_prompt_and_descriptions_change_on
     assert "{{" not in told.calls[0]["system"]
 
 
+def test_with_prompt_cache_the_same_prompt_is_sent_as_a_cached_prefix_and_billed_as_such():
+    """Two calls. The first writes the prefix to the cache, the second reads it. On OPUS,
+    per million: input 4, output 20, five-minute write 5, read 0.20."""
+    wrote = llm.Usage(input_tokens=300, output_tokens=100, cache_write_5m_tokens=2000)
+    read = llm.Usage(input_tokens=700, output_tokens=100, cache_read_tokens=2000)
+    script = [query("SELECT v FROM t", usage=wrote), submit(usage=read, type="number", value="42")]
+    result, model, purse = ask(script, FakeTools(rows(["42"])), prompt_cache=True)
+    assert result.status == "answered"
+    plain = loop.system_prompt(loop.DEFAULT_MAX_ITERATIONS, 200)
+    for call in model.calls:
+        assert call["system"] == llm.cached_prefix(plain)  # the same text, in one block
+        assert call["tools"] == loop.TOOL_DEFINITIONS
+        assert "cache_control" not in json.dumps([call["tools"], call["messages"]])
+    # 300 x 4 + 100 x 20 + 2,000 x 5 = 13,200; 700 x 4 + 100 x 20 + 2,000 x 0.20 = 5,200.
+    assert result.usd == Decimal("0.0132") + Decimal("0.0052") == purse.spent
+    tokens = result.to_json()["tokens"]
+    assert (tokens["cache_write_5m_tokens"], tokens["cache_read_tokens"]) == (2000, 2000)
+    assert tokens["input_tokens"] == 1000
+    # Without it, as always: the prompt is a text and nothing asks for a cache.
+    script = [query("SELECT v FROM t"), submit(type="number", value="42")]
+    _, model, _ = ask(script, FakeTools(rows(["42"])))
+    assert all(call["system"] == plain for call in model.calls)
+
+
+def test_with_prompt_cache_the_budget_is_asked_for_the_price_of_a_cache_write():
+    # One call's ceiling at the write price does not fit a budget that fits it at the
+    # base price, so the call is refused before it is sent.
+    plain = loop.system_prompt(loop.DEFAULT_MAX_ITERATIONS, 200)
+    first = [{"role": "user", "content": "How much?"}]
+    ceiling = llm.input_token_ceiling(plain, first, loop.TOOL_DEFINITIONS)
+    base = llm.worst_case_usd(OPUS, ceiling, loop.DEFAULT_MAX_TOKENS)
+    result, model, _ = ask([describe()], FakeTools(), max_usd=str(base), prompt_cache=True)
+    assert result.status == "error" and result.reason.startswith("budget:")
+    assert model.calls == []
+
+
 def test_a_refusal_ends_the_question_and_needs_no_result():
     script = [describe(), submit(type="refusal", refusal_reason="The table has no rows.")]
     result, _, _ = ask(script, FakeTools())

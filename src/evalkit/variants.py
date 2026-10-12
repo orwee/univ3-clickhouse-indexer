@@ -1,6 +1,6 @@
 """A variant: one file that says what a run changes, and nothing else.
 
-``<directory>/<name>.yml`` may set four things, all optional:
+``<directory>/<name>.yml`` may set five things, all optional:
 
 ``model``
     a model id, in place of the default in the code.
@@ -11,6 +11,10 @@
     a file of text, appended to the system prompt.
 ``max_usd_per_question``
     dollars one question may cost, in place of the warehouse file's limit.
+
+``prompt_cache``
+    ``true`` to send the part of the prompt that every call repeats as a cached prefix.
+    The model is sent the same text; what changes is how it is billed.
 
 A file that sets none of them is the baseline. Any other key is refused, so a typo cannot
 pass for a setting. The two paths are relative to the variant file's own directory.
@@ -32,13 +36,13 @@ from pathlib import Path
 
 import yaml
 
-FIELDS = ("model", "schema_notes", "prompt_addendum", "max_usd_per_question")
+FIELDS = ("model", "schema_notes", "prompt_addendum", "max_usd_per_question", "prompt_cache")
 NAME = re.compile(r"[A-Za-z0-9._-]+")  # it becomes part of file names
 TABLE_FIELDS = ("description", "columns")
 
 
 class VariantError(ValueError):
-    """The variant file is missing, or holds something that is not one of the four settings."""
+    """The variant file is missing, or holds something that is not one of the five settings."""
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,7 @@ class Variant:
     descriptions: dict | None = None  # {table: {"description": text, "columns": {name: text}}}
     prompt_addendum: str = ""
     max_usd_per_question: Decimal | None = None
+    prompt_cache: bool = False
     files: dict[str, str] = field(default_factory=dict)  # path -> SHA-256 of its bytes
 
 
@@ -151,8 +156,11 @@ def load(name: str, directory: Path, root: Path | None = None) -> Variant:
             raise VariantError(f"{path}: max_usd_per_question must be a number") from None
         if isinstance(raw["max_usd_per_question"], bool) or not ceiling.is_finite() or ceiling <= 0:
             raise VariantError(f"{path}: max_usd_per_question must be a positive number")
+    if not isinstance(raw.get("prompt_cache", False), bool):
+        raise VariantError(f"{path}: prompt_cache must be true or false")
     return Variant(
         name=name,
+        prompt_cache=raw.get("prompt_cache", False),
         model=model,
         descriptions=load_descriptions(notes) if notes is not None else None,
         prompt_addendum=text,

@@ -415,3 +415,32 @@ def test_the_scripted_llm_replays_in_order_and_remembers_what_it_was_asked():
     assert scripted.model == llm.DEFAULT_MODEL and first.assistant_content() == list(first.content)
     with pytest.raises(AssertionError, match="no response left"):
         scripted.complete(system="s", messages=messages, tools=[], max_tokens=5)
+
+
+def test_with_a_cache_breakpoint_the_worst_case_prices_input_as_a_cache_write():
+    # 100,000 x 0.125 + 4,096 x 0.50, per million: a write costs more than a plain read.
+    assert llm.worst_case_usd(HAIKU, 100_000, 4096, cache_write=True) == Decimal("0.014548")
+    assert llm.worst_case_usd(HAIKU, 100_000, 4096) == Decimal("0.012048")  # as before
+    for model in llm.PRICES:
+        plain = llm.worst_case_usd(model, 10_000, 4096)
+        assert llm.worst_case_usd(model, 10_000, 4096, cache_write=True) > plain
+        # Never under the real cost of a call that wrote its whole prompt to the cache.
+        written = llm.Usage(output_tokens=4096, cache_write_5m_tokens=10_000)
+        assert llm.cost_usd(model, written) <= llm.worst_case_usd(model, 10_000, 4096, True)
+
+
+def test_the_cached_prefix_is_the_system_prompt_as_one_block_with_a_breakpoint():
+    assert llm.cached_prefix("You answer.") == [
+        {"type": "text", "text": "You answer.", "cache_control": {"type": "ephemeral"}}
+    ]
+
+
+def test_a_call_that_wrote_and_read_the_cache_is_billed_at_those_prices():
+    # Haiku, per million: input 0.10, output 0.50, five-minute write 0.125, read 0.01.
+    usage = llm.Usage(
+        input_tokens=500, output_tokens=100, cache_read_tokens=2000, cache_write_5m_tokens=2000
+    )
+    # 500 x 0.10 + 100 x 0.50 + 2,000 x 0.01 + 2,000 x 0.125 = 370, per million.
+    assert llm.cost_usd(HAIKU, usage) == Decimal("0.00037")
+    # The same tokens with nothing cached: 4,500 x 0.10 + 100 x 0.50 = 500, per million.
+    assert llm.cost_usd(HAIKU, llm.Usage(input_tokens=4500, output_tokens=100)) == Decimal("0.0005")

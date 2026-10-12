@@ -22,6 +22,8 @@ from agent import llm, loop
 from evalkit import fixture, golden, report, run, score, variants
 from univ3_indexer import config
 
+CACHE_SHA256 = "02f903a9dd3247d62e12443e266090cb9ee6e548ecc3a9757ff4a9a08e7c775c"
+
 GOLDEN = config.REPO_ROOT / "evals" / "golden.jsonl"
 OPUS = "claude-opus-5-5"  # the arithmetic below is written for this model's prices
 PER_CALL = llm.Usage(input_tokens=1000, output_tokens=100)  # $0.006 on OPUS
@@ -490,6 +492,7 @@ def test_the_committed_baseline_sets_nothing():
         ("prompt_addendum: empty.md\n", "the prompt addendum is empty"),
         ("max_usd_per_question: plenty\n", "max_usd_per_question must be a number"),
         ("max_usd_per_question: 0\n", "must be a positive number"),
+        ("prompt_cache: sometimes\n", "prompt_cache must be true or false"),
         ("schema_notes: bad.yml\n", "expected one key, 'tables'"),
         ("schema_notes: odd.yml\n", "t: unknown ['colour']"),
         ("schema_notes: blank.yml\n", "t.c must be a non-empty text"),
@@ -520,7 +523,13 @@ def test_a_variant_is_a_file_that_exists_and_its_files_are_pinned_by_content(tmp
     (tmp_path / "notes.yml").write_text("tables:\n  t:\n    description: Another thing.\n")
     second = variants.load("v", tmp_path)
     assert second.files != first.files  # the same names, another content: another variant
-    assert variants.FIELDS == ("model", "schema_notes", "prompt_addendum", "max_usd_per_question")
+    assert variants.FIELDS == (
+        "model",
+        "schema_notes",
+        "prompt_addendum",
+        "max_usd_per_question",
+        "prompt_cache",
+    )
 
 
 def test_without_the_reader_an_evaluation_does_not_start(setup, monkeypatch, capsys):
@@ -757,3 +766,28 @@ def test_the_variant_refuse_early_is_one_change_and_is_the_text_that_was_frozen(
     with_it = loop.system_prompt(6, 200, addendum=variant.prompt_addendum)
     assert with_it.startswith(plain.rstrip("\n")) and with_it != plain
     assert with_it.endswith(variant.prompt_addendum.strip() + "\n")
+
+
+def test_the_variant_cache_sets_one_thing_and_the_runner_hands_it_to_the_loop(setup):
+    """prompt_cache: true and nothing else. The hash is the one written in the second entry
+    of docs/EVAL_PREREGISTRATION.md before any run of it."""
+    variant = variants.load("cache", run.DEFAULT_VARIANTS, config.REPO_ROOT)
+    assert variant.prompt_cache is True
+    assert (variant.model, variant.descriptions, variant.max_usd_per_question) == (
+        None,
+        None,
+        None,
+    )
+    assert variant.prompt_addendum == ""
+    assert variant.files == {"evals/variants/cache.yml": CACHE_SHA256}
+    for name in ("baseline", "refuse-early"):
+        assert variants.load(name, run.DEFAULT_VARIANTS, config.REPO_ROOT).prompt_cache is False
+    # Through the runner: every call carries the prompt as a cached prefix, and the prompt
+    # recorded for the run is the same text as without it.
+    (setup["tmp"] / "variants" / "cached.yml").write_text("prompt_cache: true\n")
+    model = FromTheCase(OPUS)
+    code, results = go(setup, model, "--variant", "cached", "--limit", "2", "--model", OPUS)
+    assert code == 0 and model.systems
+    plain = loop.system_prompt(3, 50)
+    assert all(system == llm.cached_prefix(plain) for system in model.systems)
+    assert results["system_prompt_sha256"] == hashlib.sha256(plain.encode()).hexdigest()
