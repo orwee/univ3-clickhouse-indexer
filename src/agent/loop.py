@@ -18,9 +18,12 @@ what the model submitted. ``no_answer`` is the model's outcome too: it reached t
 model calls, or it stopped. ``error`` is not the model's: the API or the network failed
 after those waits, or the budget refused a call.
 
-An answer is checked against the rows of the last successful ``run_sql``: the value
-submitted has to be one of its cells. When it is not, the answer is kept and marked
-``ungrounded``. The first rows of that last result are kept in the result.
+An answer is checked against the rows of the last turn in which a ``run_sql`` succeeded:
+the value submitted has to be a cell of one of that turn's results. A model may send
+several queries in one turn, and which of them comes back last is an accident of order, so
+all of them count; a result of an earlier turn does not. When the value is in none of them,
+the answer is kept and marked ``ungrounded``. The first rows of the last result are kept in
+the result.
 """
 
 from __future__ import annotations
@@ -217,14 +220,23 @@ def same_value(cell: object, value: object) -> bool:
         return cell == value
     a, b = _number(cell), _number(value)
     if a is not None and b is not None:
-        return a == b
+        # A value sent as a JSON number is a double by the time it is read here, and a
+        # double cannot carry the digits of a long decimal cell. It is that cell when the
+        # cell, read as a double, is the same double. A value sent as text is compared
+        # digit for digit, and so is a cell that is a whole number: those arrive exact.
+        if a == b:
+            return True
+        return isinstance(value, float) and a != a.to_integral_value() and float(a) == value
     if isinstance(cell, bool) or isinstance(value, bool):
         return cell is value
     return str(cell) == str(value)
 
 
 def is_grounded(answer_type: str, value: object, rows: list[list] | None) -> bool:
-    """The value, or for a list every element of it, is a cell of the last result."""
+    """The value, or for a list every element of it, is a cell of ``rows``.
+
+    ``rows`` is every row returned in the last turn in which a query ran: see ``TurnRows``.
+    """
     if rows is None:
         return False
     cells = [cell for row in rows for cell in row]
@@ -233,6 +245,23 @@ def is_grounded(answer_type: str, value: object, rows: list[list] | None) -> boo
     if answer_type == "list" and isinstance(value, list) and value:
         return all(any(same_value(cell, item) for cell in cells) for item in value)
     return False
+
+
+class TurnRows:
+    """The rows an answer is checked against: those of the last turn that ran a query.
+
+    ``add`` takes the turn a successful query was sent in and its rows. Rows of one turn
+    are kept together; a later turn replaces them.
+    """
+
+    def __init__(self) -> None:
+        self.turn: object = None
+        self.rows: list[list] | None = None
+
+    def add(self, turn: object, rows: list[list]) -> None:
+        if self.rows is None or turn != self.turn:
+            self.turn, self.rows = turn, []
+        self.rows = self.rows + rows
 
 
 def _summary(name: str, output: dict) -> dict:
@@ -305,7 +334,7 @@ def run(
             transcript.append({"role": role, "content": content})
 
     keep("user", question)
-    last_rows: list[list] | None = None
+    checked = TurnRows()
 
     def finish(status: str, reason: str = "") -> Result:
         result.status, result.reason = status, reason
@@ -403,7 +432,7 @@ def run(
                 if answer["type"] == "refusal":
                     result.tool_calls.append(ToolCall(iteration, name, given, {"ok": True}))
                     return finish("refused")
-                grounded = is_grounded(answer["type"], answer["value"], last_rows)
+                grounded = is_grounded(answer["type"], answer["value"], checked.rows)
                 result.tool_calls.append(
                     ToolCall(iteration, name, given, {"ok": True, "grounded": grounded})
                 )
@@ -417,7 +446,8 @@ def run(
                 sql = given.get("sql") if isinstance(given, dict) else None
                 output = tools.run_sql(sql)
                 if output.get("ok"):
-                    last_rows, result.final_sql = output["rows"], sql
+                    checked.add(iteration, output["rows"])
+                    result.final_sql = sql
                     result.last_result = {
                         "columns": [column["name"] for column in output["columns"]],
                         "rows": output["rows"][:KEPT_ROWS],

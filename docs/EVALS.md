@@ -384,6 +384,61 @@ Details that the definitions above leave open, and how the scorer settles them:
 - A case with no answer that got a value counts once in the hallucination rate, even when
   that value was also ungrounded.
 
+## The grounding check was too strict
+
+The three baseline runs marked 33, 26 and 31 of 180 answers as ungrounded
+(`evals/results/2026-10-12_baseline.md`). On `dev` that is 14, 9 and 16 of 53: 39 answers.
+Every one of the 39 was a right answer, and every one of the 39 values is in a result the
+model was shown. Where each was found is in
+`evals/failures/2026-10-12_baseline_dev_ungrounded_<RUN_ID>.csv`, one file per run:
+
+| Where the value was | Answers, `dev`, three runs | Still ungrounded |
+|---|---|---|
+| The same number as a cell of the last turn, read as a double | 20 | no |
+| A cell of another query of the last turn | 15 | no |
+| A cell of an earlier turn | 4 | yes |
+| In no result | 0 | |
+
+- **20 were digits lost in a JSON number.** The model sent the value as a number. A
+  `Decimal(76, 18)` cell has more digits than a double holds, so `17961.320063199079530937`
+  arrived as `17961.32006319908` and was not "the same cell". The transcript holds the
+  value after it was read, so it cannot say whether the model wrote every digit.
+- **15 were two queries sent in one turn.** The value was in one, and the check looked only
+  at the one written second.
+- **4 were a value read, then another query run** (a count to check the first), and the
+  answer given from the first. The prompt asks for the last result, so these stay
+  ungrounded.
+- **None was arithmetic done outside SQL, and none was a value from nowhere.**
+
+So the 18% was the check and not the agent, and this is a correction of the measurement,
+not an improvement of the agent. The check in [`src/agent/loop.py`](../src/agent/loop.py)
+now compares a number sent as a number as a double, and counts every query of the last
+turn ([AGENT.md](AGENT.md#3-an-ungrounded-answer-is-kept-and-marked)). Nothing the model is
+sent changed: not the prompt, not the tools.
+
+```sh
+PYTHONPATH=src uv run python -m evalkit.reground RESULTS --transcripts DIR --out FILE \
+    [--causes FILE.csv]
+```
+
+[`evalkit.reground`](../src/evalkit/reground.py) applies the check as it is now to a run
+already paid for, from its transcripts, and writes the results again. Right and wrong do not
+change. The three baseline runs, checked again, are
+`evals/results/2026-10-12_baseline-regrounded_<RUN_ID>.json`, and their report over the
+three is `evals/results/2026-10-12_baseline-regrounded.md`:
+
+| | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| Ungrounded answers, as first measured | 33 of 180 | 26 of 180 | 31 of 180 |
+| Ungrounded answers, checked again | 4 of 180 | 3 of 180 | 3 of 180 |
+| Hallucination rate, as first measured | 34 of 180 | 28 of 180 | 33 of 180 |
+| Hallucination rate, checked again | 6 of 180 | 5 of 180 | 5 of 180 |
+| Correct, all cases, both | 172 of 180 | 176 of 180 | 175 of 180 |
+
+**A run of a variant made after this change is compared with the files checked again, not
+with the first ones**: both then use the same check. The files as first measured stay in
+the repository, untouched.
+
 ## Several runs of one variant
 
 One run is one draw: the model does not answer the same question the same way twice. So a

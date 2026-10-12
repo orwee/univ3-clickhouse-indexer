@@ -85,9 +85,9 @@ What to know before pressing the button:
 
 | Status | Meaning |
 |---|---|
-| `answered` | `submit_answer` was called and its value is a cell of the last result |
+| `answered` | `submit_answer` was called and its value is a cell of a result of the last turn that ran a query |
 | `refused` | The model said the data cannot answer, and why. A correct outcome |
-| `ungrounded` | `submit_answer` was called and its value is **not** a cell of the last result |
+| `ungrounded` | `submit_answer` was called and its value is **not** such a cell |
 | `no_answer` | The cap on model calls was reached, or the model stopped on its own. The model's outcome |
 | `error` | The API or the network failed, or the budget refused a call. Not the model's outcome |
 
@@ -141,7 +141,8 @@ DECISIONS.md; the read-only user is entry
 - at most 6 model calls per question;
 - a dollar budget per question, checked before every model call, with a ledger; no retry,
   except of a request the API answered with 429 or 529, which was not served;
-- the answer must be a cell of the last result, or it is marked `ungrounded`.
+- the answer must be a cell of a result of the last turn that ran a query, or it is marked
+  `ungrounded`.
 
 **Instructions, not enforcement.** The prompt
 ([`prompts/system.md`](../src/agent/prompts/system.md)) tells the model to do all
@@ -220,15 +221,30 @@ So `truncated` never means "there were more than 10,000". A test in
 
 ### 3. An ungrounded answer is kept, and marked
 
-When the value of `submit_answer` is not a cell of the last successful result, the answer
-is not thrown away and the question is not retried. The result keeps the answer as the
+When the value of `submit_answer` is not a cell of a result of the last turn in which a
+query ran, the answer is not thrown away and the question is not retried. The result keeps the answer as the
 model gave it, with status `ungrounded`, and the command prints `UNGROUNDED, do not trust`
 and exits with 1.
 
 What counts as the same cell: numbers are compared as numbers, so `"6.802048"`, `6.802048`
 and `"6.8020480"` are one value; everything else is compared as text, exactly. For a list,
-every element has to be a cell. Only the **last** successful query counts, so a value taken
-from an earlier result is ungrounded.
+every element has to be a cell.
+
+Two things were changed on 2026-10-12, after the first baseline showed the check marking
+right answers that came straight out of a result
+([EVALS.md](EVALS.md#the-grounding-check-was-too-strict)):
+
+- **A number sent as a JSON number is compared as a double.** A `Decimal(76, 18)` cell such
+  as `17961.320063199079530937` cannot travel in a JSON number: it arrives as
+  `17961.32006319908`. That is the cell when the cell, read as a double, is that same
+  double. A value sent as text is still compared digit for digit, and a cell that is a whole
+  number is always compared exactly.
+- **Every query of the last turn counts.** The model may send several queries in one turn.
+  Which of them is "the last" is then the order they were written in, so all of them are
+  checked. A result of an **earlier** turn still does not count: a value read, followed by
+  another query, is ungrounded.
+
+The prompt was not changed: it still asks for a cell of the last result, copied as text.
 
 Grounded does not mean right. It shows the value came out of the data, not that the query
 measures what was asked.

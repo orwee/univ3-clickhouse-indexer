@@ -383,7 +383,45 @@ def test_a_value_that_is_not_in_the_last_result_is_ungrounded():
     assert result.tool_calls[-1].summary == {"ok": True, "grounded": False}
 
 
-def test_only_the_last_result_counts():
+def test_every_query_of_the_last_turn_counts_whichever_came_back_last():
+    # Two queries sent in one turn: the value is in the first, and the second is the one
+    # the result keeps as the last. Which is last is the order they were written in.
+    both = llm.response(
+        llm.tool_use("run_sql", {"sql": "SELECT 42 AS v"}, "a"),
+        llm.tool_use("run_sql", {"sql": "SELECT 7 AS v"}, "b"),
+        usage=SMALL,
+    )
+    result = ask([both, submit(type="number", value="42")], FakeTools(rows(["42"]), rows(["7"])))[0]
+    assert result.status == "answered" and result.final_sql == "SELECT 7 AS v"
+    assert result.to_json()["last_result"]["rows"] == [["7"]]
+    # A turn that ran a query replaces the turn before it, all of it.
+    script = [both, query("SELECT 1 AS v"), submit(type="number", value="42")]
+    fake = FakeTools(rows(["42"]), rows(["7"]), rows(["1"]))
+    assert ask(script, fake)[0].status == "ungrounded"
+    # A turn whose only query failed replaces nothing.
+    script = [both, query("SELECT x"), submit(type="number", value="42")]
+    fake = FakeTools(rows(["42"]), rows(["7"]), failed("boom"))
+    assert ask(script, fake)[0].status == "answered"
+
+
+def test_a_number_sent_as_a_number_is_the_cell_it_is_the_double_of():
+    cell = "17961.320063199079530937"  # a Decimal(76, 18) cell, as text
+    as_double = float(cell)
+    assert str(as_double) == "17961.32006319908"
+    assert loop.same_value(cell, as_double)
+    assert loop.same_value(cell, cell) and loop.same_value(cell, "17961.3200631990795309370")
+    # Sent as text, it is compared digit for digit: a shortened text is not the cell.
+    assert not loop.same_value(cell, "17961.32006319908")
+    # Another double is another number, however close.
+    assert not loop.same_value(cell, 17961.32006319907) and not loop.same_value(cell, 17961.32)
+    # Whole numbers arrive exact and get no allowance.
+    assert loop.same_value(535258, 535258) and not loop.same_value("9007199254740993", 2.0**53)
+    assert not loop.same_value(535258, 535259)
+    script = [query("SELECT v FROM t"), submit(type="number", value=as_double)]
+    assert ask(script, FakeTools(rows([cell])))[0].status == "answered"
+
+
+def test_only_the_last_turn_that_ran_a_query_counts():
     fake = FakeTools(rows(["42"]), rows(["7"]))
     script = [query("SELECT 42 AS v"), query("SELECT 7 AS v"), submit(type="number", value="42")]
     assert ask(script, fake)[0].status == "ungrounded"

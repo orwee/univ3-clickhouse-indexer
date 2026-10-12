@@ -137,7 +137,7 @@ named after its block range, which makes a repeated delivery rewrite the same fi
 run one `SELECT`, and submit an answer ([docs/AGENT.md](docs/AGENT.md)). It is asked a
 question in plain English, writes SQL for ClickHouse against the five dbt marts, reads what
 comes back, and answers with one value, the query that produced it and a sentence of
-explanation. The value has to be a cell of the last query's result. When it is not, the
+explanation. The value has to be a cell of what its last queries returned. When it is not, the
 answer is kept and marked as ungrounded. When the data cannot answer the question, the right
 answer is a refusal that says why.
 

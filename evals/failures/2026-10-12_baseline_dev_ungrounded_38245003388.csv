@@ -1,0 +1,10 @@
+id,kind,family,correct,value,cause,still_ungrounded
+t-token-volume-day-001,template,token-volume-day,True,0.16285259528637228,"the same number as a cell of the last turn, read as a double",False
+t-token-volume-day-005,template,token-volume-day,True,17961.32006319908,"the same number as a cell of the last turn, read as a double",False
+t-token-volume-day-007,template,token-volume-day,True,23362.186254016848,"the same number as a cell of the last turn, read as a double",False
+t-swaps-all-range-005,template,swaps-all-range,True,535258,a cell of an earlier turn,True
+t-vwap-day-001,template,vwap-day,True,2849.870677042685,"the same number as a cell of the last turn, read as a double",False
+t-vwap-day-002,template,vwap-day,True,2524.6513423514716,"the same number as a cell of the last turn, read as a double",False
+t-vwap-day-006,template,vwap-day,True,3065.724982778232,"the same number as a cell of the last turn, read as a double",False
+t-peak-day-range-008,template,peak-day-range,True,"""2026-08-20""",a cell of another query of the last turn,False
+h-ordered-list-001,hand,ordered-list,True,"[""2026-08-19"", ""2026-08-21"", ""2026-08-20""]",a cell of another query of the last turn,False
