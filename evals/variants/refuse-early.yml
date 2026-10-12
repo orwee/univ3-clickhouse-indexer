@@ -1,0 +1,6 @@
+# One change against the baseline: a paragraph appended to the system prompt, on deciding
+# early that the data cannot answer and keeping a turn to say so. Nothing else is set.
+#
+# Why this change, what it is measured on and what will count as an improvement were
+# written down before any run of it: docs/EVAL_PREREGISTRATION.md.
+prompt_addendum: refuse-early.md

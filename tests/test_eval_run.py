@@ -730,3 +730,30 @@ def test_a_run_with_errors_says_so_at_the_top_and_leaves_them_out_of_every_accur
 def plain_lines(results):
     text = report.render(results)
     return [line for line in text.splitlines() if line.startswith(("| Correct, all", "| Execution", "| Hallucination", "| Valid SQL"))]  # fmt: skip
+
+
+def test_the_variant_refuse_early_is_one_change_and_is_the_text_that_was_frozen():
+    """One setting, a paragraph appended to the prompt. The two hashes are the ones written
+    in docs/EVAL_PREREGISTRATION.md before any run of it: a word changed here after that
+    page was committed would be another variant, and this test says so."""
+    variant = variants.load("refuse-early", run.DEFAULT_VARIANTS, config.REPO_ROOT)
+    assert (variant.model, variant.descriptions, variant.max_usd_per_question) == (
+        None,
+        None,
+        None,
+    )
+    assert variant.files == {
+        "evals/variants/refuse-early.yml": (
+            "93af24a6913e9585812d84693aa757b0aa8b7adb7317f022a441b2f09dd23c5d"
+        ),
+        "evals/variants/refuse-early.md": (
+            "efd4ecbb5915af6739c128ab1f64aaed353769044b8a7ee5de9b649325f498de"
+        ),
+    }
+    assert variant.prompt_addendum.startswith("## When the data cannot answer")
+    assert "Never spend" in variant.prompt_addendum
+    # The prompt the model gets is the baseline's, then the paragraph, and nothing else.
+    plain = loop.system_prompt(6, 200)
+    with_it = loop.system_prompt(6, 200, addendum=variant.prompt_addendum)
+    assert with_it.startswith(plain.rstrip("\n")) and with_it != plain
+    assert with_it.endswith(variant.prompt_addendum.strip() + "\n")
