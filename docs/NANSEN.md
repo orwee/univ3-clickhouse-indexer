@@ -76,10 +76,7 @@ by `fct_pool_daily`. 30 complete days, 120 pool-days, 2026-08-21 to 2026-09-19:
 
 Pools with fewer than 5 smart-money swaps are left out of every figure in this table, the total included: the total row covers only the pools that are shown. Such pools are merged into one row, "other pools", when together they reach 5; when they do not, they are in no row and in no total.
 
-Of the 1,498 transactions Nansen lists, 666 pool-transactions are in `raw_swaps` (a
-transaction routed through two of the pools counts once in each). That count is over all
-four pools, shown or not; the table has no column it could be set against. What these
-shares mean is not decided here.
+What these shares mean is not decided here.
 
 **Five more days (2026-09-25).** One more call, for the five days the landing gained: 329
 trades in one page, the window closed (newest trade 23:53 UTC on 2026-09-24), cached like the

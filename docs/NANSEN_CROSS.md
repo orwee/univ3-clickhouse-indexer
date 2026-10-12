@@ -30,4 +30,4 @@ Pools with fewer than 5 smart-money swaps are left out of every figure in this t
 
 A transaction can route through two of the pools: the per-pool rows then count it once each, and the total row adds them up.
 
-Distinct transactions of the response inside the window: 181. Present in `raw_swaps`, in any of the pools: 56. This last count is over every pool, shown or not, and each transaction counts once: it is not a column of the table and cannot be set against its rows.
+Distinct transactions of the response inside the window: 181.
