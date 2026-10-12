@@ -236,7 +236,7 @@ def cost_usd(model: str, usage: Usage) -> Decimal:
     ) / MILLION
 
 
-def input_token_ceiling(system: str, messages: list, tools: list) -> int:
+def input_token_ceiling(system: str | list, messages: list, tools: list) -> int:
     """An upper bound on the input tokens of a request, computed without sending anything.
 
     A token is at least one byte of text, so the bytes of the serialised request bound its
@@ -253,16 +253,32 @@ def input_token_ceiling(system: str, messages: list, tools: list) -> int:
     return len(text.encode("utf-8")) + REQUEST_OVERHEAD_TOKENS
 
 
-def worst_case_usd(model: str, input_ceiling: int, max_tokens: int) -> Decimal:
-    """The most a call can cost: every input token at the base rate, the whole output cap.
+def worst_case_usd(
+    model: str, input_ceiling: int, max_tokens: int, cache_write: bool = False
+) -> Decimal:
+    """The most a call can cost: every input token at its dearest rate, the whole output cap.
 
-    Input is priced at the base rate because the requests built here carry no cache
-    breakpoint, so nothing can be billed as a cache write. For a model priced by prompt
-    length, the higher prices apply as soon as the ceiling is over the threshold: the real
-    prompt may be shorter, but nothing shows that before the call.
+    Without a cache breakpoint nothing can be billed as a cache write, so input is priced
+    at the base rate. With one (``cache_write``), the prefix may be written to the cache,
+    which costs more than reading it plainly, so every input token is priced as a
+    five-minute cache write. For a model priced by prompt length, the higher prices apply
+    as soon as the ceiling is over the threshold: the real prompt may be shorter, but
+    nothing shows that before the call.
     """
     p = price_of(model).rates_for(input_ceiling)
-    return (input_ceiling * p.input + max_tokens * p.output) / MILLION
+    per_input = max(p.input, p.cache_write_5m) if cache_write else p.input
+    return (input_ceiling * per_input + max_tokens * p.output) / MILLION
+
+
+def cached_prefix(system: str) -> list[dict]:
+    """The system prompt as one block that ends the cached prefix.
+
+    The API builds the prefix in the order tools, system, messages, and caches everything
+    up to and including the block that carries ``cache_control``. So one breakpoint on the
+    system prompt covers the tool definitions and the system prompt: what every call of
+    every question repeats. The default lifetime, five minutes, is refreshed by each read.
+    """
+    return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
 
 
 @dataclass(frozen=True)
@@ -289,7 +305,7 @@ class LLM(Protocol):
     model: str
 
     def complete(
-        self, *, system: str, messages: list, tools: list, max_tokens: int
+        self, *, system: str | list, messages: list, tools: list, max_tokens: int
     ) -> Response: ...
 
 
@@ -320,7 +336,9 @@ class AnthropicLLM:
         self._anthropic = anthropic
         self._client = anthropic.Anthropic(api_key=api_key, max_retries=0, timeout=timeout_seconds)
 
-    def complete(self, *, system: str, messages: list, tools: list, max_tokens: int) -> Response:
+    def complete(
+        self, *, system: str | list, messages: list, tools: list, max_tokens: int
+    ) -> Response:
         try:
             message = self._client.messages.create(
                 model=self.model,
@@ -398,7 +416,9 @@ class ScriptedLLM:
         self._script = list(script)
         self.calls: list[dict] = []
 
-    def complete(self, *, system: str, messages: list, tools: list, max_tokens: int) -> Response:
+    def complete(
+        self, *, system: str | list, messages: list, tools: list, max_tokens: int
+    ) -> Response:
         self.calls.append(
             {
                 "system": system,

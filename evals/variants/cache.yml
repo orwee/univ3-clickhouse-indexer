@@ -1,0 +1,7 @@
+# One change against the baseline: the tool definitions and the system prompt, which every
+# call of every question repeats, are sent as a cached prefix. The model is sent the same
+# text. What changes is how the input is billed. Nothing else is set.
+#
+# The metric, the guard and the rule were written down before any run of it:
+# docs/EVAL_PREREGISTRATION.md, second entry.
+prompt_cache: true

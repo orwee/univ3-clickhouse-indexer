@@ -147,3 +147,109 @@ The golden set is easy for this model, and its `test` split has 21 cases with no
 That is too few to tell a real gain of two or three cases from chance, and making the set
 harder now would change the baseline, so it is not done in this phase. The honest reading
 of whatever comes out is on a set of this size and for this model, `claude-haiku-5-5`, only.
+
+---
+
+# Second entry: prompt caching, a change to the cost and not to the agent
+
+Added on 2026-10-12, before any run of the variant `cache` exists. Nothing above this line
+was changed: the first entry is as it was committed, and its result is in
+[EVALS.md](EVALS.md#the-one-change-measured-refuse-early-no-measurable-difference).
+
+## The change
+
+One variant, `cache`: `prompt_cache: true` and nothing else. The tool definitions and the
+system prompt, which every call of every question repeats, are sent as a cached prefix: one
+`cache_control` breakpoint on the system prompt, which covers the tools before it. The
+model is sent the same text, word for word; the system prompt's SHA-256 is the baseline's.
+What changes is how the input is billed.
+
+| File | SHA-256 |
+|---|---|
+| `evals/variants/cache.yml` | `02f903a9dd3247d62e12443e266090cb9ee6e548ecc3a9757ff4a9a08e7c775c` |
+
+**What the documentation says**, read on 2026-10-12 at
+<https://platform.claude.com/docs/en/build-with-claude/prompt-caching>:
+
+- the smallest prefix that can be cached is 512 tokens for Claude Haiku 5.5;
+- prefixes are built in the order tools, system, messages, and everything up to and
+  including the block with `cache_control` is cached;
+- for Claude Haiku 5.5 on prompts up to 100,000 tokens, per million tokens: base input 0.10
+  USD, five-minute cache writes 0.125 USD, cache hits 0.01 USD, output 0.50 USD. These are
+  the prices already in `src/agent/llm.py`;
+- the cache lives five minutes and each use renews it; a prefix under the minimum is not
+  cached and no error is returned: both cache counts of the response are then 0.
+
+**The prefix is above the minimum, by an estimate and not by a count.** The token-counting
+endpoint needs a key this machine does not have, and the results keep tokens per question,
+not per call. What they do give: the shortest `dev` question on record,
+`u-not-in-marts-004` in run 38255611726, made 2 calls and was billed 5,967 input tokens
+(`evals/results/2026-10-12_refuse-early_38255611726.json`). Everything in those two requests
+that is not the prefix is 3,562 characters in its transcript. Counting those at 2 characters
+per token, which overstates them, leaves about 2,090 tokens per call for the prefix of that
+variant, and about 1,670 without its added paragraph (850 characters, counted the same
+way). So the baseline's prefix is somewhere near 1,700 to 2,200 tokens, against a minimum
+of 512. The first run settles it: if its results show no cache reads, the prefix was not
+cached and the rule below reports no reduction.
+
+**What is expected, as an estimate.** A `test` question takes about 3.6 calls (456, 458 and
+450 calls for 127 questions in the three baseline files). If about 1,700 to 2,200 tokens of
+each call are read from the cache at a tenth of the price, a question costs about 0.0005 to
+0.0007 USD less than the baseline's 0.0017 USD. That is arithmetic, not a measurement.
+
+## The metric
+
+**Mean cost per question on `test`, per run.** Three runs of `cache` against the three
+baseline runs.
+
+| Baseline run | Mean USD per question on `test` (127 questions) |
+|---|---|
+| 38242644460 | 0.00170 |
+| 38245003388 | 0.00173 |
+| 38247610883 | 0.00168 |
+
+Source: `usd` of the `test` records of
+`evals/results/2026-10-12_baseline-regrounded_<RUN_ID>.json`; the comparison report prints
+them as "Dollars per question, mean".
+
+## The guard
+
+The text the model is sent does not change, so answers should not change beyond the spread
+between runs. That is checked, not assumed, on `test`, by majority of the three runs:
+
+1. **Correctness.** The baseline is right on 122 of 127 cases, 96.1%, 95% Wilson interval
+   [91.1%, 98.3%]. The variant has to be inside that interval: right on 116 to 124 cases.
+2. **Refusal recall.** The baseline refuses 17 of the 21 cases with no answer. The variant
+   has to refuse at least 16.
+
+## The rule, decided now
+
+**A cost reduction is claimed only if all three runs of `cache` have a lower mean cost per
+question on `test` than all three baseline runs, that is, each is below 0.00168 USD taken
+at full precision from the files, and both parts of the guard hold.**
+
+- If the three runs are cheaper and the guard holds: the README states the reduction as the
+  two ranges, baseline and `cache`, with their run ids.
+- If any run of `cache` is not cheaper than every baseline run: no reduction is claimed.
+- If the runs are cheaper and the guard fails: reported as cheaper and not equivalent, and
+  caching stays off.
+
+## Also reported, and deciding nothing
+
+Cost per correct answer; mean seconds per question; cache reads and cache writes as counted
+in the results; the same on `dev`.
+
+## The runs
+
+Three runs of `cache`, dispatched and approved by the owner: split `all`, repetitions 1,
+`max_usd` 1.00. Every run dispatched is listed, none is left out for its result, and a
+question that ended in an error is in no figure. Nothing in this entry changes after the
+first run.
+
+## What this cannot show
+
+- The cache is shared by every request of the organisation with the same prefix. Three runs
+  started together help each other, and a run alone would write the prefix at least once at
+  1.25 times the price. The saving measured is the saving of runs like these.
+- Whether the answers are the same is tested by a guard wide enough to hold run-to-run
+  noise. It can catch a real loss; it cannot prove there is none.

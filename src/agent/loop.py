@@ -313,12 +313,14 @@ def run(
     transcript: list | None = None,
     prompt_addendum: str = "",
     sleep: Callable[[float], None] = time.sleep,
+    prompt_cache: bool = False,
 ) -> Result:
     """Run one question. With ``transcript``, every turn is appended to that list as plain
     data: the question, what the model said and called, and what each tool returned in
     full. It is for whoever keeps a record outside the result; the loop does not read it.
     ``prompt_addendum`` is text appended to the system prompt; where it comes from is the
-    caller's business."""
+    caller's business. With ``prompt_cache``, the tool definitions and the system prompt
+    are sent as a cached prefix: the model is sent the same text, billed differently."""
     started = clock()
     result = Result(question=question, model=llm.model)
     system = system_prompt(
@@ -341,9 +343,10 @@ def run(
         result.seconds = clock() - started
         return result
 
+    sent = llm_module.cached_prefix(system) if prompt_cache else system
     for iteration in range(1, max_iterations + 1):
-        ceiling = llm_module.input_token_ceiling(system, messages, TOOL_DEFINITIONS)
-        worst = llm_module.worst_case_usd(llm.model, ceiling, max_tokens)
+        ceiling = llm_module.input_token_ceiling(sent, messages, TOOL_DEFINITIONS)
+        worst = llm_module.worst_case_usd(llm.model, ceiling, max_tokens, prompt_cache)
         try:
             budget.check(worst)
         except BudgetExceeded as refusal:
@@ -352,7 +355,7 @@ def run(
         for resend in range(MAX_RESENDS + 1):
             try:
                 response = llm.complete(
-                    system=system,
+                    system=sent,
                     messages=messages,
                     tools=TOOL_DEFINITIONS,
                     max_tokens=max_tokens,

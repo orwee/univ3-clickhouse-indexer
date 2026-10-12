@@ -164,6 +164,7 @@ def execute(
     transcripts: Path | None,
     descriptions: dict | None = None,
     prompt_addendum: str = "",
+    prompt_cache: bool = False,
     after_each: Callable[[list[dict]], None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[list[dict], Decimal]:
@@ -200,6 +201,7 @@ def execute(
             transcript=transcript,
             prompt_addendum=prompt_addendum,
             sleep=sleep,
+            prompt_cache=prompt_cache,
         ).to_json()
         run_budget.record(Decimal(result["usd"]), scope)
         if transcripts is not None:
@@ -432,6 +434,7 @@ def main(
         transcripts=directory / "transcripts",
         descriptions=variant.descriptions,
         prompt_addendum=variant.prompt_addendum,
+        prompt_cache=variant.prompt_cache,
         after_each=lambda so_far: put(so_far, finished=False),
         sleep=sleep,
     )
