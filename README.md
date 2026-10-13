@@ -200,6 +200,37 @@ from chance. The figures are in
 [`evals/results/2026-10-12_baseline_vs_refuse-early.md`](evals/results/2026-10-12_baseline_vs_refuse-early.md),
 and what each run cost is in [docs/EVALS.md](docs/EVALS.md#what-a-run-costs-measured).
 
+**Cost.** What a question costs and how long it takes, from
+[`evals/results/2026-10-12_cost.md`](evals/results/2026-10-12_cost.md), which names the
+results file of every run behind each row. The first three rows are the 127 held-out
+questions, three runs each, with `claude-haiku-5-5`.
+
+| | USD per question (range of the runs) | USD per correct answer | Seconds per question | Right answers |
+|---|---|---|---|---|
+| Baseline | 0.00171 (0.00168 to 0.00173) | 0.00178 | 5.66 | 365 of 381 |
+| With the refusal paragraph | 0.00177 (0.00176 to 0.00178) | 0.00184 | 5.65 | 366 of 381 |
+| With prompt caching | 0.00110 (0.00109 to 0.00110) | 0.00116 | 5.89 | 361 of 381 |
+| `claude-sonnet-5-5`, one run on the `dev` questions | 0.02540 | 0.02540 | 5.59 | 53 of 53 |
+
+- **Prompt caching was cheaper in every run and is not adopted.** The rule was written
+  first: a saving is claimed only if every cached run is cheaper than every baseline run and
+  the answers hold up. The first part held. The second did not: by majority of the runs the
+  agent refused 15 of the 21 held-out questions with no answer, where the rule asked for at
+  least 16 and the baseline had 17. The text the model receives is the same with and without
+  caching, so this may be chance, but the rule does not let me pick the reading I prefer.
+  Caching stays off, and no cost reduction is claimed.
+- **The last row is one run, on the questions the agent was designed on. It is not a
+  measurement of that model.** On those same `dev` questions the baseline costs 0.00173 USD a
+  question and was right in 158 of 159 answers over three runs. The larger model was right
+  in all 53 and cost about fifteen times as much.
+- **Sending only the hard questions to the larger model, simulated.** Nothing was run for
+  this: it replays the answers already stored, one baseline run at a time against that one
+  run. A cascade that asks the larger model only when the small one ends without an answer
+  or with an answer not grounded in a result would have been right on 53 of 53 at 0.00214 to
+  0.00295 USD a question. A router that knew beforehand which model would be right, which no
+  real router does, comes to 0.00172 to 0.00224 USD. On a set this easy there is almost
+  nothing for the larger model to fix.
+
 **Not tied to this domain.** `src/agent/` and `src/evalkit/` name no table, no column and no
 token of this warehouse, and two tests keep it that way. To point them at another warehouse
 you would replace what is under `evals/`: [`warehouse.yml`](evals/warehouse.yml) (the
@@ -221,7 +252,8 @@ ClickHouse.
   is used in any figure.
 - **There is no regression check on pull requests.** An evaluation is started by hand, costs
   money and waits for the owner's approval. CI runs the tests, not the evaluation.
-- **No other model or provider has been compared.** Every figure is `claude-haiku-5-5`.
+- **No other model or provider has been compared.** Every figure is `claude-haiku-5-5`, except
+  one run of `claude-sonnet-5-5` on the `dev` questions, which is one run and not a comparison.
 
 ## How to run it
 

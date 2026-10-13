@@ -579,6 +579,95 @@ report does not print that figure).
 The variant file stays in `evals/variants/` as the record of what was run. The agent's
 default is still the baseline.
 
+### Prompt caching measured: cheaper, and not equivalent by the rule
+
+The second entry of [EVAL_PREREGISTRATION.md](EVAL_PREREGISTRATION.md) was written before
+these runs. Three runs of the variant `cache` on `main` at
+`40fdcd8350b05f36532529cfd732e4269b135428`; each results file records
+`evals/variants/cache.yml` with the SHA-256 written in that entry.
+
+| Run | Results file | Asked | Errors | Cache reads, tokens | Cache writes, tokens | Spent, USD | Time |
+|---|---|---|---|---|---|---|---|
+| [38280945667](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38280945667) | `evals/results/2026-10-12_cache_38280945667.json` | 180 of 180 | 0 | 1,252,304 | 0 | 0.19844184 | 19 min 23 s |
+| [38280964508](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38280964508) | `evals/results/2026-10-12_cache_38280964508.json` | 180 of 180 | 0 | 1,229,396 | 1,909 | 0.197682385 | 17 min 2 s |
+| [38280989734](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38280989734) | `evals/results/2026-10-12_cache_38280989734.json` | 180 of 180 | 0 | 1,246,577 | 0 | 0.20236127 | 17 min 7 s |
+
+Together 0.598485495 USD. These are all the runs of the variant that were dispatched. Every
+one of the 180 questions of each run read from the cache. The prefix was written once, by
+one of the three runs started together: 1,909 tokens, which is its measured length, against
+the estimate of 1,700 to 2,200 and the minimum of 512.
+
+**The rule, applied** (`evals/results/2026-10-12_baseline_vs_cache.md`; the cost per run is
+`usd` of the `test` records of each file):
+
+| | Baseline | `cache` | Rule | Holds |
+|---|---|---|---|---|
+| Mean USD per `test` question, the three runs | 0.00170, 0.00173, 0.00168 | 0.00109, 0.00109, 0.00110 | every `cache` run below every baseline run | yes |
+| `test` cases right by majority | 122 of 127 | 119 of 127 | 116 to 124 | yes |
+| `test` cases with no answer refused by majority | 17 of 21 | 15 of 21 | at least 16 | **no** |
+
+The entry said what follows from this: **cheaper and not equivalent, and caching stays
+off. No cost reduction is claimed.**
+
+What can and cannot be said about the guard that failed:
+
+- The text the model is sent is the same, so the entry expected the answers not to move
+  beyond the spread between runs. The baseline's own three runs refused 16, 19 and 17 of
+  those 21 cases; the `cache` runs refused 15, 17 and 16
+  (`evals/results/2026-10-12_cache.md`). Two cases went from refused to missed by majority
+  and none the other way, and answers that ended without one went from 4 of 63 to 8 of 63.
+- That is small enough to be chance and consistent enough not to be waved away. These runs
+  cannot tell which. The rule was written so that I would not choose, and it says no.
+- What would settle it is more runs of both, not a second reading of these.
+
+### One run of a larger model, and two routers simulated from it
+
+**This is one run on `dev`, not a measurement of the model.** `dev` is the split the agent
+was designed on, and one run cannot be told from the spread between runs.
+
+The variant `sonnet` (`claude-sonnet-5-5`, 0.55 USD allowed per question), eval run
+[38281028329](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38281028329)
+on `main` at `40fdcd8`, file `evals/results/2026-10-12_sonnet_38281028329.json`: 53 of 53
+questions asked, no error, 1.345966 USD, 4 min 57 s. The estimate made before it, from the
+tokens Haiku used, was 1.84 USD.
+
+All rows below are from `evals/results/2026-10-12_cost.md`, written by
+[`evalkit.cost`](../src/evalkit/cost.py), which names the files of every row.
+
+| On the 53 `dev` questions | Runs | USD per question | USD per correct answer | Seconds per question | Right |
+|---|---|---|---|---|---|
+| Baseline, `claude-haiku-5-5` | 3 | 0.00173 (0.00172 to 0.00174) | 0.00174 | 5.74 | 158 of 159 |
+| `refuse-early` | 3 | 0.00174 (0.00170 to 0.00179) | 0.00176 | 5.55 | 158 of 159 |
+| `cache` | 3 | 0.00114 (0.00111 to 0.00117) | 0.00117 | 6.01 | 155 of 159 |
+| `sonnet`, one run | 1 | 0.02540 | 0.02540 | 5.59 | 53 of 53 |
+
+The same for all cases and for `test` is in that file; the `test` rows are in the README.
+
+**Two routers, simulated.** Nothing was run for this table. It replays the answers and the
+costs already in the files: each of the three baseline runs against the one `sonnet` run.
+
+- *Oracle*: for each case the cheaper model that was right. It knows beforehand who will
+  be right, so it is a bound and not a design.
+- *Cascade*: Haiku first, and Sonnet only when Haiku ended without an answer or with an
+  answer that was not grounded. Then both are paid for.
+
+| Baseline run paired with the `sonnet` run | Haiku alone | Oracle | Cascade | Sonnet alone |
+|---|---|---|---|---|
+| 38242644460: right | 52 of 53 | 53 of 53 | 53 of 53 | 53 of 53 |
+| 38242644460: USD per question | 0.00174 | 0.00224 | 0.00295 | 0.02540 |
+| 38242644460: sent to Sonnet | 0 | 1 | 2 | 53 |
+| 38245003388: right | 53 of 53 | 53 of 53 | 53 of 53 | 53 of 53 |
+| 38245003388: USD per question | 0.00172 | 0.00172 | 0.00214 | 0.02540 |
+| 38245003388: sent to Sonnet | 0 | 0 | 1 | 53 |
+| 38247610883: right | 53 of 53 | 53 of 53 | 53 of 53 | 53 of 53 |
+| 38247610883: USD per question | 0.00174 | 0.00174 | 0.00257 | 0.02540 |
+| 38247610883: sent to Sonnet | 0 | 0 | 2 | 53 |
+
+What this shows is mostly the set: Haiku is already right on 52 or 53 of the 53, so a
+router has one answer to gain at most, and the cascade spends most of its extra money
+asking Sonnet about answers that were right and only not grounded. It says nothing about
+`test`, where Haiku misses more, because Sonnet was not run there.
+
 ## The judge: what code cannot check
 
 The scorer decides whether an answer is right, and no model takes part in that. One thing
