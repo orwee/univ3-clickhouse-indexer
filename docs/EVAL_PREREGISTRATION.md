@@ -253,3 +253,133 @@ first run.
   1.25 times the price. The saving measured is the saving of runs like these.
 - Whether the answers are the same is tested by a guard wide enough to hold run-to-run
   noise. It can catch a real loss; it cannot prove there is none.
+
+---
+
+# Third entry: the same model through a second provider
+
+Added on 2026-10-13, before any request has been sent through the gateway. Nothing above
+this line was changed. Its two results are in [EVALS.md](EVALS.md): the first change made
+no measurable difference, and caching was cheaper and not equivalent by its own rule.
+
+## What the second entry taught, applied here
+
+The `cache` runs sent the model the same text as the baseline. They were in effect the
+baseline run three more times, and they still failed a guard that was set at "the baseline
+minus one case". A guard has to leave room for the spread between runs of the same thing,
+and that spread has to be read from runs, not assumed. The guards below are set that way.
+
+## The change
+
+One variant, `sonnet-ci`: the requests go to the CheaperInference gateway instead of
+Anthropic ([decision 23](../DECISIONS.md#23-a-second-provider-only-when-a-variant-names-it)),
+and the model is named by the gateway's own id, `claude-sonnet-5.5`. The prompt, the tools,
+the six model calls, the row cap and the ceiling per question are those of the variant
+`sonnet`, which is the same agent on `claude-sonnet-5-5` asked direct.
+
+| File | SHA-256 |
+|---|---|
+| `evals/variants/sonnet-ci.yml` | `8d8bfeb70ea5f7bb17f08df38643b3046325930f57d558a199ea07375fc09634` |
+
+**Why Sonnet and why `dev`.** The gateway's catalog, read on 2026-10-13
+(<https://www.cheaperinference.com/markets>), lists `claude-sonnet-5.5` and no Haiku 5.5.
+The default model cannot be compared, so the three baseline runs cannot be the reference.
+The only direct run of Sonnet 5.5 is one run on `dev`, eval run 38281028329
+(`evals/results/2026-10-12_sonnet_38281028329.json`), so the comparison is one run on `dev`
+against that one.
+
+**One run measures cost, not quality.** A price is the same on every call, so one run of 53
+questions says what the gateway charges for them. Whether the answers are as good cannot
+be told from one run against one run, on the split the agent was designed on. The guards
+below can catch a collapse. They cannot show equivalence, and nothing here will be worded
+as if they had.
+
+## The metric
+
+**Billed USD per `dev` question**: what the gateway reports as billed
+(`cheaper_inference.billing.billed_cost_usd`, summed in the results as `billed_usd`), over
+the 53 questions.
+
+| | Direct, run 38281028329 |
+|---|---|
+| Questions asked, ended in an error | 53, 0 |
+| Spent, USD | 1.345966 |
+| USD per question | 0.02540 |
+| Input and output tokens | 553,263 and 23,944 |
+
+The direct figure is the cost computed from Anthropic's published prices (2 and 10 USD per
+million tokens), which is what Anthropic bills; that run has no separate "billed" field.
+
+## The guards
+
+Counted in the one `sonnet-ci` run, on the 53 `dev` questions. With one run there is no
+majority to take: the counts of that run are used.
+
+| | Direct runs on `dev`, each | Lowest | The run must reach |
+|---|---|---|---|
+| Right answers, of 53 | Haiku baseline 52, 53, 53; Sonnet 53 | 52 | at least 52 |
+| Questions with no answer refused, of 9 | Haiku baseline 8, 9, 9; Sonnet 9 | 8 | at least 8 |
+
+Source: the three files `evals/results/2026-10-12_baseline-regrounded_<RUN_ID>.json` and the
+Sonnet file above. **The spread is borrowed.** There is one direct run of Sonnet, so its own
+run-to-run spread is not known. The three Haiku baseline runs are the only repeated runs on
+these 53 questions, and their lowest values are used as the floor: one case below the best.
+That is a floor against a collapse, taken from the only spread there is.
+
+## The rule, decided now
+
+**"The same model, cheaper" is claimed only if all four hold:**
+
+1. **It is the same model.** Every response of the run names its model, and every name,
+   with dots read as dashes, begins with `claude-sonnet-5-5`. A run whose responses name
+   anything else, or name nothing, is a run of another model or of an unknown one: it is
+   reported under the name it gave, and never as "the same model".
+2. **Every question was billed and none ended in an error**: 53 asked, 53 with a billed
+   cost, 0 errors.
+3. **It is cheaper by billed cost**: the billed total is below 1.345966 USD.
+4. **Both guards hold.**
+
+What is said in each case:
+
+| Outcome | What the README says |
+|---|---|
+| All four hold | The same model through the gateway cost X against 1.345966 USD for the same 53 questions, in one run each; quality was not measured |
+| 1 fails | The gateway served another model; its row is labelled with that model and is not compared as the same |
+| 2 fails | The run is incomplete; its cost per question is reported with the count it is over, and no claim is made |
+| 3 fails | Not cheaper |
+| 4 fails | Cheaper by billed cost, with answers below the floor; not recommended, and said so |
+
+## Also reported, and deciding nothing
+
+- Per question, whether the gateway run and the direct run agree: both right, both wrong,
+  one of each. Counts only.
+- Seconds per question, median and 95th percentile, for both. The direct run has 5.08 and
+  9.02.
+- Waits after a 429: how many and how long.
+- The cost computed from the catalog's price next to the cost billed, and their difference.
+- Cache reads and cache writes as counted, and the gateway's own headers about each call
+  (`x-ci-techniques`, `x-ci-cache` and the others kept under `reports`).
+
+## Two things that would void the comparison, looked for before anything is claimed
+
+- **A technique applied.** If any response reports a technique (minification, trimming,
+  routing to another model), the request was not the one sent direct. The row is then
+  reported with that said, and rule 1 or the wording of the claim follows from it.
+- **An answer reused.** If `x-ci-cache` reports a hit, an answer came from the gateway's
+  response cache and no model was asked. Those questions are counted, and a run with any
+  is reported as such: its cost is not the cost of asking the model.
+
+## The run
+
+One run, dispatched and approved by the owner: variant `sonnet-ci`, split `dev`,
+repetitions 1. It is listed whatever it shows. If it stops on an empty wallet or on errors,
+it is completed with `--only-errors` or replaced, and the report says which. Nothing in
+this entry changes after the first request.
+
+## What this cannot show
+
+- Whether quality is the same. One run each, on `dev`.
+- What the gateway will charge next month: its catalog says prices follow capacity.
+- Anything about Haiku 5.5, the model the agent runs on by default. It is not on the
+  gateway, so the cost of the agent as it is configured does not change with this.
+- What happens to a prompt after it reaches the gateway. Decision 23 says what is sent.
