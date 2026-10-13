@@ -775,6 +775,50 @@ gets a tool that does more than read.
 
 ---
 
+## 22. The judge is shown every query of the question
+
+Written by the agent at the owner's request on 2026-10-13. The owner asked for this entry to
+be written for him, for this phase only; the choice between the two options is his.
+
+- Date: 2026-10-13
+- Status: Accepted
+
+**Context.** The judge reads the explanation that comes with an answer and says whether the
+query and its result support it. It was shown the final query and the rows of its result,
+and the rubric told it to judge against those. On the calibration sheet of 2026-10-12 it
+called 3 of the 15 untouched explanations unfaithful
+(`evals/calibration/2026-10-12_agree_model-labels.md`, rows 3, 7 and 16). Each of the three
+cited something an earlier query of the same question had returned: two daily volumes
+behind a difference, two weekly shares behind a change, a lookup in `dim_pools`. The
+explanations were true to what the agent had seen. The judge had seen less.
+
+**Options.**
+
+1. The judge is given every query the agent ran for the question and every result, in
+   order, with the last one marked as the final one.
+2. The judge keeps the final query only, and the agent's prompt asks it to explain only
+   from its last result.
+
+**Decision.** Option 1. The fault was in what the judge was shown, not in what the agent
+wrote, so the measurement is corrected and the thing measured stays untouched. This is what
+was done for the grounding check when it marked right answers as ungrounded.
+
+**What it costs.**
+
+- A result now keeps every query that ran and the first 50 rows of each, not only of the
+  last. Results files are larger.
+- The judge's prompt grows with every query of the question.
+- A run made before this change kept only its last result. Its explanations can be judged
+  this way only from its transcripts, which are artifacts of the run and expire.
+
+**What it does not change.** The grounding check still refuses a value taken from an
+earlier turn: the value submitted has to come from the last step. The two are consistent.
+The value must be in the final result; the words may describe how the agent got there.
+
+**Not chosen.** Option 2 would have changed the agent's prompt, so the baseline would no
+longer be the agent that runs, and it would have made explanations say less ("a fall of
+35.05 million" without "from 85.4 to 50.4") so that the judge could stay simple.
+
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.

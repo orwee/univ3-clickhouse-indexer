@@ -1,17 +1,20 @@
-# Rubric: is the explanation faithful to the query and to its result?
+# Rubric: is the explanation faithful to the queries and to their results?
 
 You are given four things about one answered question:
 
 1. the **question** that was asked;
-2. the **final SQL** that was run to answer it;
-3. the **result** of that query: its column names and its rows, at most the first 50, with
+2. the **queries** that were run to answer it, in order: any earlier ones, numbered, and
+   last the **final SQL**, the one the answer was taken from;
+3. the **result** of each query: its column names and its rows, at most the first 50, with
    the number of rows there were in all;
 4. the **explanation** the answerer wrote in words.
 
 You judge the explanation, and only the explanation. Whether the answer is right is not your
 question: code checks that. Whether the query is the best query for the question is not your
-question either. Your question is narrower: does the explanation say only what the query and
-its result support?
+question either. Your question is narrower: does the explanation say only what the queries
+and their results support? The answerer saw every one of them, so an explanation may rest on
+an earlier query as well as on the final one. Below, "the query" and "its result"
+mean any of the queries shown and the result of that one.
 
 ## The verdict
 
