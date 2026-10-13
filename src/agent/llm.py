@@ -399,6 +399,14 @@ class Response:
     served_model: str = ""
     billed_usd: Decimal | None = None
     reports: tuple[tuple[str, str], ...] = ()
+    # The type of every block the model returned, in order, the ones the loop does not act
+    # on included (a reasoning block, for one). Empty for a scripted response, whose blocks
+    # are all in ``content``.
+    block_types: tuple[str, ...] = ()
+
+    def types(self) -> list[str]:
+        """The type of every block of this response, in the order the model returned them."""
+        return list(self.block_types) or [str(block["type"]) for block in self.content]
 
     def assistant_content(self) -> object:
         return list(self.content) if self.replay is None else self.replay
@@ -505,6 +513,7 @@ class AnthropicLLM:
             ),
             stop_reason=message.stop_reason or "",
             replay=message.content,
+            block_types=tuple(str(getattr(block, "type", "")) for block in message.content),
             served_model=str(getattr(message, "model", "") or ""),
             billed_usd=billed_usd(message),
             reports=tuple(

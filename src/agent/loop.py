@@ -330,7 +330,9 @@ def run(
 ) -> Result:
     """Run one question. With ``transcript``, every turn is appended to that list as plain
     data: the question, what the model said and called, and what each tool returned in
-    full. It is for whoever keeps a record outside the result; the loop does not read it.
+    full. A turn of the model also has ``block_types``: the type of every block it returned,
+    in order, including the ones whose content is not kept, such as a reasoning block. It
+    is for whoever keeps a record outside the result; the loop does not read it.
     ``prompt_addendum`` is text appended to the system prompt; where it comes from is the
     caller's business. With ``prompt_cache``, the tool definitions and the system prompt
     are sent as a cached prefix: the model is sent the same text, billed differently."""
@@ -344,9 +346,14 @@ def run(
     )
     messages: list = [{"role": "user", "content": question}]
 
-    def keep(role: str, content: object) -> None:
+    def keep(role: str, content: object, block_types: list[str] | None = None) -> None:
         if transcript is not None:
-            transcript.append({"role": role, "content": content})
+            turn = {"role": role, "content": content}
+            if block_types is not None:
+                # Every block the model returned, by type. ``content`` has only the ones
+                # the loop acts on; the others are sent back unread and are not kept.
+                turn["block_types"] = block_types
+            transcript.append(turn)
 
     keep("user", question)
     checked = TurnRows()
@@ -434,7 +441,7 @@ def run(
             return finish("no_answer", f"model_stop: {response.stop_reason}")
 
         messages.append({"role": "assistant", "content": response.assistant_content()})
-        keep("assistant", list(response.content))
+        keep("assistant", list(response.content), response.types())
         calls = [block for block in response.content if block["type"] == "tool_use"]
         if not calls:
             messages.append({"role": "user", "content": NUDGE})

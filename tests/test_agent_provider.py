@@ -228,3 +228,48 @@ def test_a_provider_that_may_cache_has_its_worst_case_priced_as_a_cache_write():
     assert purse.asked == [dear] and dear > llm.worst_case_usd(
         SONNET_GATEWAY, ceiling, loop.DEFAULT_MAX_TOKENS
     )
+
+
+def test_a_transcript_says_which_kinds_of_block_each_turn_of_the_model_had(sdk):
+    """The model returns a reasoning block before its tool call. The loop acts on the tool
+    call only and sends the whole turn back as it came. The transcript keeps the tool call,
+    and now also says that a reasoning block was there."""
+
+    class Tools:
+        def describe_schema(self, tables=None):
+            return {"ok": True, "database": "d", "tables": {}}
+
+    thinking = Block(type="thinking", thinking="...", signature="sig")
+    first = a_message(model=SONNET_DIRECT)
+    first.content = [thinking, *first.content]
+    refusal = Block(type="tool_use", id="t2", name="submit_answer",
+                    input={"type": "refusal", "refusal_reason": "Not there."})  # fmt: skip
+    second = a_message(model=SONNET_DIRECT)
+    second.content = [Block(type="text", text="Done."), refusal]
+    answers = [first, second]
+    client = llm.AnthropicLLM("key-a", SONNET_DIRECT)
+    client._client.messages.create = lambda **request: sdk.calls.append(request) or answers.pop(0)
+    transcript: list = []
+    result = loop.run("How much?", client, Tools(), budget.DollarBudget("5"), transcript=transcript)
+    assert result.status == "refused"
+    turns = [turn for turn in transcript if turn["role"] == "assistant"]
+    assert [turn["block_types"] for turn in turns] == [
+        ["thinking", "tool_use"],
+        ["text", "tool_use"],
+    ]
+    # What is kept of the content is what it always was: no reasoning text, no signature.
+    assert [block["type"] for block in turns[0]["content"]] == ["tool_use"]
+    assert "sig" not in str(transcript) and "block_types" not in str(sdk.calls)
+    assert all("block_types" not in turn for turn in transcript if turn["role"] == "user")
+    # What is sent back to the model is the turn as it came, the reasoning block included,
+    # and nothing about block types goes with it.
+    sent_back = sdk.calls[1]["messages"][1]
+    assert sent_back == {"role": "assistant", "content": first.content}
+    assert set(sdk.calls[1]) == set(sdk.calls[0]) == {
+        "model", "max_tokens", "system", "tools", "messages", "output_config",
+    }  # fmt: skip
+
+
+def test_a_scripted_turn_has_the_types_of_its_own_blocks():
+    response = llm.response(llm.text("Looking."), llm.tool_use("describe_schema", {}))
+    assert response.block_types == () and response.types() == ["text", "tool_use"]
