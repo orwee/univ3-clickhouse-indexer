@@ -1,0 +1,12 @@
+# The agent of the baseline, for the check that runs on a pull request. One setting, and
+# it is not about the agent: the ceiling per question.
+#
+# A run of that check may spend 0.25 USD in all. Before each question the runner asks that
+# a whole question's ceiling still fits in what is left, so with the default ceiling, which
+# is also 0.25, it would stop after the first question. 0.05 lets it keep asking until
+# 0.20 is spent. Counted from the transcripts of the six runs the cases were picked and
+# checked on, none of the 30 questions needed more than 0.008 of room under the worst-case
+# bound, and the 30 together cost about 0.054.
+#
+# The model, the prompt, the tools and the six calls are the baseline's.
+max_usd_per_question: 0.05

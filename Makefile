@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 DEMO = docker compose -f docker-compose.demo.yml
 
-.PHONY: help demo up up-reader down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis eval-fixture golden dbt-seed dbt-build dbt-test dbt-prove dashboard
+.PHONY: help demo up up-reader down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis eval-fixture eval-ci eval-ci-cases golden dbt-seed dbt-build dbt-test dbt-prove dashboard
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -83,6 +83,16 @@ analysis: ## round trips and cross-pool analysis from sql/analysis/, read-only, 
 
 eval-fixture: ## copy the five dbt marts into evals/fixture/ (SELECT only): what the evaluation and CI run on
 	PYTHONPATH=src uv run python scripts/export_marts_fixture.py
+
+BASELINE_RUNS := evals/results/2026-10-12_baseline-regrounded_38242644460.json evals/results/2026-10-12_baseline-regrounded_38245003388.json evals/results/2026-10-12_baseline-regrounded_38247610883.json
+SAME_TEXT_RUNS := evals/results/2026-10-12_cache_38280945667.json evals/results/2026-10-12_cache_38280964508.json evals/results/2026-10-12_cache_38280989734.json
+
+eval-ci: ## the 30 cases of the pull-request check, asked of a scripted model on the fixture, and its rule: no key, no model
+	uv run pytest tests/test_eval_ci.py -q
+
+eval-ci-cases: ## pick the 30 cases again from the three baseline runs, and write what a run of them is compared with
+	PYTHONPATH=src uv run python -m evalkit.ci select --runs $(BASELINE_RUNS) --quota template=20 --quota hand=5 --quota unanswerable=5 --out evals/ci_cases.json
+	PYTHONPATH=src uv run python -m evalkit.ci baseline --cases evals/ci_cases.json --runs $(BASELINE_RUNS) --repeats $(SAME_TEXT_RUNS) --out evals/results/ci_baseline.json
 
 golden: ## compute evals/golden.jsonl: every answer by SQL on the fixture, in a throw-away test_* database
 	PYTHONPATH=src uv run python -m evalkit.golden --templates evals/golden_templates.py --hand evals/hand_cases.yml --out evals/golden.jsonl

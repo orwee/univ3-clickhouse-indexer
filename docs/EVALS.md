@@ -780,6 +780,69 @@ what the model is sent, so the run would no longer be the agent that was measure
 **A run of 45 questions chosen by which ones did not fail is not a sample of the 53.** The
 figures above are what happened, and they are not a comparison of cost or of quality.
 
+## The regression check on pull requests
+
+A pull request that changes the agent, the evaluation code, the evaluation's files or the
+prompt starts [`eval-pr.yml`](../.github/workflows/eval-pr.yml): 30 fixed cases asked once,
+in the environment `agent-eval-pr`, after the owner's approval
+([decision 24](../DECISIONS.md#24-a-regression-check-of-the-agent-on-pull-requests)).
+
+```sh
+make eval-ci         # the 30 cases with a scripted model, and the rule: no key, no model
+make eval-ci-cases   # pick the cases again and write what a run of them is compared with
+```
+
+**The cases** ([`evals/ci_cases.json`](../evals/ci_cases.json)). Picked by
+[`evalkit.ci`](../src/evalkit/ci.py) with the seed 20261013 from the three baseline runs
+(38242644460, 38245003388, 38247610883, checked again for grounding): only cases right in
+all three, 20 from templates, 5 written by hand and 5 with no answer, one family at a time
+in turn so that all twelve template families are in and none has more than two. `dev` had
+enough of every kind, so **no `test` case was taken**: 30 of 30 are `dev`.
+
+**What a run is compared with**
+([`evals/results/ci_baseline.json`](../evals/results/ci_baseline.json)): each case was
+right in 3 of 3 baseline runs, by construction, and a question cost 0.00179, 0.00177 and
+0.00179 USD on these 30 in the three runs, 0.00178 on average.
+
+**The threshold comes from runs, not from a guess.** Six runs sent the model the
+baseline's text. How many of these 30 cases each got wrong:
+
+| Run | Variant | Wrong, of the 30 |
+|---|---|---|
+| 38242644460 | `baseline` | 0 |
+| 38245003388 | `baseline` | 0 |
+| 38247610883 | `baseline` | 0 |
+| 38280945667 | `cache` | 2 |
+| 38280964508 | `cache` | 1 |
+| 38280989734 | `cache` | 0 |
+
+The three baseline runs are 0 because the cases were picked for being right in them. The
+three `cache` runs are the honest estimate of the noise: they count as repeats of the
+baseline because caching sends the model the same text and only bills it differently, which
+is what made that experiment an A/A test that still moved by a few cases
+([above](#prompt-caching-measured-cheaper-and-not-equivalent-by-the-rule)). The
+`refuse-early` runs sent another prompt and are not counted. The worst of the six is 2, and
+the limit is that plus one.
+
+**The rule.** The job fails when any of these is true:
+
+| | Fails when |
+|---|---|
+| Cases asked | fewer than 30, whatever the reason; a run that stops on its budget is a failed run, not a score |
+| Questions that ended in an error | 1 or more |
+| Cases wrong | more than 3 |
+| Mean USD per question | more than 0.00268, which is 1.5 times the baseline's 0.00178 |
+
+A run may spend 0.25 USD in all. The variant [`ci`](../evals/variants/ci.yml) is the
+baseline with a ceiling of 0.05 USD per question, so that thirty questions fit under that.
+A run that fails is not run again to make it pass.
+
+**What it is for.** With 3 of 30 allowed it catches an agent that broke, not one that got
+slightly worse: identical runs already differ by two cases. A claim about quality still
+needs the full evaluation and its three runs.
+
+**It has not run yet.** Its first run is the one of the pull request that adds it.
+
 ## The judge: what code cannot check
 
 The scorer decides whether an answer is right, and no model takes part in that. One thing

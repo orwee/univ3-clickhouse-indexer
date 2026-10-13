@@ -1,0 +1,178 @@
+{
+ "format": 1,
+ "cases": {
+  "h-gross-net-004": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "h-missing-row-004": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "h-multi-step-002": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "h-ordered-list-001": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "h-units-003": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-fees-003": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-peak-day-range-002": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-peak-day-range-008": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-share-001": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-share-008": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-swaps-all-range-005": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-swaps-all-range-009": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-swaps-day-002": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-swaps-day-010": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-token-volume-day-005": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-token-volume-day-007": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-top-pool-day-007": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-top-pool-day-010": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-volume-all-day-005": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-volume-change-002": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-volume-day-005": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-volume-range-006": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-volume-range-009": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-vwap-day-002": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "t-vwap-day-006": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "u-forecast-001": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "u-legs-trap-001": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "u-not-in-marts-004": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "u-other-chain-003": {
+   "right_in": 3,
+   "runs": 3
+  },
+  "u-out-of-range-003": {
+   "right_in": 3,
+   "runs": 3
+  }
+ },
+ "cost": {
+  "files": [
+   "2026-10-12_baseline-regrounded_38242644460.json",
+   "2026-10-12_baseline-regrounded_38245003388.json",
+   "2026-10-12_baseline-regrounded_38247610883.json"
+  ],
+  "mean_usd_per_question_per_run": [
+   "0.0017930300",
+   "0.0017681033",
+   "0.0017924567"
+  ],
+  "mean_usd_per_question": "0.0017845300",
+  "factor": "1.5",
+  "max_mean_usd_per_question": "0.0026767950"
+ },
+ "noise": {
+  "what": "cases of the check each of these runs got wrong; they sent the same text",
+  "runs": [
+   {
+    "file": "2026-10-12_baseline-regrounded_38242644460.json",
+    "variant": "baseline",
+    "wrong": 0
+   },
+   {
+    "file": "2026-10-12_baseline-regrounded_38245003388.json",
+    "variant": "baseline",
+    "wrong": 0
+   },
+   {
+    "file": "2026-10-12_baseline-regrounded_38247610883.json",
+    "variant": "baseline",
+    "wrong": 0
+   },
+   {
+    "file": "2026-10-12_cache_38280945667.json",
+    "variant": "cache",
+    "wrong": 2
+   },
+   {
+    "file": "2026-10-12_cache_38280964508.json",
+    "variant": "cache",
+    "wrong": 1
+   },
+   {
+    "file": "2026-10-12_cache_38280989734.json",
+    "variant": "cache",
+    "wrong": 0
+   }
+  ],
+  "worst": 2,
+  "margin": 1,
+  "max_wrong": 3
+ }
+}

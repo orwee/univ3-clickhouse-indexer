@@ -263,8 +263,11 @@ ClickHouse.
   second time, shown every query of the question, it also stopped flagging explanations
   that were true ([the report](evals/calibration/2026-10-13_agree_model-labels.md)). No verdict of the judge
   is used in any figure.
-- **There is no regression check on pull requests.** An evaluation is started by hand, costs
-  money and waits for the owner's approval. CI runs the tests, not the evaluation.
+- **The regression check on pull requests is new and coarse.** A pull request that touches
+  the agent or the evaluation asks it 30 fixed questions once, after the owner's approval
+  ([docs/EVALS.md](docs/EVALS.md#the-regression-check-on-pull-requests)). It fails on an
+  agent that broke, not on one that got slightly worse: identical runs already differ by a
+  couple of those questions, and the limit is set from that.
 - **No other model or provider has been compared.** Every figure is `claude-haiku-5-5`, except
   one run of `claude-sonnet-5-5` on the `dev` questions, which is one run and not a comparison.
   A second provider was tried for that same model and its one run did not complete.
