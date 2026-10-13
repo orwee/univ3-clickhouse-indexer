@@ -63,6 +63,15 @@ def _what_was_run(r: dict) -> list[str]:
                                f"{len(step['not_asked_again'])} not asked again"]
         for step in r.get("reruns", [])
     ]  # fmt: skip
+    provider = []
+    if r.get("provider", "anthropic") != "anthropic" or r.get("billed_usd"):
+        billed = r.get("billed_usd")
+        provider = [
+            ["Provider", r.get("provider", "anthropic")],
+            ["Model the responses named", ", ".join(r.get("served_models") or []) or "not said"],
+            ["Billed by the provider", "not reported" if billed is None else
+             f"${billed} over {r.get('billed_questions', 0)} questions"],
+        ]  # fmt: skip
     rows = [
         ["Variant", r["variant"]],
         *files,
@@ -86,7 +95,8 @@ def _what_was_run(r: dict) -> list[str]:
                                        f"questions, {s['waits']['seconds']:.0f} s in all"],
         *reruns,
         ["Budget", f"${r['budget_usd']}"],
-        ["Spent", f"${r['spent_usd']}"],
+        ["Spent", f"${r['spent_usd']}" + (" by the price table" if r.get("billed_usd") else "")],
+        *provider,
         ["Per question", f"${r['limits']['max_usd_per_question']}, {r['limits']['max_iterations']} "
                          f"model calls, {r['limits']['row_cap']} rows"],
     ]  # fmt: skip

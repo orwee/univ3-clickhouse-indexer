@@ -233,7 +233,7 @@ and the cases whose verdict changed. No model and no database take part.
 ## Variants
 
 A variant says what one run changes, in one file,
-[`evals/variants/<name>.yml`](../evals/variants/baseline.yml). It may set five things, all
+[`evals/variants/<name>.yml`](../evals/variants/baseline.yml). It may set six things, all
 optional:
 
 | Key | What it changes |
@@ -242,6 +242,7 @@ optional:
 | `schema_notes` | a file of table and column descriptions. `describe_schema` then returns them next to the names and the types, and one sentence of the system prompt says so instead of saying there are none |
 | `prompt_addendum` | a file of text, appended to the system prompt after a blank line |
 | `max_usd_per_question` | dollars one question may cost, in place of the limit in `evals/warehouse.yml` |
+| `provider` | where the requests go: `anthropic`, the default, or `cheaperinference`. A provider is used only when a variant names it, a run talks to that one and to no other, and `model` is then that provider's own id ([decision 23](../DECISIONS.md#23-a-second-provider-only-when-a-variant-names-it)) |
 | `prompt_cache` | `true` sends the tool definitions and the system prompt as a cached prefix. The model is sent the same text; the input is billed differently. Off unless set |
 
 `baseline.yml` sets none of them: it is the agent as the code has it. Any other key in a
@@ -252,6 +253,13 @@ With `prompt_cache`, the budget check before each call prices its input as a cac
 which is the dearest it can be billed at. Whether caching lowers the cost of a run has not
 been measured: the rule it will be judged by is the second entry of
 [EVAL_PREREGISTRATION.md](EVAL_PREREGISTRATION.md).
+
+With a provider other than the default, the results record what that provider itself
+reported: `served_models` (the `model` field of the responses), `billed_usd` per question
+and in total, and under `reports` the headers it sent about each call. `usd` and
+`spent_usd` stay what they always were, the cost computed from the price table in
+`src/agent/llm.py`, so the two can be set side by side. A response of status 402 means the
+provider's wallet is empty: the run stops, and what it did not ask is recorded as not run.
 
 A run is pinned to the content of these files, not to their names: `variant_files` in the
 results holds the SHA-256 of the variant file and of every file it points at.

@@ -59,7 +59,7 @@ from univ3_indexer import config
 
 DEFAULT_CONFIG = config.REPO_ROOT / "evals" / "warehouse.yml"
 DEFAULT_VARIANTS = config.REPO_ROOT / "evals" / "variants"
-API_KEY_NAME = "ANTHROPIC_API_KEY"  # noqa: S105 - the name of a variable, not a value
+WALLET_EMPTY = "HTTP 402"
 FORMAT = 2
 SETUP_ERROR = 2
 UNFINISHED, COMPLETE = "unfinished", "complete"
@@ -204,6 +204,10 @@ def execute(
             prompt_cache=prompt_cache,
         ).to_json()
         run_budget.record(Decimal(result["usd"]), scope)
+        if result["status"] == "error" and WALLET_EMPTY in result["reason"]:
+            # The provider's wallet is empty: every question after this one would end the
+            # same way. They are not asked, and none of them is a wrong answer.
+            stopped = f"the provider refused payment ({WALLET_EMPTY}): its wallet is empty"
         if transcripts is not None:
             transcripts.mkdir(parents=True, exist_ok=True)
             name = f"{case['id']}_{repetition}.json"
@@ -283,6 +287,8 @@ def main(
             earlier["model"] if earlier else args.model or variant.model or llm_module.DEFAULT_MODEL
         )
         llm_module.price_of(model_id)
+        provider_name = variant.provider
+        llm_module.check_served_by(model_id, provider_name)
         by_id = {case["id"]: case for case in cases}
         if earlier:
             chosen = [by_id[case_id] for case_id in earlier["cases"]]
@@ -333,9 +339,12 @@ def main(
         if make_llm is not None:
             model = make_llm(model_id)
         else:
-            model = llm_module.AnthropicLLM(config.require_api_key(API_KEY_NAME), model_id)
+            provider = llm_module.provider_of(provider_name)
+            model = llm_module.AnthropicLLM(
+                config.require_api_key(provider.key_name), model_id, provider=provider.name
+            )
     except config.ConfigError as problem:
-        return _stop(f"No model key: {problem}")
+        return _stop(f"No model key for the provider {provider_name}: {problem}")
     except ImportError:
         return _stop("The anthropic package is not installed: run with `uv run --group agent`.")
 
@@ -371,6 +380,7 @@ def main(
             "written": started,
             "variant": name,
             "variant_files": variant.files,
+            "provider": provider_name,
             "model": model.model,
             "system_prompt_sha256": prompt_sha,
             "golden_file": args.golden.name,
@@ -418,6 +428,12 @@ def main(
             )
         results["written"] = now
         results["spent_usd"] = str(spent_before + spent)
+        # What the provider itself reported, over every question asked in this file.
+        ran = [record["result"] for record in merged if record["status"] == "ran"]
+        billed = [Decimal(r["billed_usd"]) for r in ran if r.get("billed_usd") is not None]
+        results["billed_usd"] = str(sum(billed, Decimal(0))) if billed else None
+        results["billed_questions"] = len(billed)
+        results["served_models"] = sorted({m for r in ran for m in r.get("served_models") or []})
         results["summary"] = score.summarize(merged, by_id)
         results["records"] = merged
         write(out, results)

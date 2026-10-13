@@ -12,6 +12,8 @@
 #   - the inputs reach the shell through `env:`. No GitHub expression is written inside a
 #     `run:` script, where a question could be read as shell;
 #   - the model key is given to one step, the one that runs the agent, and to no other.
+#     The key of a second provider is given to that same step, and only when the run asks
+#     for that provider; otherwise the step gets an empty text in its place.
 #
 # The actions are the ones the tests workflow pins, at the same commits, plus the artifact
 # upload. SHAs looked up with `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` on 2026-10-11.
@@ -34,6 +36,12 @@ on:
         required: false
         default: "0.25"
         type: string
+      provider:
+        description: "Where the request goes. A model id is valid for one provider only"
+        required: false
+        default: "anthropic"
+        type: choice
+        options: ["anthropic", "cheaperinference"]
 
 permissions:
   contents: read
@@ -61,16 +69,19 @@ jobs:
       - name: Start the warehouse
         run: bash scripts/ci_warehouse.sh
 
-      # The only step that sees the key. It never fails the job by itself: the result is
+      # The only step that sees a key. The second key is an empty text unless the provider
+      # chosen is that one. It never fails the job by itself: the result is
       # judged at the end, after the summary and the artifact have been written.
       - name: Ask
         env:
           QUESTION: ${{ inputs.question }}
           MODEL: ${{ inputs.model }}
           MAX_USD: ${{ inputs.max_usd }}
+          PROVIDER: ${{ inputs.provider }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CHEAPERINFERENCE_API_KEY: ${{ inputs.provider == 'cheaperinference' && secrets.CHEAPERINFERENCE_API_KEY || '' }}
         run: |
-          arguments=(--json --max-usd "$MAX_USD")
+          arguments=(--json --max-usd "$MAX_USD" --provider "$PROVIDER")
           if [ -n "$MODEL" ]; then
             arguments+=(--model "$MODEL")
           fi

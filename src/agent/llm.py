@@ -96,6 +96,102 @@ PRICES: dict[str, Price] = {
 # The owner's choice: the small model is the agent.
 DEFAULT_MODEL = "claude-haiku-5-5"
 
+
+@dataclass(frozen=True)
+class Provider:
+    """Where requests go and which key they carry. One client talks to one provider.
+
+    ``base_url`` None is the SDK's own. ``headers`` go on every request. ``may_cache`` says
+    the provider may bill part of a prompt as a cache write although the request asked for
+    no cache, so the worst case of a call is priced at that rate. ``reports`` are the
+    response headers kept in the result, as the provider's own account of what it did.
+    """
+
+    name: str
+    key_name: str
+    base_url: str | None = None
+    headers: tuple[tuple[str, str], ...] = ()
+    may_cache: bool = False
+    reports: tuple[str, ...] = ()
+
+
+DEFAULT_PROVIDER = "anthropic"
+# Read on 2026-10-13 at https://www.cheaperinference.com/docs and its OpenAPI file: the
+# Anthropic-compatible endpoint is the base URL below with no /v1 (the SDK appends
+# /v1/messages); the key goes in X-Api-Key, which is where the SDK puts it; by default the
+# gateway caches the prefix of unmarked requests, and `x-ci-prompt-cache: off` asks it not
+# to add cache controls, so that a request is as close as can be to the one sent direct.
+PROVIDERS: dict[str, Provider] = {
+    "anthropic": Provider("anthropic", "ANTHROPIC_API_KEY"),
+    "cheaperinference": Provider(
+        "cheaperinference",
+        "CHEAPERINFERENCE_API_KEY",
+        base_url="https://api.cheaperinference.com",
+        headers=(("x-ci-prompt-cache", "off"),),
+        may_cache=True,
+        reports=(
+            "x-ci-techniques",
+            "x-ci-cache",
+            "x-ci-tokens-saved",
+            "x-ci-discount-percent",
+            "x-ci-zdr",
+            "x-ci-warning",
+        ),
+    ),
+}
+
+CATALOG_URL = "https://www.cheaperinference.com/markets"
+
+# Models as a gateway names them and prices them. These ids are not Anthropic's: each is
+# valid with its own provider only (``MODEL_PROVIDER``), and ``PRICES`` above stays the
+# table read from Anthropic's pages.
+#
+# "claude-sonnet-5.5", read on 2026-10-13 from the catalog (page 2 of 4): input 1.30,
+# output 6.50, cache read 0.13, cache write 1.63, each shown beside a list price (2.00 and
+# 10.00 for input and output). The catalog shows one cache-write price and no one-hour one;
+# the one-hour column here is Anthropic's own 4, which the page says its prices never
+# exceed, and no request of this code asks for a one-hour cache. The catalog says its
+# prices follow capacity: what a call really cost is what the gateway reports as billed,
+# which is recorded next to the cost computed from this row.
+GATEWAY_PRICES: dict[str, Price] = {
+    "claude-sonnet-5.5": Price(
+        *(Decimal(x) for x in ("1.30", "1.63", "4", "0.13", "6.50")),
+        id_source=CATALOG_URL,
+        price_source=CATALOG_URL,
+        read_on="2026-10-13",
+    ),
+}
+
+
+# A model id belongs to one provider: the gateway names models its own way, and its ids
+# mean nothing to Anthropic. Ids not listed here are Anthropic's.
+MODEL_PROVIDER = {"claude-sonnet-5.5": "cheaperinference"}
+
+
+class UnknownProvider(ValueError):
+    """A provider this code has no entry for."""
+
+
+def provider_of(name: str) -> Provider:
+    try:
+        return PROVIDERS[name]
+    except KeyError:
+        raise UnknownProvider(
+            f"no provider named {name!r}: this code knows {', '.join(sorted(PROVIDERS))}"
+        ) from None
+
+
+def check_served_by(model: str, provider: str) -> None:
+    """Refuse a model id that is not this provider's, before anything is sent."""
+    provider_of(provider)
+    home = MODEL_PROVIDER.get(model, DEFAULT_PROVIDER)
+    if home != provider:
+        raise UnknownProvider(
+            f"the model id {model!r} is {home}'s and the provider asked for is {provider}: "
+            "each provider has its own ids, and one is never sent to the other"
+        )
+
+
 # Tokens the API adds around a request that are not in its text (the instructions that go
 # with tool definitions, message framing). An allowance, on the generous side.
 REQUEST_OVERHEAD_TOKENS = 2_000
@@ -179,6 +275,8 @@ def _api_error(body: object) -> tuple[str | None, str]:
 
 
 def price_of(model: str) -> Price:
+    if model in GATEWAY_PRICES:
+        return GATEWAY_PRICES[model]
     try:
         return PRICES[model]
     except KeyError:
@@ -296,6 +394,11 @@ class Response:
     usage: Usage
     stop_reason: str
     replay: object = None
+    # What the provider said about this call, when it said it: the model that answered, the
+    # dollars it billed, and the headers named in ``Provider.reports``.
+    served_model: str = ""
+    billed_usd: Decimal | None = None
+    reports: tuple[tuple[str, str], ...] = ()
 
     def assistant_content(self) -> object:
         return list(self.content) if self.replay is None else self.replay
@@ -325,29 +428,45 @@ class AnthropicLLM:
         *,
         timeout_seconds: float = 120.0,
         effort: str = "medium",
+        provider: str = DEFAULT_PROVIDER,
     ):
         price_of(model)  # refuse a model without a recorded price before anything is sent
+        check_served_by(model, provider)
+        self.provider = provider_of(provider)
         if not api_key:
             raise LLMError("empty API key")
         import anthropic  # the optional `agent` dependency group
 
         self.model = model
+        self.may_write_cache = self.provider.may_cache
         self._effort = effort
         self._anthropic = anthropic
-        self._client = anthropic.Anthropic(api_key=api_key, max_retries=0, timeout=timeout_seconds)
+        # One client, one provider, one key. There is no second client to fall back on.
+        options: dict = {"api_key": api_key, "max_retries": 0, "timeout": timeout_seconds}
+        if self.provider.base_url is not None:
+            options["base_url"] = self.provider.base_url
+        if self.provider.headers:
+            options["default_headers"] = dict(self.provider.headers)
+        self._client = anthropic.Anthropic(**options)
 
     def complete(
         self, *, system: str | list, messages: list, tools: list, max_tokens: int
     ) -> Response:
+        request = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "tools": tools,
+            "messages": messages,
+            "output_config": {"effort": self._effort},
+        }
+        headers = None
         try:
-            message = self._client.messages.create(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=system,
-                tools=tools,
-                messages=messages,
-                output_config={"effort": self._effort},
-            )
+            if self.provider.reports:
+                raw = self._client.messages.with_raw_response.create(**request)
+                headers, message = raw.headers, raw.parse()
+            else:
+                message = self._client.messages.create(**request)
         except self._anthropic.APIStatusError as exc:
             kind, detail = _api_error(getattr(exc, "body", None))
             said = f", {kind}" if kind else ""
@@ -386,7 +505,38 @@ class AnthropicLLM:
             ),
             stop_reason=message.stop_reason or "",
             replay=message.content,
+            served_model=str(getattr(message, "model", "") or ""),
+            billed_usd=billed_usd(message),
+            reports=tuple(
+                (name, str(headers.get(name)))
+                for name in self.provider.reports
+                if headers is not None and headers.get(name) is not None
+            ),
         )
+
+
+def _field(holder: object, name: str) -> object:
+    """A field of something that is a mapping or an object, or None."""
+    if isinstance(holder, dict):
+        return holder.get(name)
+    return getattr(holder, name, None)
+
+
+def billed_usd(message: object) -> Decimal | None:
+    """The dollars a gateway says it billed for a response, or None when it says nothing.
+
+    Read from ``cheaper_inference.billing.billed_cost_usd``, which its documentation gives
+    as a text with six decimals. Anything that is not a finite, non-negative number is
+    taken as not said: a cost is never guessed from a field that cannot be read.
+    """
+    said = _field(_field(_field(message, "cheaper_inference"), "billing"), "billed_cost_usd")
+    if said is None or isinstance(said, bool):
+        return None
+    try:
+        amount = Decimal(str(said))
+    except ArithmeticError:
+        return None
+    return amount if amount.is_finite() and amount >= 0 else None
 
 
 def text(body: str) -> dict:

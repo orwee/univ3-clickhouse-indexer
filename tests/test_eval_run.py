@@ -10,6 +10,7 @@ A variant is a file. The tests write theirs in a temporary directory; the last o
 the committed evals/variants/baseline.yml.
 """
 
+import dataclasses
 import hashlib
 import json
 import os
@@ -529,6 +530,7 @@ def test_a_variant_is_a_file_that_exists_and_its_files_are_pinned_by_content(tmp
         "prompt_addendum",
         "max_usd_per_question",
         "prompt_cache",
+        "provider",
     )
 
 
@@ -791,3 +793,136 @@ def test_the_variant_cache_sets_one_thing_and_the_runner_hands_it_to_the_loop(se
     plain = loop.system_prompt(3, 50)
     assert all(system == llm.cached_prefix(plain) for system in model.systems)
     assert results["system_prompt_sha256"] == hashlib.sha256(plain.encode()).hexdigest()
+
+
+# --- a second provider -----------------------------------------------------------------------
+
+SONNET_CI_SHA256 = "8d8bfeb70ea5f7bb17f08df38643b3046325930f57d558a199ea07375fc09634"
+
+
+def test_the_variant_sonnet_ci_names_the_provider_and_the_gateways_own_id():
+    """The hash is the one written in the third entry of docs/EVAL_PREREGISTRATION.md."""
+    variant = variants.load("sonnet-ci", run.DEFAULT_VARIANTS, config.REPO_ROOT)
+    assert (variant.provider, variant.model) == ("cheaperinference", "claude-sonnet-5.5")
+    assert variant.files == {"evals/variants/sonnet-ci.yml": SONNET_CI_SHA256}
+    assert (variant.descriptions, variant.prompt_addendum, variant.prompt_cache) == (
+        None,
+        "",
+        False,
+    )
+    direct = variants.load("sonnet", run.DEFAULT_VARIANTS, config.REPO_ROOT)
+    assert variant.max_usd_per_question == direct.max_usd_per_question
+    # Every other variant goes where it always went. No default changed.
+    for name in ("baseline", "refuse-early", "cache", "sonnet"):
+        assert variants.load(name, run.DEFAULT_VARIANTS, config.REPO_ROOT).provider == "anthropic"
+    assert variants.main(["sonnet-ci", "--directory", str(run.DEFAULT_VARIANTS)]) == 0
+
+
+def test_a_provider_is_one_of_two_and_a_variant_file_says_which(tmp_path, capsys):
+    (tmp_path / "v.yml").write_text("provider: elsewhere\n")
+    with pytest.raises(variants.VariantError, match="provider must be one of anthropic, cheaper"):
+        variants.load("v", tmp_path)
+    assert variants.main(["v", "--directory", str(tmp_path)]) == 2
+    assert "provider must be one of" in capsys.readouterr().err
+    assert set(variants.PROVIDERS) == set(llm.PROVIDERS)
+    assert variants.DEFAULT_PROVIDER == llm.DEFAULT_PROVIDER
+
+
+class Reporting(FromTheCase):
+    """A model that reports, as a gateway does, what it billed and which model answered."""
+
+    def complete(self, **request):
+        response = super().complete(**request)
+        return dataclasses.replace(
+            response, billed_usd=Decimal("0.001"), served_model="claude-sonnet-5.5"
+        )
+
+
+def gateway_variant(setup, name="gate"):
+    (setup["tmp"] / "variants" / f"{name}.yml").write_text(
+        "provider: cheaperinference\nmodel: claude-sonnet-5.5\n"
+    )
+    return name
+
+
+def test_the_results_say_the_provider_the_model_that_answered_and_what_was_billed(setup):
+    name = gateway_variant(setup)
+    model = Reporting("claude-sonnet-5.5")
+    code, results = go(setup, model, "--variant", name, "--limit", "3")
+    assert code == 0
+    assert (results["provider"], results["model"]) == ("cheaperinference", "claude-sonnet-5.5")
+    assert results["served_models"] == ["claude-sonnet-5.5"]
+    calls = sum(record["result"]["iterations"] for record in results["records"])
+    assert results["billed_questions"] == 3
+    assert Decimal(results["billed_usd"]) == Decimal("0.001") * calls
+    for record in results["records"]:
+        made = record["result"]
+        assert Decimal(made["billed_usd"]) == Decimal("0.001") * made["iterations"]
+        assert made["served_models"] == ["claude-sonnet-5.5"]
+        # The cost from the price table is still there, next to the one that was billed.
+        assert Decimal(made["usd"]) > 0
+    # A run through the default provider says so, and says that nothing was billed to it.
+    code, plain = go(setup, FromTheCase(OPUS), "--variant", "plain", "--limit", "1",
+                     "--model", OPUS, "--out", str(setup["tmp"] / "plain.json"))  # fmt: skip
+    plain = json.loads((setup["tmp"] / "plain.json").read_text())
+    assert plain["provider"] == "anthropic" and plain["billed_usd"] is None
+    assert plain["billed_questions"] == 0 and plain["served_models"] == []
+
+
+class Broke(FromTheCase):
+    """The gateway's wallet is empty from the second question on."""
+
+    def complete(self, **request):
+        if len(self.asked) >= 1 and len(request["messages"]) == 1:
+            self.asked.append("refused")
+            raise llm.LLMError(
+                "PaymentRequired: HTTP 402, invalid_request_error: insufficient balance",
+                status_code=402,
+                error_type="invalid_request_error",
+            )
+        return super().complete(**request)
+
+
+def test_an_empty_wallet_ends_the_run_as_an_error_and_no_question_is_a_wrong_answer(setup):
+    name = gateway_variant(setup)
+    model = Broke("claude-sonnet-5.5")
+    code, results = go(setup, model, "--variant", name, "--limit", "5")
+    statuses = [(r["status"], (r.get("result") or {}).get("status")) for r in results["records"]]
+    assert statuses == [("ran", "answered"), ("ran", "error")] + [("not_run", None)] * 3
+    assert "HTTP 402" in results["records"][1]["result"]["reason"]
+    assert all("wallet is empty" in r["why"] for r in results["records"][2:])
+    assert len(model.asked) == 2, "the questions after it were not asked at all"
+    summary = results["summary"]
+    assert summary["errors"]["count"] == 1 and summary["not_run"] == 3
+    # One scored question, and it was right: the refusals of payment are in no accuracy.
+    assert (summary["overall"]["correct"]["k"], summary["overall"]["correct"]["n"]) == (1, 1)
+
+
+def test_without_its_key_a_gateway_run_stops_and_never_turns_to_the_other_provider(
+    setup, monkeypatch, capsys
+):
+    name = gateway_variant(setup)
+    asked_for = []
+
+    def no_key(key_name):
+        asked_for.append(key_name)
+        raise config.ConfigError(f"{key_name} is not set")
+
+    monkeypatch.setattr(config, "require_api_key", no_key)
+    monkeypatch.setattr(llm, "AnthropicLLM", lambda *a, **k: pytest.fail("a client was built"))
+    argv = [str(GOLDEN), "--config", setup["config"], "--variants",
+            str(setup["tmp"] / "variants"), "--variant", name, "--limit", "1",
+            "--out", str(setup["out"])]  # fmt: skip
+    assert run.main(argv) == 2
+    said = capsys.readouterr().err
+    assert "No model key for the provider cheaperinference" in said
+    assert asked_for == ["CHEAPERINFERENCE_API_KEY"], "the other key was never asked for"
+    assert not setup["out"].exists()
+    # And an id of one provider is refused for the other before any key is read.
+    (setup["tmp"] / "variants" / "mixed.yml").write_text("model: claude-sonnet-5.5\n")
+    argv[argv.index(name)] = "mixed"
+    assert run.main(argv) == 2
+    assert (
+        "is cheaperinference's and the provider asked for is anthropic" in capsys.readouterr().err
+    )
+    assert asked_for == ["CHEAPERINFERENCE_API_KEY"]

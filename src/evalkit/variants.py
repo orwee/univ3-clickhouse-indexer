@@ -1,6 +1,6 @@
 """A variant: one file that says what a run changes, and nothing else.
 
-``<directory>/<name>.yml`` may set five things, all optional:
+``<directory>/<name>.yml`` may set six things, all optional:
 
 ``model``
     a model id, in place of the default in the code.
@@ -15,6 +15,10 @@
 ``prompt_cache``
     ``true`` to send the part of the prompt that every call repeats as a cached prefix.
     The model is sent the same text; what changes is how it is billed.
+
+``provider``
+    where the requests go, in place of the default. A provider is used only when a variant
+    names it, and a run talks to that one and to no other.
 
 A file that sets none of them is the baseline. Any other key is refused, so a typo cannot
 pass for a setting. The two paths are relative to the variant file's own directory.
@@ -36,13 +40,22 @@ from pathlib import Path
 
 import yaml
 
-FIELDS = ("model", "schema_notes", "prompt_addendum", "max_usd_per_question", "prompt_cache")
+FIELDS = (
+    "model",
+    "schema_notes",
+    "prompt_addendum",
+    "max_usd_per_question",
+    "prompt_cache",
+    "provider",
+)
+PROVIDERS = ("anthropic", "cheaperinference")
+DEFAULT_PROVIDER = PROVIDERS[0]
 NAME = re.compile(r"[A-Za-z0-9._-]+")  # it becomes part of file names
 TABLE_FIELDS = ("description", "columns")
 
 
 class VariantError(ValueError):
-    """The variant file is missing, or holds something that is not one of the five settings."""
+    """The variant file is missing, or holds something that is not one of the six settings."""
 
 
 @dataclass(frozen=True)
@@ -52,6 +65,7 @@ class Variant:
     descriptions: dict | None = None  # {table: {"description": text, "columns": {name: text}}}
     prompt_addendum: str = ""
     max_usd_per_question: Decimal | None = None
+    provider: str = DEFAULT_PROVIDER
     prompt_cache: bool = False
     files: dict[str, str] = field(default_factory=dict)  # path -> SHA-256 of its bytes
 
@@ -158,8 +172,12 @@ def load(name: str, directory: Path, root: Path | None = None) -> Variant:
             raise VariantError(f"{path}: max_usd_per_question must be a positive number")
     if not isinstance(raw.get("prompt_cache", False), bool):
         raise VariantError(f"{path}: prompt_cache must be true or false")
+    provider = raw.get("provider", DEFAULT_PROVIDER)
+    if provider not in PROVIDERS:
+        raise VariantError(f"{path}: provider must be one of {', '.join(PROVIDERS)}")
     return Variant(
         name=name,
+        provider=provider,
         prompt_cache=raw.get("prompt_cache", False),
         model=model,
         descriptions=load_descriptions(notes) if notes is not None else None,
@@ -167,3 +185,25 @@ def load(name: str, directory: Path, root: Path | None = None) -> Variant:
         max_usd_per_question=ceiling,
         files=files,
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Print the provider a variant names. For a workflow, which has to know it before it
+    decides which key the next step is given."""
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(prog="python -m evalkit.variants")
+    parser.add_argument("name")
+    parser.add_argument("--directory", type=Path, default=Path("evals/variants"))
+    args = parser.parse_args(argv)
+    try:
+        print(load(args.name, args.directory).provider)
+    except VariantError as problem:
+        print(str(problem), file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
