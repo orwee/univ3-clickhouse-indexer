@@ -218,6 +218,9 @@ results file. What it holds to:
 - **Full transcripts stay out of the repository.** Every turn, with every row the model
   saw, is written under the data directory, `<data directory>/evals/<run>/transcripts/`,
   next to the ledger.
+  Each turn of the model also lists `block_types`: the type of every block it returned, in
+  order. The content kept is the text and the tool calls; a reasoning block is named there
+  and its content is not kept.
 
 [`evalkit.report`](../src/evalkit/report.py) turns a results file into Markdown: tables
 only, and nothing in it that is not in the file.
