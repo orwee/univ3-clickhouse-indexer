@@ -7,7 +7,10 @@
 Each ``--row`` is a label and the results files of its runs. For every split a row has runs
 on, the report gives the mean cost of a question, the cost of a correct answer (everything
 spent over everything answered right), the mean seconds of a question and how many answers
-were right. A question that ended in an error is in no figure.
+were right. A question that ended in an error is in none of those figures: it is counted
+in a column of its own, and a row with any is an incomplete run. When a provider reported
+what it billed, the last column has that total, over every question it billed, the ones
+that ended in an error included.
 
 With ``--cheap`` and ``--strong`` it also simulates two ways of sending each question to
 one of two variants, on the cases both were asked. Nothing is run: the answers and the
@@ -63,6 +66,21 @@ def figures(results: dict, split: str) -> dict | None:
     }
 
 
+def apart(results: dict, split: str) -> tuple[int, Decimal | None, int]:
+    """What stays out of the figures: questions that ended in an error; and what the
+    provider says it billed, with the number of questions it billed."""
+    if results.get("split", "all") not in ("all", split):
+        return 0, None, 0
+    asked = [record for record in runs.of_split(results, split) if record["status"] == "ran"]
+    errors = sum(1 for record in asked if record["score"].get("error"))
+    billed = [
+        Decimal(str(record["result"]["billed_usd"]))
+        for record in asked
+        if record["result"].get("billed_usd") is not None
+    ]
+    return errors, (sum(billed, Decimal(0)) if billed else None), len(billed)
+
+
 def usd(value: Decimal | None, digits: int = 5) -> str:
     return DASH if value is None else f"{value:.{digits}f}"
 
@@ -81,6 +99,12 @@ def row_of(label: str, files: list[tuple[str, dict]], split: str) -> list[str] |
     spent, right = sum(f["usd"] for f in per_run), sum(f["correct"] for f in per_run)
     asked = sum(f["questions"] for f in per_run)
     seconds = sum(f["seconds"] for f in per_run) / asked
+    held = [apart(results, split) for _, results in files]
+    errors = sum(h[0] for h in held)
+    billed = [h for h in held if h[1] is not None]
+    said = DASH
+    if billed:
+        said = f"{usd(sum(h[1] for h in billed), 6)} over {sum(h[2] for h in billed)} questions"
     return [
         label,
         len(per_run),
@@ -89,6 +113,8 @@ def row_of(label: str, files: list[tuple[str, dict]], split: str) -> list[str] |
         usd(spent / right) if right else DASH,
         f"{seconds:.2f}",
         f"{right} of {asked} = {100 * right / asked:.1f}%",
+        errors,
+        said,
     ]
 
 
@@ -151,7 +177,8 @@ def render(
         ],
     )
     header = ["Row", "Runs", "Questions per run", "USD per question, mean of the runs (range)"]
-    header += ["USD per correct answer", "Seconds per question", "Right, all runs"]
+    header += ["USD per correct answer", "Seconds per question", "Right, of those scored"]
+    header += ["Ended in an error", "Billed by the provider, USD"]
     for name in runs.SPLITS:
         made = [row for label, files in rows if (row := row_of(label, files, name))]
         if made:
