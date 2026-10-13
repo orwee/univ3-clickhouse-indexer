@@ -8,6 +8,7 @@ judges well: nothing here calls one, and no verdict in this repository comes fro
 
 import csv
 import hashlib
+import io
 import json
 from decimal import Decimal
 
@@ -348,7 +349,7 @@ def test_the_sheet_has_an_empty_label_column_and_nothing_that_says_which_rows_we
     assert "30 rows written" in printed and "15 altered" in printed
     with sheet.open(newline="") as fh:
         rows = list(csv.DictReader(fh))
-    columns = ("row", "question", "sql", "result", "explanation", "label")
+    columns = ("row", "question", "earlier", "sql", "result", "explanation", "label")
     assert tuple(rows[0]) == judge.SHEET_COLUMNS == columns
     assert len(rows) == 30 and all(row["label"] == "" for row in rows)
     text = sheet.read_text()
@@ -524,3 +525,142 @@ def test_the_committed_sheet_says_a_model_labelled_it():
     assert said["labelled_by"] == "model" and "not by a person" in said["who"]
     labels = calibration.read_labels(calibration.DEFAULT_SHEET)
     assert len(labels) == 30 and sorted(labels.values()).count("unfaithful") == 18
+
+
+# --- the judge is shown every query the answerer ran ----------------------------------------
+
+
+def two_queries():
+    """A question answered from two queries: the two values first, then their difference."""
+    made = record("a", explanation="From 9 down to 7: a fall of 2.")
+    made["result"]["final_sql"] = "SELECT 7 - 9 AS change"
+    made["result"]["last_result"] = {"columns": ["change"], "rows": [["-2"]], "row_count": 1}
+    made["result"]["queries"] = [
+        {"sql": "SELECT day, v FROM t", "columns": ["day", "v"],
+         "rows": [["d1", "9"], ["d2", "7"]], "row_count": 2, "truncated": False},
+        {"sql": "SELECT 7 - 9 AS change", "columns": ["change"], "rows": [["-2"]],
+         "row_count": 1, "truncated": False},
+    ]  # fmt: skip
+    return made
+
+
+def test_every_query_and_its_result_is_shown_in_order_with_the_final_one_marked():
+    (item,) = judge.items_from_results(results_file(two_queries()))
+    assert item.sql == "SELECT 7 - 9 AS change" and len(item.earlier) == 1
+    text = judge.message(item)
+    wanted = [
+        '<earlier_query number="1">\nSELECT day, v FROM t\n</earlier_query>',
+        '<earlier_result number="1" rows_in_all="2" rows_shown="2">\n'
+        '{"columns": ["day", "v"], "rows": [["d1", "9"], ["d2", "7"]]}\n</earlier_result>',
+        "<final_sql>\nSELECT 7 - 9 AS change\n</final_sql>",
+        '<result rows_in_all="1" rows_shown="1">\n{"columns": ["change"], "rows": [["-2"]]}',
+        "<explanation>\nFrom 9 down to 7: a fall of 2.\n</explanation>",
+    ]
+    places = [text.index(block) for block in wanted]
+    assert places == sorted(places), "in the order they ran, the final one last"
+    assert text.count("<final_sql>") == 1
+    # A question answered from one query is shown as it always was.
+    (alone,) = judge.items_from_results(results_file(record("a")))
+    assert alone.earlier == () and "earlier_query" not in judge.message(alone)
+
+
+def test_the_rubric_says_the_judge_is_shown_every_query():
+    text = RUBRIC.read_text()
+    assert "the **queries** that were run to answer it, in order" in text
+    assert "an explanation may rest on\nan earlier query as well as on the final one" in text
+    assert "the **result** of each query" in text and "of that query:" not in text
+
+
+def test_a_sheet_carries_the_earlier_queries_and_the_judge_reads_them(tmp_path):
+    (found,) = calibration.candidates([("r.json", results_file(two_queries()))], "all")
+    row = {
+        "row": "1",
+        "question": found["question"],
+        "earlier": json.dumps(found["earlier"]),
+        "sql": found["sql"],
+        "result": json.dumps(found["result"]),
+        "explanation": found["explanation"],
+        "label": "",
+    }
+    rows = [row]
+    assert json.loads(row["earlier"]) == [
+        {"sql": "SELECT day, v FROM t",
+         "result": {"columns": ["day", "v"], "rows": [["d1", "9"], ["d2", "7"]], "row_count": 2}}
+    ]  # fmt: skip
+    sheet = tmp_path / "sheet.csv"
+    sheet.write_text(calibration.sheet_text(rows))
+    (item,) = judge.items_from_sheet(sheet)
+    assert item.earlier[0]["sql"] == "SELECT day, v FROM t"
+    assert '<earlier_result number="1" rows_in_all="2" rows_shown="2">' in judge.message(item)
+    # A sheet of the six columns there used to be is refused, and told what is missing.
+    old = [{k: v for k, v in row.items() if k != "earlier"}]
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=list(old[0]), lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(old)
+    sheet.write_text(out.getvalue())
+    with pytest.raises(judge.JudgeError, match="row, question, earlier, sql"):
+        judge.items_from_sheet(sheet)
+
+
+def test_the_earlier_queries_of_an_old_sheet_come_from_the_transcripts_and_nothing_else_moves(
+    tmp_path, capsys
+):
+    """The loop is asked one question with a scripted model, so the transcript is its own."""
+    from agent import budget, loop
+
+    class Tools:
+        answers = [[["d1", "9"], ["d2", "7"]], [["-2"]]]
+
+        def describe_schema(self, tables=None):
+            return {"ok": True, "database": "d", "tables": {}}
+
+        def run_sql(self, sql):
+            rows = self.answers.pop(0)
+            return {"ok": True, "columns": [{"name": "c", "type": "String"}], "rows": rows,
+                    "row_count": len(rows), "truncated": False}  # fmt: skip
+
+    script = [
+        llm.response(llm.tool_use("run_sql", {"sql": "SELECT day, v FROM t"})),
+        llm.response(llm.tool_use("run_sql", {"sql": "SELECT 7 - 9"})),
+        llm.response(llm.tool_use("submit_answer", {"type": "number", "value": "-2"})),
+    ]
+    transcript: list = []
+    result = loop.run("How much?", llm.ScriptedLLM(script, "claude-opus-5-5"), Tools(),
+                      budget.DollarBudget("5"), transcript=transcript)  # fmt: skip
+    # The loop now keeps every result: what a new results file gives the judge directly.
+    kept = result.to_json()["queries"]
+    assert [q["sql"] for q in kept] == ["SELECT day, v FROM t", "SELECT 7 - 9"]
+    assert kept[-1]["rows"] == result.to_json()["last_result"]["rows"] == [["-2"]]
+    assert calibration.queries_of(transcript, loop.KEPT_ROWS) == kept
+    (tmp_path / "a_1.json").write_text(json.dumps({"turns": transcript}))
+    old = (
+        "row,question,sql,result,explanation,label\n"
+        '1,How much?,SELECT 7 - 9,"{""columns"": [""c""]}",From 9 to 7.,unfaithful\n'
+    )
+    key = [{"row": "1", "id": "a", "repetition": 1, "source": "r.json"}]
+    text = calibration.with_earlier(old, key, {"r.json": tmp_path}, loop.KEPT_ROWS)
+    (row,) = csv.DictReader(io.StringIO(text, newline=""))
+    assert tuple(row) == judge.SHEET_COLUMNS
+    assert json.loads(row["earlier"])[0]["result"]["rows"] == [["d1", "9"], ["d2", "7"]]
+    assert (row["sql"], row["explanation"], row["label"]) == (
+        "SELECT 7 - 9", "From 9 to 7.", "unfaithful",
+    )  # fmt: skip
+    # A transcript that does not end in the row's query is not that row's transcript.
+    with pytest.raises(calibration.CalibrationError, match="does not end in the row's query"):
+        calibration.with_earlier(
+            old.replace("SELECT 7 - 9", "SELECT 1"), key, {"r.json": tmp_path}, loop.KEPT_ROWS
+        )
+    with pytest.raises(calibration.CalibrationError, match="no transcripts were given"):
+        calibration.with_earlier(old, key, {}, loop.KEPT_ROWS)
+
+
+def test_the_committed_sheet_has_the_earlier_queries_of_the_three_rows_that_cited_them():
+    with calibration.DEFAULT_SHEET.open(newline="") as fh:
+        rows = {row["row"]: row for row in csv.DictReader(fh)}
+    earlier = {number: json.loads(row["earlier"]) for number, row in rows.items()}
+    assert all(isinstance(queries, list) for queries in earlier.values())
+    # Rows 3, 7 and 16: the explanation cites what an earlier query returned.
+    assert (len(earlier["3"]), len(earlier["7"]), len(earlier["16"])) == (1, 1, 3)
+    assert "dim_pools" in earlier["7"][0]["sql"] and "dim_pools" not in rows["7"]["sql"]
+    assert "36.5155" in json.dumps(earlier["16"]) and "36.5155" not in rows["16"]["result"]

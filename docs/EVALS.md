@@ -212,7 +212,9 @@ results file. What it holds to:
   spent, and for every case and repetition the agent's whole result and its score.
 - **The last result is in the file.** For every question, `last_result` holds the column
   names and the first 50 rows of the last query that ran: what the answer was checked
-  against. The fixture is public data, so these rows can be published with the results.
+  against. `queries` holds the same for every query that ran, in order, the last of them
+  being that one: what the judge is shown. The fixture is public data, so these rows can be
+  published with the results.
 - **Full transcripts stay out of the repository.** Every turn, with every row the model
   saw, is written under the data directory, `<data directory>/evals/<run>/transcripts/`,
   next to the ledger.
@@ -682,8 +684,9 @@ model judges anything, and its verdict never changes a score.
   or a period that the query or its result does not support, or claims more than the query
   measured. A wrong answer can have a faithful explanation, and the rubric says so.
 - **[`evalkit.judge`](../src/evalkit/judge.py)** makes one call per case. It is given the
-  question, the final SQL, the rows of the last result as the results file kept them, and
-  the explanation. The verdict comes back through a tool, `submit_verdict`; a response with
+  question, every query that ran for it with the rows it returned as the results file kept
+  them, in order and with the last one marked as the final one, and the explanation
+  ([decision 22](../DECISIONS.md#22-the-judge-is-shown-every-query-of-the-question)). The verdict comes back through a tool, `submit_verdict`; a response with
   no well-formed call of it is recorded as `no_verdict`, and free text is never read for a
   verdict. It has its own budget (2 USD unless changed), checked before every call, and the
   cases that do not fit are recorded as `not_judged`. Its default model is
@@ -759,4 +762,11 @@ with the key is
   explanation cites a value or a table from an earlier query of the same question, and the
   judge is shown the last query only. The explanations are true to what the agent saw: the
   judge sees less than the agent did, as the grounding check did before it was corrected.
-  The rubric is not changed; which way to settle it is the owner's decision.
+  It was settled on 2026-10-13 by
+  [decision 22](../DECISIONS.md#22-the-judge-is-shown-every-query-of-the-question): the
+  judge is now shown every query of the question and every result. The sheet has a column
+  for them, `earlier`, filled from the transcripts of the three baseline runs with
+  `python -m evalkit.calibration earlier`; its questions, queries, explanations and labels
+  are as they were. **The judge has not run since the change**: whether rows 3, 7 and 16 are
+  now judged faithful, and whether the 15 planted errors are still caught, is not known
+  until it does. The verdicts and the report above are of the judge as it was.

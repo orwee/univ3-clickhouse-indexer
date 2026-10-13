@@ -41,6 +41,8 @@ import sys
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from agent import loop
+from evalkit import judge
 from evalkit.judge import SHEET_COLUMNS, VERDICTS
 from univ3_indexer import config
 
@@ -161,6 +163,7 @@ def candidates(files: list[tuple[str, dict]], split: str) -> list[dict]:
                 "question": case["question"],
                 "sql": result["final_sql"],
                 "result": result.get("last_result") or {"columns": [], "rows": [], "row_count": 0},
+                "earlier": list(judge.earlier_of(result.get("queries"))),
                 "explanation": " ".join(explanation.split()),
             }
     return [found[case_id] for case_id in sorted(found)]
@@ -238,6 +241,7 @@ def build(files: list[tuple[str, dict]], *, split: str = "dev", seed: int = DEFA
             {
                 "row": str(number),
                 "question": entry["question"],
+                "earlier": json.dumps(entry.get("earlier", []), ensure_ascii=False),
                 "sql": entry["sql"],
                 "result": json.dumps(entry["result"], ensure_ascii=False),
                 "explanation": entry["explanation"],
@@ -420,6 +424,70 @@ def render(result: dict, labeller: dict | None = None) -> str:
     return "\n".join(lines)
 
 
+# --- the earlier queries of a sheet built before results kept them ---------------------------
+
+OLD_COLUMNS = tuple(column for column in SHEET_COLUMNS if column != "earlier")
+
+
+def queries_of(turns: list[dict], kept: int) -> list[dict]:
+    """Every query of a transcript that ran, in order: its text and what it returned, with
+    the first ``kept`` rows. The shape a result keeps under ``queries``."""
+    sent: dict[str, str] = {}
+    found = []
+    for turn in turns:
+        if not isinstance(turn.get("content"), list):
+            continue
+        for block in turn["content"]:
+            if block.get("type") == "tool_use" and block.get("name") == "run_sql":
+                sent[block["id"]] = (block.get("input") or {}).get("sql") or ""
+            elif block.get("type") == "tool_result" and block.get("tool_use_id") in sent:
+                content = block.get("content")
+                output = json.loads(content) if isinstance(content, str) else content
+                if isinstance(output, dict) and output.get("ok"):
+                    found.append(
+                        {
+                            "sql": sent[block["tool_use_id"]],
+                            "columns": [column["name"] for column in output["columns"]],
+                            "rows": output["rows"][:kept],
+                            "row_count": output["row_count"],
+                            "truncated": output["truncated"],
+                        }
+                    )
+    return found
+
+
+def with_earlier(text: str, key: list[dict], transcripts: dict[str, Path], kept: int) -> str:
+    """A sheet with its ``earlier`` column filled from the transcripts of its runs.
+
+    ``transcripts`` maps the name of a results file, as the key has it under ``source``, to
+    the directory of that run's transcripts. Nothing else of the sheet changes: not a
+    question, not a query, not an explanation, not a label. A transcript whose last query
+    is not the query of its row is refused: it is not that row's transcript.
+    """
+    reader = csv.DictReader(io.StringIO(text, newline=""))
+    if tuple(reader.fieldnames or ()) not in (SHEET_COLUMNS, OLD_COLUMNS):
+        raise CalibrationError(f"the columns must be {', '.join(SHEET_COLUMNS)}")
+    rows = list(reader)
+    by_row = {entry["row"]: entry for entry in key}
+    for row in rows:
+        entry = by_row.get(row["row"])
+        if entry is None:
+            raise CalibrationError(f"row {row['row']} is not in the key")
+        directory = transcripts.get(entry["source"])
+        if directory is None:
+            raise CalibrationError(f"no transcripts were given for {entry['source']}")
+        path = directory / f"{entry['id']}_{entry['repetition']}.json"
+        try:
+            turns = json.loads(path.read_text(encoding="utf-8"))["turns"]
+        except (OSError, json.JSONDecodeError, KeyError):
+            raise CalibrationError(f"no usable transcript at {path}") from None
+        queries = queries_of(turns, kept)
+        if not queries or queries[-1]["sql"] != row["sql"]:
+            raise CalibrationError(f"row {row['row']}: {path} does not end in the row's query")
+        row["earlier"] = json.dumps(list(judge.earlier_of(queries)), ensure_ascii=False)
+    return sheet_text(rows)
+
+
 # --- the command -----------------------------------------------------------------------------
 
 
@@ -444,6 +512,12 @@ def main(argv: list[str] | None = None) -> int:
     making.add_argument("--seed", type=int, default=DEFAULT_SEED)
     making.add_argument("--sheet", type=Path, default=DEFAULT_SHEET)
     making.add_argument("--key", type=Path, default=None, help="default: under the data directory")
+    adding = commands.add_parser("earlier", help="fill a sheet's earlier queries")
+    adding.add_argument("sheet", type=Path)
+    adding.add_argument("--key", type=Path, required=True)
+    adding.add_argument(
+        "--transcripts", action="append", required=True, metavar="RESULTS_FILE_NAME=DIRECTORY"
+    )
     comparing = commands.add_parser("agree", help="compare the labels with the judge's verdicts")
     comparing.add_argument("sheet", type=Path)
     comparing.add_argument("verdicts", type=Path, help="the output of python -m evalkit.judge")
@@ -473,6 +547,20 @@ def main(argv: list[str] | None = None) -> int:
             counted = ", ".join(f"{name} {how.count(name)}" for name in ALTERATIONS)
             print(f"{len(rows)} rows written to {args.sheet}; {len(how)} altered ({counted})")
             print(f"key: {key_path} (outside the repository)")
+            return 0
+        if args.command == "earlier":
+            where = dict(pair.split("=", 1) for pair in args.transcripts if "=" in pair)
+            if len(where) != len(args.transcripts):
+                return _stop("--transcripts takes RESULTS_FILE_NAME=DIRECTORY")
+            key = json.loads(args.key.read_text(encoding="utf-8"))["rows"]
+            text = with_earlier(
+                args.sheet.read_text(encoding="utf-8"),
+                key,
+                {name: Path(directory) for name, directory in where.items()},
+                loop.KEPT_ROWS,
+            )
+            args.sheet.write_text(text, encoding="utf-8")
+            print(f"{args.sheet}: the earlier queries of {len(key)} rows written")
             return 0
         labels = read_labels(args.sheet)
         labeller = read_labeller(args.sheet)

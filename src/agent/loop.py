@@ -142,6 +142,8 @@ class Result:
     that actually ran successfully, and ``last_result`` what it returned: the column names,
     the first ``KEPT_ROWS`` rows, and how many rows there were. ``waits`` has one entry for
     every time the loop waited after a 429 or a 529 before sending a call again.
+    ``queries`` has every statement that ran successfully, in order, each with what it
+    returned, kept the same way; the last of them is ``final_sql`` and ``last_result``.
     """
 
     question: str
@@ -157,6 +159,7 @@ class Result:
     seconds: float = 0.0
     waits: list[dict] = field(default_factory=list)
     last_result: dict | None = None
+    queries: list[dict] = field(default_factory=list)
 
     def to_json(self) -> dict:
         return {
@@ -173,6 +176,7 @@ class Result:
             "seconds": round(self.seconds, 3),
             "waits": list(self.waits),
             "last_result": self.last_result,
+            "queries": list(self.queries),
         }
 
 
@@ -457,6 +461,7 @@ def run(
                         "row_count": output["row_count"],
                         "truncated": output["truncated"],
                     }
+                    result.queries.append({"sql": sql, **result.last_result})
             else:
                 output = {"ok": False, "error": {"kind": "unknown_tool", "message": name}}
             result.tool_calls.append(ToolCall(iteration, name, given, _summary(name, output)))

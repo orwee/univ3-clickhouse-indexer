@@ -7,8 +7,10 @@ The scorer decides whether an answer is right, deterministically. What it cannot
 the explanation in words that comes with the answer: whether those words say only what the
 query and its result support. That one question goes to a model, and nothing else does.
 
-- One call per case. The judge is given the question, the final SQL, the rows of the last
-  result (as the results file kept them) and the explanation.
+- One call per case. The judge is given the question, every query that ran for it with
+  the rows it returned (as the results file kept them), in order, the last one marked as
+  the final one, and the explanation. It is shown what the answerer saw: an explanation
+  may rightly cite a value from an earlier query.
 - The verdict comes back through a tool, ``submit_verdict``, with one of two values and
   one sentence of reason. A response with no such call is recorded as ``no_verdict``: free
   text is never read for a verdict.
@@ -55,7 +57,8 @@ VERDICTS = ("faithful", "unfaithful")
 MAX_TOKENS = 2048
 FORMAT = 1
 SETUP_ERROR = 2
-SHEET_COLUMNS = ("row", "question", "sql", "result", "explanation", "label")
+SHEET_COLUMNS = ("row", "question", "earlier", "sql", "result", "explanation", "label")
+NO_RESULT = {"columns": [], "rows": [], "row_count": 0}
 
 TOOL = {
     "name": "submit_verdict",
@@ -87,6 +90,27 @@ class Item:
     sql: str
     result: dict  # {"columns": [...], "rows": [...], "row_count": n}
     explanation: str
+    # The queries that ran before the final one, in order: [{"sql": ..., "result": {...}}].
+    earlier: tuple = ()
+
+
+def earlier_of(queries: object) -> tuple:
+    """The queries before the last, as the judge is shown them. ``queries`` is what a
+    result keeps: every statement that ran, each with its columns and its kept rows."""
+    if not isinstance(queries, list):
+        return ()
+    return tuple(
+        {
+            "sql": str(query.get("sql") or ""),
+            "result": {
+                "columns": query.get("columns", []),
+                "rows": query.get("rows", []),
+                "row_count": query.get("row_count", len(query.get("rows", []))),
+            },
+        }
+        for query in queries[:-1]
+        if isinstance(query, dict)
+    )
 
 
 def items_from_results(results: dict) -> list[Item]:
@@ -105,8 +129,9 @@ def items_from_results(results: dict) -> list[Item]:
                 key=f"{record['id']}#{record['repetition']}",
                 question=results["cases"][record["id"]]["question"],
                 sql=result.get("final_sql") or "",
-                result=result.get("last_result") or {"columns": [], "rows": [], "row_count": 0},
+                result=result.get("last_result") or dict(NO_RESULT),
                 explanation=explanation.strip(),
+                earlier=earlier_of(result.get("queries")),
             )
         )
     return items
@@ -128,11 +153,15 @@ def items_from_sheet(path: Path) -> list[Item]:
                 sql=row["sql"],
                 result=json.loads(row["result"]),
                 explanation=row["explanation"],
+                earlier=tuple(
+                    {"sql": str(query["sql"]), "result": query["result"]}
+                    for query in json.loads(row["earlier"] or "[]")
+                ),
             )
             for row in rows
         ]
-    except json.JSONDecodeError:
-        raise JudgeError(f"{path}: a result cell is not JSON") from None
+    except (json.JSONDecodeError, KeyError, TypeError):
+        raise JudgeError(f"{path}: a result or an earlier cell is not what it should be") from None
 
 
 def load_items(source: Path) -> tuple[list[Item], dict]:
@@ -151,8 +180,37 @@ def load_items(source: Path) -> tuple[list[Item], dict]:
     return items_from_results(results), about
 
 
+def _shown(result: dict) -> tuple[str, str]:
+    """The attributes of a result block, and its body."""
+    shown = len(result.get("rows", []))
+    return (
+        f'rows_in_all="{result.get("row_count", shown)}" rows_shown="{shown}"',
+        json.dumps(
+            {"columns": result.get("columns", []), "rows": result.get("rows", [])},
+            ensure_ascii=False,
+        ),
+    )
+
+
 def message(item: Item) -> str:
-    """The four things, each in its own block. What is in them is data for the judge."""
+    """The four things, each in its own block. What is in them is data for the judge.
+
+    Every query that ran is there, in order: the ones before the last as numbered
+    ``earlier_query`` and ``earlier_result`` blocks, then the final one as it always was.
+    """
+    before: list[str] = []
+    for number, query in enumerate(item.earlier, start=1):
+        attributes, body = _shown(query["result"])
+        before += [
+            f'<earlier_query number="{number}">',
+            query["sql"],
+            "</earlier_query>",
+            "",
+            f'<earlier_result number="{number}" {attributes}>',
+            body,
+            "</earlier_result>",
+            "",
+        ]
     result = item.result
     shown = len(result.get("rows", []))
     return "\n".join(
@@ -161,6 +219,7 @@ def message(item: Item) -> str:
             item.question,
             "</question>",
             "",
+            *before,
             "<final_sql>",
             item.sql or "(no query ran)",
             "</final_sql>",
