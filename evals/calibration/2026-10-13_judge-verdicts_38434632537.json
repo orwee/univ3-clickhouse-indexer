@@ -1,0 +1,478 @@
+{
+ "format": 1,
+ "state": "complete",
+ "judge_id": "2026-10-13T165713Z_judge_0394c9",
+ "model": "claude-opus-5-5",
+ "rubric_file": "judge_rubric.md",
+ "rubric_sha256": "9089df5d4110db55fa55f66d626d21b54ba08580eb782b8cbe1364c030b13ca2",
+ "source": {
+  "file": "sheet.csv",
+  "sha256": "0b38c8585878b75a81ae7ba652340499b0f773280058a57aa4c8883c3928f3f5",
+  "kind": "sheet"
+ },
+ "started": "2026-10-13T16:57:13+00:00",
+ "ended": "2026-10-13T16:58:46+00:00",
+ "budget_usd": "0.8",
+ "spent_usd": "0.427652",
+ "summary": {
+  "items": 30,
+  "judged": 30,
+  "faithful": 15,
+  "unfaithful": 15,
+  "no_verdict": 0,
+  "errors": 0,
+  "not_judged": 0
+ },
+ "verdicts": [
+  {
+   "key": "1",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation calls the pool \"USDC/WETH 3.07%\", but the result labels it 0.05% with fee 500, so the 3.07% figure has no support (the volumes and dates it gives do match the result).",
+   "usd": "0.013592",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2388,
+    "output_tokens": 202,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "2",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation gives the date as 2026-09-05, but the query filtered on block_date = '2026-08-29', so it names a period the query did not filter on.",
+   "usd": "0.011748",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2162,
+    "output_tokens": 155,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "3",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "The explanation is supported throughout: the earlier query returned one pool, and the two daily volumes (50,399,504.90 and 85,449,867.41 USD) and the fall of about 35.05 million USD all match the results, with the same pool, days and table the queries used.",
+   "usd": "0.013612",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2328,
+    "output_tokens": 215,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "4",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Nothing is unsupported: the table, the date, the pool label, the fee 3000, the address, the 53 swaps and the volume_usd of 5752.597518 all come straight from the query and its result row.",
+   "usd": "0.011036",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2059,
+    "output_tokens": 140,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "5",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Everything the explanation states is supported by the query and its result: the table, the date filter, 24 rows, 4 pools, and min/max dates that cover the 6-day range.",
+   "usd": "0.013544",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 1856,
+    "output_tokens": 306,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "6",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation calls the pool \"USDC/WETH 3.01%\", but the result labels it \"USDC/WETH 0.01%\", so the 3.01% figure has no support in the result.",
+   "usd": "0.012208",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2032,
+    "output_tokens": 204,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "7",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Every number, unit and period in the explanation is backed by the queries. The tables (fct_pool_daily, dim_pools), the 0.3% pool (fee 3000, the only fee-3000 wstETH/USDC pool in dim_pools), the 2–7 Sep range and the figures 17.56 and 11.58 USD for 09-03 and 09-06 all match.",
+   "usd": "0.016964",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2641,
+    "output_tokens": 320,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "8",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation says the figure is for 2026-09-10, but the query filtered on block_date 2026-09-03, so the period it states is not the one the query used.",
+   "usd": "0.011656",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2124,
+    "output_tokens": 158,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "9",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Nothing is unsupported: the pool, the fee tier, the table, the date, the 4755.45 USD fees and the 47,554,508 USD volume all appear in the query or its single result row, and 0.01% of that volume really is about 4755.45.",
+   "usd": "0.013792",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 1978,
+    "output_tokens": 294,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "10",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Every part of the explanation appears in the final query or its result: the pool, the day, the 164 swaps, the volume of 7435.717679, the fee fraction of 0.0005, and the estimate of 3.7178588395 USD, which matches fees_usd.",
+   "usd": "0.013192",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2508,
+    "output_tokens": 158,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "11",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Nothing in the explanation is unsupported: the query read fct_pool_daily, filtered on fee = 100 and on 12–30 Aug 2026, every row shows a single pool address, and 2026-08-20 tops the ranking at 114,845,815.73 USD, which rounds to 114.85M, with 25,415 swaps.",
+   "usd": "0.018552",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 3178,
+    "output_tokens": 292,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "12",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation calls the pool the \"USDC/WETH 3.07%\" pool, but the results label it 0.05% (fee 500), so 3.07% is an unsupported number.",
+   "usd": "0.014644",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2766,
+    "output_tokens": 179,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "13",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Everything the explanation states is in the queries or their results: the pool address, fee 3000, the 46 days, the 1 day with no swaps, and the split of zero rows = 1 against missing rows = 0. The 45 rows in query 1 suggest the zero-swap day may actually have no row, but the explanation only repeats what the final query reported.",
+   "usd": "0.023696",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2554,
+    "output_tokens": 674,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "14",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Everything the explanation states is backed by the query and its one-row result: the table (fct_pool_daily), the pool (wstETH/USDC, fee 3000), the period (2026-08-22 to 2026-08-31), the count of 10 days and the zero null days.",
+   "usd": "0.011604",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2101,
+    "output_tokens": 160,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "15",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "The query results support everything the explanation states: the pool address and fee 100, the date, both USD figures, and the agreement between the computed share and the stored 16.1046%, since the final query returned both.",
+   "usd": "0.01466",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2670,
+    "output_tokens": 199,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "16",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Nothing is unsupported: the shares (38.01% and 36.52%, from query 3) and the -1.50 pp change (from the final query) are roundings of result cells, and the pools, weeks and volume_usd column all match what the queries read and filtered on.",
+   "usd": "0.01856",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 3345,
+    "output_tokens": 259,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "17",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation says the figure was checked against a second, independent source and matched, but the only query shown reads just fct_pool_daily, so no such check was run.",
+   "usd": "0.009748",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 1817,
+    "output_tokens": 124,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "18",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation gives the period as 2026-09-02 to 2026-08-28, but the queries filtered on 2026-08-26 to 2026-08-28.",
+   "usd": "0.013396",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2454,
+    "output_tokens": 179,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "19",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation dates the swap count 2026-08-26, but the query filtered on block_date = '2026-08-19', so the period it names is one the query did not filter on.",
+   "usd": "0.01426",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2755,
+    "output_tokens": 162,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "20",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation says volume was checked \"from 2026-08-17 onward\", but the query filtered on block_date >= '2026-08-10', so it names a period the query did not use; the quoted volumes for 08-21 and 08-22 do match the result.",
+   "usd": "0.031824",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 5766,
+    "output_tokens": 438,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "21",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation says the figure was checked against a second, independent source and matched, but only one query was run and it read only fct_pool_daily, so nothing supports that check.",
+   "usd": "0.009784",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 1811,
+    "output_tokens": 127,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "22",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Everything the explanation states is in the result or follows from it: the table dim_pools, the pool 0xe0554a… labelled USDC/WETH 0.01%, fee = 100, fee_fraction = 0.0001 and 0.01% are all in the result, and 100/1,000,000 equals the fee_fraction shown.",
+   "usd": "0.014704",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 1986,
+    "output_tokens": 338,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "23",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation says the figure was checked against a second, independent source and matched, but both queries read only fct_pool_daily joined to dim_pools, so no such check happened.",
+   "usd": "0.012564",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2496,
+    "output_tokens": 129,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "24",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Nothing is unsupported: the pool, its address and fee tier, the date, fees_usd 5.4687060335 and volume_usd 10937.412067 all appear in the result, and 10937.412067 × 0.05% really does equal the stated fees.",
+   "usd": "0.01356",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2065,
+    "output_tokens": 265,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "25",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation says the swap count is for block_date 2026-09-30, but the query filtered on block_date '2026-09-23'.",
+   "usd": "0.011068",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2012,
+    "output_tokens": 151,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "26",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation gives one pool a \"3.07% fee\", but the result only shows pools labelled 0.05% and 0.3%, so the 3.07% figure is not supported.",
+   "usd": "0.013364",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2436,
+    "output_tokens": 181,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "27",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation names the period 2026-09-22, but the query filtered on block_date 2026-09-15.",
+   "usd": "0.010068",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 1802,
+    "output_tokens": 143,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "28",
+   "status": "judged",
+   "verdict": "unfaithful",
+   "reason": "The explanation names 2026-09-20 as the later day, but every query filtered on 2026-09-13, not 2026-09-20.",
+   "usd": "0.01346",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2550,
+    "output_tokens": 163,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "29",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Everything it states is supported: the table fct_pool_daily, the date filter, the 4 pools and the 80 pool-days all appear in the query or its result, and 4 × 20 days (16 Aug to 4 Sep inclusive) does give 80, with the first and last days matching the window.",
+   "usd": "0.014084",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 1871,
+    "output_tokens": 330,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  },
+  {
+   "key": "30",
+   "status": "judged",
+   "verdict": "faithful",
+   "reason": "Nothing is unsupported: the pool label, the fee of 500, the address, the daily fact table, the 2026-09-03 date filter, the 152 swaps and the non-null volume_usd all match the query and its result.",
+   "usd": "0.012708",
+   "waits": [],
+   "tokens": {
+    "input_tokens": 2107,
+    "output_tokens": 214,
+    "cache_read_tokens": 0,
+    "cache_write_5m_tokens": 0,
+    "cache_write_1h_tokens": 0
+   }
+  }
+ ]
+}

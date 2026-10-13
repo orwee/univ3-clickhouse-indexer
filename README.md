@@ -201,7 +201,7 @@ from chance. The figures are in
 and what each run cost is in [docs/EVALS.md](docs/EVALS.md#what-a-run-costs-measured).
 
 **Cost.** What a question costs and how long it takes, from
-[`evals/results/2026-10-12_cost.md`](evals/results/2026-10-12_cost.md), which names the
+[`evals/results/2026-10-13_cost.md`](evals/results/2026-10-13_cost.md), which names the
 results file of every run behind each row. The first three rows are the 127 held-out
 questions, three runs each, with `claude-haiku-5-5`.
 
@@ -211,6 +211,7 @@ questions, three runs each, with `claude-haiku-5-5`.
 | With the refusal paragraph | 0.00177 (0.00176 to 0.00178) | 0.00184 | 5.65 | 366 of 381 |
 | With prompt caching | 0.00110 (0.00109 to 0.00110) | 0.00116 | 5.89 | 361 of 381 |
 | `claude-sonnet-5-5`, one run on the `dev` questions | 0.02540 | 0.02540 | 5.59 | 53 of 53 |
+| The same model through a gateway, one run on `dev`, **incomplete** | 0.01897 | 0.01940 | 15.32 | 44 of 45 |
 
 - **Prompt caching was cheaper in every run and is not adopted.** The rule was written
   first: a saving is claimed only if every cached run is cheaper than every baseline run and
@@ -223,6 +224,17 @@ questions, three runs each, with `claude-haiku-5-5`.
   measurement of that model.** On those same `dev` questions the baseline costs 0.00173 USD a
   question and was right in 158 of 159 answers over three runs. The larger model was right
   in all 53 and cost about fifteen times as much.
+- **The run through a cheaper gateway is incomplete, and nothing is claimed from it.** The
+  same agent was sent to the same model through CheaperInference, a gateway that lists it
+  at a lower price. 8 of the 53 questions ended in an error, so the rule written beforehand
+  says: incomplete, no claim. The cause is a real incompatibility and not bad luck. The
+  agent sends the model's previous turn back as it came, with its signed reasoning block,
+  which the direct API requires; the gateway's documentation lists that among the things it
+  does not support, and when a later call landed where the signature was not accepted, the
+  question died. The last row is the 45 questions that finished, and the gateway billed
+  0.965549 USD for the whole run, the failed questions included. It was not retried and not
+  worked around: a workaround would change what the model is sent, and a retry is not
+  guaranteed to end differently.
 - **Sending only the hard questions to the larger model, simulated.** Nothing was run for
   this: it replays the answers already stored, one baseline run at a time against that one
   run. A cascade that asks the larger model only when the small one ends without an answer
@@ -247,13 +259,15 @@ ClickHouse.
   ([`src/evalkit/judge.py`](src/evalkit/judge.py)), and so is the code that builds a sheet for
   a person to label. No person has labelled the sheet: the labels in it were written by a
   model, to test the pipeline, and agreement with them is not a calibration. The judge has
-  run once, on that sheet, and called every error planted by code unfaithful
-  ([the report](evals/calibration/2026-10-12_agree_model-labels.md)). No verdict of the judge
+  run twice on that sheet and both times called every error planted by code unfaithful; the
+  second time, shown every query of the question, it also stopped flagging explanations
+  that were true ([the report](evals/calibration/2026-10-13_agree_model-labels.md)). No verdict of the judge
   is used in any figure.
 - **There is no regression check on pull requests.** An evaluation is started by hand, costs
   money and waits for the owner's approval. CI runs the tests, not the evaluation.
 - **No other model or provider has been compared.** Every figure is `claude-haiku-5-5`, except
   one run of `claude-sonnet-5-5` on the `dev` questions, which is one run and not a comparison.
+  A second provider was tried for that same model and its one run did not complete.
 
 ## How to run it
 

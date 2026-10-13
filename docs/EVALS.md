@@ -678,6 +678,105 @@ router has one answer to gain at most, and the cascade spends most of its extra 
 asking Sonnet about answers that were right and only not grounded. It says nothing about
 `test`, where Haiku misses more, because Sonnet was not run there.
 
+### The same model through a gateway: the run is incomplete, and nothing is claimed
+
+The third entry of [EVAL_PREREGISTRATION.md](EVAL_PREREGISTRATION.md) was written before
+this run. One run of the variant `sonnet-ci` on `main` at
+`27dab382cd0c0f9d4f9b561e68d2ec1eecf80d21`, eval run
+[38434773775](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38434773775),
+file `evals/results/2026-10-13_sonnet-ci_38434773775.json`. It records
+`evals/variants/sonnet-ci.yml` with the SHA-256 written in that entry. It is the only run
+of the variant that was dispatched.
+
+**The rule, applied.**
+
+| Condition | What the run shows | Holds |
+|---|---|---|
+| 1. Every response names the same model | `claude-sonnet-5.5` on all 53 questions | yes |
+| 2. 53 asked, 53 billed, 0 errors | 53 asked, 53 billed, **8 ended in an error** | **no** |
+| 3. Billed total below 1.345966 USD | 0.965549 USD, for a run that did not finish 8 questions | not comparable |
+| 4. Guards: at least 52 right, at least 8 refused | 44 right and 5 refused, of the 45 that finished | not comparable |
+
+Condition 2 fails, and the entry said what follows: **the run is incomplete, its cost is
+reported with the count it is over, and no claim is made.** Not "the same model, cheaper",
+and not "not cheaper" either.
+
+**Why it failed.** All 8 errors are the same answer from the gateway, on a later call of a
+question: `HTTP 400, invalid_request_error: messages.1.content.N: Invalid signature in
+thinking block`.
+
+- The agent's loop sends the model's previous turn back exactly as it came, including any
+  reasoning block and its signature. Anthropic's API requires that when a turn that used a
+  tool is continued.
+- The gateway's documentation, read again on 2026-10-13 at
+  <https://www.cheaperinference.com/docs>, says under its Messages request: *"Anthropic-hosted
+  server tools, Message Batches, Files, and signed thinking-block replay are not
+  compatibility targets."* And: *"Thinking settings can guide an eligible model, but
+  responses do not expose Anthropic-signed thinking blocks."*
+- So this agent does, on every question with more than one call, the one thing in that
+  list. It worked on 45 questions and failed on 8.
+
+That sentence was on the page when it was read before the run, and it was missed: the
+first reading looked for the endpoint, the key, the tools and the billing, and did not ask
+about reasoning blocks. The run cost 0.965549 USD on the gateway's wallet to find it.
+
+**What the transcripts show, and what they cannot.** The 8 transcripts were read; all are
+`dev` cases.
+
+- **None failed on its first call, and none on its second.** The failing call was the
+  third in 2 questions, the fourth in 5 and the fifth in 1. Each question had made between
+  two and four calls that the gateway accepted before the one it refused.
+- **The number in the error follows the conversation.** With T tool calls made before the
+  failing call, the block named is always number 2 x (T - 1): 2, 2, 4, 4, 4, 4, 6 and 8 for
+  T of 2, 2, 3, 3, 3, 3, 4 and 5. That is where the reasoning block before the last tool
+  call would sit if each tool call is preceded by one. So what was refused is the block of
+  the most recent turn, and the same kind of block had been accepted on the earlier calls
+  of the same question.
+- **The transcripts do not hold the reasoning blocks themselves.** They keep the text and
+  the tool calls of each turn, not the other blocks the API returns, which the loop sends
+  back without reading. That a refused turn carried a reasoning block is what the
+  gateway's error says and what the arithmetic above agrees with. It was not seen in a
+  transcript, because a transcript cannot show it.
+- **No header says which upstream served a call.** The results keep the six headers the
+  client asked for; on all 53 questions they are `x-ci-techniques` empty, `x-ci-cache`
+  `miss`, `x-ci-tokens-saved` `0` and `x-ci-zdr` `false`, and none names a provider. The
+  gateway's documentation says: *"Provider cost and private routing metadata are removed
+  before the response is returned to you."* That one call of a question went to a
+  different upstream from the call before it is the likely reason a signature stopped
+  being accepted, and it cannot be shown from anything the gateway returns.
+
+**No retry and no workaround.** Asking the 8 again could fail the same way. Dropping the
+reasoning blocks before sending a turn back would make the questions pass and would change
+what the model is sent, so the run would no longer be the agent that was measured direct.
+
+**What the 45 that finished show, deciding nothing.** From
+`evals/results/2026-10-13_cost.md` and the two results files; the direct run is
+`evals/results/2026-10-12_sonnet_38281028329.json`.
+
+| On `dev`, one run each | Direct, 53 questions | Gateway, the 45 that finished |
+|---|---|---|
+| Right | 53 of 53 | 44 of 45 |
+| Questions with no answer refused | 9 of 9 | 5 of 6 |
+| USD per question | 0.02540 | 0.01897 billed |
+| The same 45 questions, USD | 1.136096 | 0.853725 billed, 0.8537958 by the price table |
+| Seconds per question, mean | 5.59 | 15.32 |
+| Input and output tokens, the same 45 | 466,383 and 20,333 | 528,836 and 25,586 |
+| Model calls, the same 45 | 146 | 156 |
+| Waits after a 429 | 0 | 0 |
+
+- The 44 the gateway run got right, the direct run got right too; the one it got wrong,
+  the direct run got right. The three other questions with no answer are among the 8 that
+  ended in an error.
+- What the gateway billed is what the catalog's price gives, to the fourth decimal: its
+  price was what it said.
+- The median question took 15.46 seconds and the slowest twentieth over 20.17, against
+  5.08 and 9.02 direct (the per-run reports of the two files).
+- The 8 questions that ended in an error were billed 0.111824 USD for the calls made
+  before they failed.
+
+**A run of 45 questions chosen by which ones did not fail is not a sample of the 53.** The
+figures above are what happened, and they are not a comparison of cost or of quality.
+
 ## The judge: what code cannot check
 
 The scorer decides whether an answer is right, and no model takes part in that. One thing
@@ -775,6 +874,20 @@ with the key is
   judge is now shown every query of the question and every result. The sheet has a column
   for them, `earlier`, filled from the transcripts of the three baseline runs with
   `python -m evalkit.calibration earlier`; its questions, queries, explanations and labels
-  are as they were. **The judge has not run since the change**: whether rows 3, 7 and 16 are
-  now judged faithful, and whether the 15 planted errors are still caught, is not known
-  until it does. The verdicts and the report above are of the judge as it was.
+  are as they were. The verdicts and the report above are of the judge as it was.
+
+**The judge ran again on 2026-10-13, shown every query**: the `judge` workflow's run
+[38434632537](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38434632537),
+30 of 30 rows judged, 0.427652 USD. Verdicts:
+`evals/calibration/2026-10-13_judge-verdicts_38434632537.json`; report:
+[`evals/calibration/2026-10-13_agree_model-labels.md`](../evals/calibration/2026-10-13_agree_model-labels.md).
+Both things that were expected were checked against the key, and both held:
+
+- **The 15 planted errors are still caught**, 15 of 15.
+- **Rows 3, 7 and 16 are now judged faithful**, and so are all 15 untouched rows. Against
+  the key the judge is right on 30 of 30.
+- **Agreement with the labels fell from 30 of 30 to 27 of 30 (kappa 0.800), between two
+  models.** The labels were written by a model when only the last query was shown, and the
+  three rows it called unfaithful are the three the judge no longer does. That is the
+  correction showing, not a regression. It is still not a human calibration, and no figure
+  here says how the judge agrees with a person.

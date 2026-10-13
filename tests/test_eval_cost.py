@@ -36,7 +36,14 @@ def test_dollars_seconds_and_right_answers_per_split_with_errors_in_no_figure():
     # of 8; 3 x 1 + 3 x 2 + 2 x 3 = 15 seconds over 8 questions.
     assert row == [
         "baseline", 3, 3, "0.02000 (0.01000 to 0.03000)", "0.02143", "1.88", "7 of 8 = 87.5%",
+        1, "-",
     ]  # fmt: skip
+    # The question that ended in an error is in the column of its own and in no figure;
+    # and when a provider said what it billed, that is summed over every question billed.
+    for record in files[2][1]["records"]:
+        record["result"]["billed_usd"] = "0.005"
+    row = cost.row_of("baseline", files, "dev")
+    assert row[-2:] == [1, "0.015000 over 3 questions"]
 
 
 def test_a_run_of_one_split_is_in_that_split_and_in_no_other_table(monkeypatch):
