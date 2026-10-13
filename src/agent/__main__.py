@@ -41,6 +41,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-usd", default=None, help="dollars for this question")
     parser.add_argument("--json", action="store_true", help="print the whole result as JSON")
     parser.add_argument("--model", default=llm_module.DEFAULT_MODEL, help="a model with a price")
+    parser.add_argument(
+        "--provider",
+        default=llm_module.DEFAULT_PROVIDER,
+        choices=sorted(llm_module.PROVIDERS),
+        help="where the request goes; a model id is valid for one provider only",
+    )
     return parser
 
 
@@ -104,7 +110,12 @@ def main(argv: list[str] | None = None, *, make_llm: Callable | None = None) -> 
         house = warehouse.load(args.config)
         max_usd = Decimal(args.max_usd) if args.max_usd is not None else house.max_usd
         llm_module.price_of(args.model)
-    except (warehouse.WarehouseError, llm_module.UnknownModel) as problem:
+        llm_module.check_served_by(args.model, args.provider)
+    except (
+        warehouse.WarehouseError,
+        llm_module.UnknownModel,
+        llm_module.UnknownProvider,
+    ) as problem:
         return _stop(str(problem))
     except InvalidOperation:
         return _stop(f"--max-usd must be a number, got {args.max_usd!r}")
@@ -128,7 +139,10 @@ def main(argv: list[str] | None = None, *, make_llm: Callable | None = None) -> 
         if make_llm is not None:
             model = make_llm(args.model)
         else:
-            model = llm_module.AnthropicLLM(config.require_api_key(API_KEY_NAME), args.model)
+            provider = llm_module.provider_of(args.provider)
+            model = llm_module.AnthropicLLM(
+                config.require_api_key(provider.key_name), args.model, provider=provider.name
+            )
     except config.ConfigError as problem:
         return _stop(f"No model key: {problem}")
     except ImportError:

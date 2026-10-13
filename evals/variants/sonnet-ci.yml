@@ -1,0 +1,12 @@
+# The model of the variant `sonnet`, asked through a second provider. Two settings differ
+# from `sonnet.yml`: where the requests go, and the id, which is the gateway's own name for
+# the model (its catalog lists "claude-sonnet-5.5"; Anthropic's id is "claude-sonnet-5-5").
+# The ceiling per question is the one of `sonnet.yml`: the gateway's prices are lower, so
+# the room that was enough there is enough here.
+#
+# What is measured, the guards and the rule were written down before any run of it:
+# docs/EVAL_PREREGISTRATION.md, third entry. DECISIONS.md, entry 23, says when a second
+# provider may be used at all.
+provider: cheaperinference
+model: claude-sonnet-5.5
+max_usd_per_question: 0.55

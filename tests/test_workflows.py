@@ -91,7 +91,7 @@ def test_the_agent_workflow_is_started_by_hand_only_in_the_agent_eval_environmen
     workflow = load(AGENT)
     assert list(workflow["on"]) == ["workflow_dispatch"]
     inputs = workflow["on"]["workflow_dispatch"]["inputs"]
-    assert list(inputs) == ["question", "model", "max_usd"]
+    assert list(inputs) == ["question", "model", "max_usd", "provider"]
     assert inputs["question"]["required"] is True
     assert inputs["model"]["required"] is False and inputs["model"]["default"] == ""
     assert inputs["max_usd"]["default"] == "0.25"
@@ -109,7 +109,7 @@ def test_no_github_expression_is_written_inside_a_run_script(path):
 def test_the_model_key_is_given_to_the_step_that_runs_the_agent_and_to_no_other():
     workflow = load(AGENT)
     job = workflow["jobs"]["ask"]
-    assert len(SECRET.findall(AGENT.read_text())) == 1
+    assert len(SECRET.findall(AGENT.read_text())) == 2  # two keys, both in this one step
     assert "env" not in workflow and "env" not in job  # nothing is set for every step
     with_key = [s for s in job["steps"] if "ANTHROPIC_API_KEY" in json.dumps(s.get("env", {}))]
     assert [s["name"] for s in with_key] == ["Ask"]
@@ -118,8 +118,16 @@ def test_the_model_key_is_given_to_the_step_that_runs_the_agent_and_to_no_other(
         "QUESTION": "${{ inputs.question }}",
         "MODEL": "${{ inputs.model }}",
         "MAX_USD": "${{ inputs.max_usd }}",
+        "PROVIDER": "${{ inputs.provider }}",
         "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
+        "CHEAPERINFERENCE_API_KEY": (
+            "${{ inputs.provider == 'cheaperinference' && secrets.CHEAPERINFERENCE_API_KEY || '' }}"
+        ),
     }
+    assert '--provider "$PROVIDER"' in ask["run"]
+    provider = workflow["on"]["workflow_dispatch"]["inputs"]["provider"]
+    assert provider["default"] == "anthropic" and provider["type"] == "choice"
+    assert provider["options"] == ["anthropic", "cheaperinference"]
     assert 'python -m agent "$QUESTION" "${arguments[@]}"' in ask["run"]
     assert "--group agent" in ask["run"] and "--json" in ask["run"]
     assert "ANTHROPIC_API_KEY" in config.API_KEY_NAMES
@@ -180,7 +188,7 @@ def test_the_eval_workflow_is_started_by_hand_only_in_the_agent_eval_environment
 def test_the_model_key_is_given_to_the_step_that_runs_the_evaluation_and_to_no_other():
     workflow = load(EVAL)
     job = workflow["jobs"]["evaluate"]
-    assert len(SECRET.findall(EVAL.read_text())) == 1
+    assert len(SECRET.findall(EVAL.read_text())) == 2  # two keys, both in this one step
     assert "env" not in workflow and "env" not in job
     with_key = [s for s in job["steps"] if "ANTHROPIC_API_KEY" in json.dumps(s.get("env", {}))]
     assert [s["name"] for s in with_key] == ["Evaluate"]
@@ -195,6 +203,10 @@ def test_the_model_key_is_given_to_the_step_that_runs_the_evaluation_and_to_no_o
         "ONLY_ERRORS": "${{ inputs.only_errors }}",
         "UNIV3_DATA_DIR": "${{ runner.temp }}/eval-data",
         "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
+        "CHEAPERINFERENCE_API_KEY": (
+            "${{ steps.provider.outputs.provider == 'cheaperinference' && "
+            "secrets.CHEAPERINFERENCE_API_KEY || '' }}"
+        ),
     }
     assert config.DATA_DIR_POINTER == "UNIV3_DATA_DIR"  # where the transcripts are written
     run = evaluate["run"]
@@ -218,6 +230,7 @@ def test_the_eval_workflow_fails_only_when_the_run_could_not_execute():
         "Install uv",
         "uv sync --frozen --group agent",
         "Start the warehouse",
+        "Which provider",
         "Evaluate",
         "Report",
         "Upload the results and the report",
@@ -480,3 +493,35 @@ def test_the_judge_workflow_needs_no_warehouse_and_fails_only_when_it_could_not_
     assert upload["with"]["path"] == "judge-verdicts.json"
     verdict = by_name["The judge executed"]["run"]
     assert 'if [ "$code" != "0" ] || [ ! -f judge-verdicts.json ]' in verdict
+
+
+# --- the key of a second provider ------------------------------------------------------------
+
+
+def test_the_second_key_is_given_only_when_the_variant_names_that_provider():
+    """A step with no key reads the provider from the variant file. The step that runs the
+    evaluation, the one that already has the model key, gets the second key or an empty
+    text according to what that step said."""
+    job = load(EVAL)["jobs"]["evaluate"]
+    names = [step.get("name") for step in job["steps"]]
+    assert names.index("Which provider") == names.index("Evaluate") - 1
+    which = job["steps"][names.index("Which provider")]
+    assert which["id"] == "provider" and which["env"] == {"VARIANT": "${{ inputs.variant }}"}
+    assert 'python -m evalkit.variants "$VARIANT"' in which["run"]
+    assert '>> "$GITHUB_OUTPUT"' in which["run"] and not SECRET.search(json.dumps(which))
+    with_second = [step["name"] for step in job["steps"] if "CHEAPERINFERENCE" in json.dumps(step)]
+    assert with_second == ["Evaluate"], "the one step that had a key, and no other"
+    assert "CHEAPERINFERENCE_API_KEY" in config.API_KEY_NAMES
+    # The condition is on the provider the variant names, never on the variant's name.
+    given = job["steps"][names.index("Evaluate")]["env"]["CHEAPERINFERENCE_API_KEY"]
+    assert "steps.provider.outputs.provider == 'cheaperinference'" in given
+    assert given.endswith("|| '' }}")
+
+
+@pytest.mark.parametrize("path", [AGENT, EVAL, JUDGE], ids=lambda p: p.name)
+def test_no_workflow_gives_a_key_to_more_than_one_step(path):
+    for job in load(path)["jobs"].values():
+        with_a_secret = [s.get("name") for s in job["steps"] if SECRET.search(json.dumps(s))]
+        assert len(with_a_secret) == 1, with_a_secret
+    if path == JUDGE:
+        assert "CHEAPERINFERENCE" not in path.read_text(), "the judge has one provider"

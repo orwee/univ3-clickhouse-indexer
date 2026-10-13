@@ -819,6 +819,71 @@ The value must be in the final result; the words may describe how the agent got 
 longer be the agent that runs, and it would have made explanations say less ("a fall of
 35.05 million" without "from 85.4 to 50.4") so that the judge could stay simple.
 
+## 23. A second provider, only when a variant names it
+
+Written by the agent at the owner's request on 2026-10-13. The owner asked for this entry to
+be written for him, for this phase only; the decision is his.
+
+- Date: 2026-10-13
+- Status: Accepted
+
+**Context.** Every model call so far went to Anthropic, with a key held in the `agent-eval`
+environment. CheaperInference is a gateway with an endpoint that speaks the same protocol
+and lists some of the same models at lower prices
+(<https://www.cheaperinference.com/docs> and its catalog, read on 2026-10-13). The owner
+opened an account and put its key, `CHEAPERINFERENCE_API_KEY`, in the same environment.
+The question a gateway raises is not only price: a request goes through a third party, to a
+provider the gateway chooses, under an id that is the gateway's own.
+
+**Decision.**
+
+- CheaperInference may be used as a second provider, and only through a variant file that
+  names it: `provider: cheaperinference`. The default is Anthropic and does not change.
+  Nothing uses the gateway unless a run was started with such a variant.
+- **No fallback, ever, in either direction.** A run talks to one provider. If that provider
+  refuses, fails or has no funds, the question is an error and the run says so. It is
+  never sent to the other one: a result that mixed two providers could not be attributed
+  to either.
+- A model id belongs to one provider. The gateway's ids are its own (`claude-sonnet-5.5`,
+  not `claude-sonnet-5-5`), and an id is refused for the provider it is not of, before
+  anything is sent.
+- The key comes through `config.require_api_key("CHEAPERINFERENCE_API_KEY")` and its
+  absence stops the run with a message. A workflow gives that key to the one step that
+  already has the model key, and only when the run asks for that provider.
+- Every results file records the provider, the model id sent, the `model` field the
+  responses returned, the cost computed from the price table and the cost the gateway
+  reported as billed, per question and in total.
+- "The same model, cheaper" is claimed only when the response says it is the same model.
+  Another version is another model and is reported as one.
+
+**What goes through the third party.** The prompts and the results of the questions: the
+system prompt, the tool definitions, the questions of the golden set, the SQL the model
+writes and the rows the warehouse returns. All of it is already public in this repository:
+the marts fixture holds public on-chain data, and the smart-money table is published empty
+(entry 20). No key of the warehouse, no address label from a paid source and no private
+data is in a prompt. The gateway's documentation says it does not store prompt or response
+bodies in its own database and that the request goes to a serving provider under that
+provider's terms. That is its statement, not something this project can check, and it is
+the reason the rule above is about what is sent, not about what is promised.
+
+**What the gateway does that Anthropic does not, and what is done about it.**
+
+- By default it caches the prefix of requests that ask for no cache. The client sends
+  `x-ci-prompt-cache: off` with every request, so that a request is as close as it can be
+  to the one sent direct. Its documentation says this does not turn off a provider's own
+  implicit caching, so cache reads may still appear; they are recorded.
+- It has optional techniques that can change a request or reuse a response (minification,
+  trimming, an exact-match response cache, routing a simple request to a cheaper model).
+  Its documentation says they stay off unless enabled in the account. They are a setting
+  of the owner's account, outside this repository. What the gateway reports about each
+  call (`x-ci-techniques`, `x-ci-cache` and four more headers) is kept in the results.
+- Its prices follow capacity. The price table has the catalog's price on the day it was
+  read; the billed cost is what the gateway says, and the two are kept side by side.
+
+**Consequences.** A second key lives in the environment that needs the owner's approval to
+be used. A 402 from the gateway means its wallet is empty: the run stops there, and the
+questions it did not ask are recorded as not asked, never as wrong.
+
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.

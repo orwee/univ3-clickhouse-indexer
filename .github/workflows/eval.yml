@@ -22,6 +22,8 @@
 #   - the inputs reach the shell through `env:`. No GitHub expression is written inside a
 #     `run:` script;
 #   - the model key is given to one step, the one that runs the evaluation, and to no other.
+#     The key of a second provider is given to that same step, and only when the run asks
+#     for that provider; otherwise the step gets an empty text in its place.
 #
 # The actions are the ones agent.yml pins, at the same commits.
 name: eval
@@ -91,8 +93,20 @@ jobs:
       - name: Start the warehouse
         run: bash scripts/ci_warehouse.sh
 
-      # The only step that sees the key. It never fails the job by itself: whether the run
-      # executed is judged at the end, after the summary and the artifact.
+      # Which provider the variant names. No key here. The next step is given the key of a
+      # second provider only when this step says the variant asks for it.
+      - name: Which provider
+        id: provider
+        env:
+          VARIANT: ${{ inputs.variant }}
+        run: |
+          provider="$(PYTHONPATH=src uv run --frozen --group agent python -m evalkit.variants "$VARIANT")"
+          echo "provider=$provider" >> "$GITHUB_OUTPUT"
+          echo "The variant $VARIANT names the provider: $provider"
+
+      # The only step that sees a key. The second key is an empty text unless the variant
+      # names that provider. It never fails the job by itself: whether the run executed is
+      # judged at the end, after the summary and the artifact.
       - name: Evaluate
         timeout-minutes: 50
         env:
@@ -105,6 +119,7 @@ jobs:
           ONLY_ERRORS: ${{ inputs.only_errors }}
           UNIV3_DATA_DIR: ${{ runner.temp }}/eval-data
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CHEAPERINFERENCE_API_KEY: ${{ steps.provider.outputs.provider == 'cheaperinference' && secrets.CHEAPERINFERENCE_API_KEY || '' }}
         run: |
           arguments=(--variant "$VARIANT" --max-usd "$MAX_USD" --out eval-results.json)
           if [ -n "$ONLY_ERRORS" ]; then

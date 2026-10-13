@@ -63,7 +63,12 @@ AGENT_READER_DEFAULT = "~/secrets/agent-reader.env"
 
 # ANTHROPIC_API_KEY is for the agent (src/agent). It is not stored on this server: where the
 # agent runs for real, the variable is in the process environment, which wins over the file.
-API_KEY_NAMES = ("ALCHEMY_API_KEY", "NANSEN_API_KEY", "ANTHROPIC_API_KEY")
+API_KEY_NAMES = (
+    "ALCHEMY_API_KEY",
+    "NANSEN_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "CHEAPERINFERENCE_API_KEY",
+)
 
 
 class ConfigError(RuntimeError):

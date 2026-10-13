@@ -160,6 +160,12 @@ class Result:
     waits: list[dict] = field(default_factory=list)
     last_result: dict | None = None
     queries: list[dict] = field(default_factory=list)
+    # What the provider reported, call by call, put together: the models that answered,
+    # the dollars it billed (None when it billed nothing it told us of), and each header
+    # it was asked for with the values it took.
+    served_models: list[str] = field(default_factory=list)
+    billed_usd: Decimal | None = None
+    reports: dict[str, list[str]] = field(default_factory=dict)
 
     def to_json(self) -> dict:
         return {
@@ -177,6 +183,9 @@ class Result:
             "waits": list(self.waits),
             "last_result": self.last_result,
             "queries": list(self.queries),
+            "served_models": list(self.served_models),
+            "billed_usd": None if self.billed_usd is None else str(self.billed_usd),
+            "reports": {name: list(values) for name, values in self.reports.items()},
         }
 
 
@@ -350,7 +359,8 @@ def run(
     sent = llm_module.cached_prefix(system) if prompt_cache else system
     for iteration in range(1, max_iterations + 1):
         ceiling = llm_module.input_token_ceiling(sent, messages, TOOL_DEFINITIONS)
-        worst = llm_module.worst_case_usd(llm.model, ceiling, max_tokens, prompt_cache)
+        may_write = prompt_cache or bool(getattr(llm, "may_write_cache", False))
+        worst = llm_module.worst_case_usd(llm.model, ceiling, max_tokens, may_write)
         try:
             budget.check(worst)
         except BudgetExceeded as refusal:
@@ -411,6 +421,13 @@ def run(
         budget.record(cost, f"iteration {iteration}", model=llm.model, **asdict(response.usage))
         result.usd += cost
         result.usage = result.usage + response.usage
+        if response.served_model and response.served_model not in result.served_models:
+            result.served_models.append(response.served_model)
+        if response.billed_usd is not None:
+            result.billed_usd = (result.billed_usd or Decimal(0)) + response.billed_usd
+        for name, value in response.reports:
+            if value not in result.reports.setdefault(name, []):
+                result.reports[name].append(value)
         result.iterations = iteration
 
         if response.stop_reason in ("refusal", "max_tokens", "pause_turn"):

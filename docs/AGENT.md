@@ -81,6 +81,17 @@ What to know before pressing the button:
   answered its question in three model calls. Both figures are in the artifacts of those
   runs, not in this repository.
 
+### A second provider
+
+`python -m agent "..." --provider cheaperinference --model claude-sonnet-5.5` sends the
+question through the CheaperInference gateway instead of Anthropic, with the key
+`CHEAPERINFERENCE_API_KEY`. The default is `anthropic`. A model id is valid for one
+provider only, and a run never falls back from one to the other
+([decision 23](../DECISIONS.md#23-a-second-provider-only-when-a-variant-names-it)). The
+result then also carries what the gateway reported: the model that answered, what it
+billed, and its headers about the call. In the `agent` workflow it is the input `provider`.
+**No request has been sent through it yet.**
+
 ## How a question ends
 
 | Status | Meaning |
