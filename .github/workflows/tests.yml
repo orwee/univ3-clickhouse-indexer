@@ -1,10 +1,12 @@
 # Lint, tests and the demo, on every pull request and on every push to main.
 #
-# No secret and no environment. Three jobs:
+# No secret and no environment. Four jobs:
 #   lint-and-test  has no ClickHouse server, so the tests that need one skip and say so;
 #   demo           starts its own throw-away server with docker compose inside the runner;
 #   warehouse      starts a ClickHouse with the read-only user and the marts fixture, and
-#                  runs the tests that need a server and can run on the fixture alone.
+#                  runs the tests that need a server and can run on the fixture alone;
+#   airflow        installs Airflow in a virtualenv of its own, with the official constraints
+#                  file, and runs tests/test_airflow_dag.py and nothing else (DECISIONS.md #25).
 #
 # `pull_request`, never `pull_request_target`: the code of a pull request must not run with
 # anything but a read-only token.
@@ -214,5 +216,59 @@ jobs:
               echo "$reader of the 13 tests that connect as the read-only user passed."
             else
               echo "The tests did not run: the warehouse did not start."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Airflow is not a dependency of the project: it pins hundreds of packages. It lives in a
+  # virtualenv outside the working copy, installed with the constraints file of its own
+  # release, and only the test that loads the DAG runs there. No ClickHouse, no secret.
+  airflow:
+    name: the Airflow DAG loads
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      AIRFLOW_VERSION: "3.3.2"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.16" # the version demo/Dockerfile installs
+
+      - name: Install Airflow with the official constraints
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/airflow-venv"
+          uv pip install --python "$RUNNER_TEMP/airflow-venv/bin/python" \
+            "apache-airflow==${AIRFLOW_VERSION}" pytest python-dotenv pyyaml \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-3.12.txt"
+
+      # -rs lists a skip with its reason: a skip here would mean Airflow did not import.
+      - name: tests/test_airflow_dag.py
+        env:
+          AIRFLOW_HOME: ${{ runner.temp }}/airflow-home
+          PYTEST_ADDOPTS: "-rs -v"
+        run: |
+          set -o pipefail
+          "$RUNNER_TEMP/airflow-venv/bin/python" -m pytest tests/test_airflow_dag.py 2>&1 | tee airflow-output.txt
+          if grep -qE "SKIPPED" airflow-output.txt; then
+            echo "::error::the DAG test was skipped in the job that exists to run it"
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### tests/test_airflow_dag.py (Airflow ${AIRFLOW_VERSION})"
+            echo ""
+            if [ -f airflow-output.txt ]; then
+              echo "\`\`\`"
+              grep -E "^=+ .* in [0-9.]+s" airflow-output.txt | tail -n 1 || true
+              echo "\`\`\`"
+            else
+              echo "The test did not run."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

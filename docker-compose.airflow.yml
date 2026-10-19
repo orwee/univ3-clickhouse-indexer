@@ -1,0 +1,107 @@
+# Opt-in override: Apache Airflow (LocalExecutor, Postgres for its metadata) next to ClickHouse.
+# Used only by `make airflow-up`; plain `make up` never reads this file. See airflow/README.md.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.airflow.yml up -d --build
+#
+# Cut from the official compose file of Airflow 3 to what LocalExecutor needs: no Celery,
+# no Redis, no workers, no triggerer (no task here is deferrable), no flower.
+#
+# Secrets: only from the environment, never in this file. Two env files outside the repo,
+# the same pattern as clickhouse.env: CLICKHOUSE_ENV_FILE (the existing one) and
+# AIRFLOW_ENV_FILE (airflow/airflow.env.example lists the names). Tasks reach ClickHouse by
+# its service name; the host and port are set here, whatever clickhouse.env says.
+#
+# Required, with no default: AIRFLOW_DATA_DIR, a directory OUTSIDE the working copy for the
+# landing zone, the checkpoints and the reports (config.data_dir() refuses one inside it).
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+  image: univ3-airflow:3.3.2
+  user: "${AIRFLOW_UID:-50000}:0"
+  env_file:
+    - ${CLICKHOUSE_ENV_FILE:-${HOME}/secrets/clickhouse.env}
+    - ${AIRFLOW_ENV_FILE:-${HOME}/secrets/airflow.env}
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/simple_auth_manager_passwords.json
+    # These win over the same names in clickhouse.env, which point at the host.
+    CH_HOST: clickhouse
+    CH_PORT: "8123"
+    UNIV3_DATA_DIR: /data
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags:ro
+    - ${AIRFLOW_DATA_DIR:?set AIRFLOW_DATA_DIR to a directory outside the working copy}:/data
+    - ${AIRFLOW_DATA_DIR}/reports:/opt/project/reports
+  depends_on:
+    clickhouse:
+      condition: service_healthy
+    airflow-postgres:
+      condition: service_healthy
+    airflow-init:
+      condition: service_completed_successfully
+
+services:
+  airflow-postgres:
+    image: postgres:16.4
+    env_file:
+      - ${AIRFLOW_ENV_FILE:-${HOME}/secrets/airflow.env}
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Runs once: creates or migrates the metadata tables, then exits.
+  airflow-init:
+    <<: *airflow-common
+    command: ["airflow", "db", "migrate"]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      airflow-postgres:
+        condition: service_healthy
+
+  # The web UI and the API the tasks report to. The admin password is written from the
+  # environment into the file the auth manager reads, inside the container only.
+  airflow-apiserver:
+    <<: *airflow-common
+    command:
+      - bash
+      - -c
+      - >-
+        python -c "import json, os; json.dump({'admin': os.environ['AIRFLOW_ADMIN_PASSWORD']},
+        open('/opt/airflow/simple_auth_manager_passwords.json', 'w'))"
+        && exec airflow api-server
+    ports:
+      - "127.0.0.1:8080:8080" # loopback only, like ClickHouse
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 15s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # Decides which task runs when, and starts it (LocalExecutor: as a subprocess here).
+  airflow-scheduler:
+    <<: *airflow-common
+    command: ["airflow", "scheduler"]
+    restart: unless-stopped
+
+  # Reads the files in airflow/dags and tells the scheduler what DAGs there are.
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: ["airflow", "dag-processor"]
+    restart: unless-stopped
+
+volumes:
+  airflow_postgres:
