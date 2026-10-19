@@ -4,6 +4,10 @@
 # runs in the `agent-eval` environment, which holds the model key; a run that the
 # environment makes wait for an approval does not start until the owner gives it.
 #
+# The golden file is an input (default evals/golden.jsonl, golden set v1; evals/golden_v2.jsonl
+# is golden set v2). The runner records its SHA-256 in the results, so two runs on different
+# files cannot be compared by mistake.
+#
 # The warehouse is not the real one: a throw-away ClickHouse started in the runner by
 # scripts/ci_warehouse.sh, with the read-only user and the committed marts fixture. The
 # golden set's answers were computed on that same fixture.
@@ -66,6 +70,11 @@ on:
         required: false
         default: ""
         type: string
+      golden:
+        description: "The golden file to ask, a .jsonl under evals/. evals/golden_v2.jsonl is golden set v2"
+        required: false
+        default: "evals/golden.jsonl"
+        type: string
 
 permissions:
   contents: read
@@ -117,10 +126,15 @@ jobs:
           MAX_USD: ${{ inputs.max_usd }}
           LIMIT: ${{ inputs.limit }}
           ONLY_ERRORS: ${{ inputs.only_errors }}
+          GOLDEN: ${{ inputs.golden }}
           UNIV3_DATA_DIR: ${{ runner.temp }}/eval-data
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CHEAPERINFERENCE_API_KEY: ${{ steps.provider.outputs.provider == 'cheaperinference' && secrets.CHEAPERINFERENCE_API_KEY || '' }}
         run: |
+          case "$GOLDEN" in
+            evals/*.jsonl) ;;
+            *) echo "::error::golden must be a .jsonl file under evals/, not '$GOLDEN'"; exit 2 ;;
+          esac
           arguments=(--variant "$VARIANT" --max-usd "$MAX_USD" --out eval-results.json)
           if [ -n "$ONLY_ERRORS" ]; then
             arguments+=(--only-errors "$ONLY_ERRORS")
@@ -134,7 +148,7 @@ jobs:
             fi
           fi
           set +e
-          PYTHONPATH=src uv run --frozen --group agent python -m evalkit.run evals/golden.jsonl \
+          PYTHONPATH=src uv run --frozen --group agent python -m evalkit.run "$GOLDEN" \
             "${arguments[@]}" 2> eval-stderr.txt
           code=$?
           set -e
