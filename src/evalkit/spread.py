@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -128,8 +129,8 @@ def csv_text(rows: list[dict]) -> str:
     writer.writerow(header + ["majority_right", "majority_refused"])
     for r in rows:
         writer.writerow([
-            r["id"], r["split"], str(not r["should_refuse"]).lower(), sum(r["right"]),
-            len(r["right"]), str(r["agree"]).lower(), r["majority_right"], r["majority_refused"],
+            r["id"], r["split"], json.dumps(not r["should_refuse"]), sum(r["right"]),
+            len(r["right"]), json.dumps(r["agree"]), r["majority_right"], r["majority_refused"],
         ])  # fmt: skip
     return out.getvalue()
 
