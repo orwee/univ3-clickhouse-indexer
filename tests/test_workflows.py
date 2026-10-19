@@ -20,6 +20,7 @@ WORKFLOWS = config.REPO_ROOT / ".github" / "workflows"
 TESTS, AGENT, EVAL, JUDGE = (
     WORKFLOWS / f"{name}.yml" for name in ("tests", "agent", "eval", "judge")
 )
+EVAL_PR = WORKFLOWS / "eval-pr.yml"
 SUMMARY = config.REPO_ROOT / "scripts" / "agent_summary.py"
 PINNED = re.compile(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 EXPRESSION = "${{"
@@ -36,7 +37,7 @@ def steps(workflow):
     return [step for job in workflow["jobs"].values() for step in job["steps"]]
 
 
-@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL, JUDGE], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL, JUDGE, EVAL_PR], ids=lambda p: p.name)
 def test_every_action_is_pinned_to_a_commit_with_its_version_next_to_it(path):
     used = [step["uses"] for step in steps(load(path)) if "uses" in step]
     assert used and all(PINNED.fullmatch(action) for action in used), used
@@ -56,7 +57,7 @@ def test_the_agent_workflow_pins_the_same_commits_as_the_tests_workflow():
     assert set(agent) - set(tests) == {"actions/upload-artifact"}
 
 
-@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL, JUDGE], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL, JUDGE, EVAL_PR], ids=lambda p: p.name)
 def test_read_only_token_and_a_timeout_on_every_job(path):
     workflow = load(path)
     assert workflow["permissions"] == {"contents": "read"}
@@ -99,7 +100,7 @@ def test_the_agent_workflow_is_started_by_hand_only_in_the_agent_eval_environmen
     assert workflow["jobs"]["ask"]["environment"] == "agent-eval"
 
 
-@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL, JUDGE], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [TESTS, AGENT, EVAL, JUDGE, EVAL_PR], ids=lambda p: p.name)
 def test_no_github_expression_is_written_inside_a_run_script(path):
     """An input or any other expression reaches the shell through `env:`, as a variable."""
     for step in steps(load(path)):
@@ -518,10 +519,116 @@ def test_the_second_key_is_given_only_when_the_variant_names_that_provider():
     assert given.endswith("|| '' }}")
 
 
-@pytest.mark.parametrize("path", [AGENT, EVAL, JUDGE], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [AGENT, EVAL, JUDGE, EVAL_PR], ids=lambda p: p.name)
 def test_no_workflow_gives_a_key_to_more_than_one_step(path):
     for job in load(path)["jobs"].values():
         with_a_secret = [s.get("name") for s in job["steps"] if SECRET.search(json.dumps(s))]
-        assert len(with_a_secret) == 1, with_a_secret
-    if path == JUDGE:
+        # The job that only tells a fork why nothing ran has no secret at all.
+        assert len(with_a_secret) == (0 if "environment" not in job else 1), with_a_secret
+    if path in (JUDGE, EVAL_PR):
         assert "CHEAPERINFERENCE" not in path.read_text(), "the judge has one provider"
+
+
+# --- the regression check on pull requests ---------------------------------------------------
+
+
+def test_the_check_starts_on_a_pull_request_that_touches_the_agent_or_the_evaluation():
+    workflow = load(EVAL_PR)
+    assert list(workflow["on"]) == ["pull_request"], "one trigger, and it is not the other one"
+    assert workflow["on"]["pull_request"] == {
+        "paths": ["src/agent/**", "src/evalkit/**", "evals/**", "src/agent/prompts/**"]
+    }
+    text = EVAL_PR.read_text()
+    assert text.count("pull_request_target") == 1 and "never `pull_request_target`" in text
+    assert "workflow_dispatch" not in text
+    assert workflow["concurrency"]["cancel-in-progress"] is True
+    assert (config.REPO_ROOT / "src" / "agent" / "prompts" / "system.md").is_file()
+
+
+def test_the_check_runs_in_its_own_environment_and_a_fork_gets_no_key():
+    workflow = load(EVAL_PR)
+    assert set(workflow["jobs"]) == {"fork", "check"}
+    check, fork = workflow["jobs"]["check"], workflow["jobs"]["fork"]
+    assert check["environment"] == "agent-eval-pr"
+    assert load(EVAL)["jobs"]["evaluate"]["environment"] == "agent-eval"  # that one is untouched
+    same = "github.event.pull_request.head.repo.full_name == github.repository"
+    assert check["if"] == same and fork["if"] == same.replace("==", "!=")
+    # The fork's job: no environment, no secret, no checkout of anything, one message.
+    assert "environment" not in fork and not SECRET.search(json.dumps(fork))
+    assert [step["name"] for step in fork["steps"]] == ["Say why the check did not run"]
+    assert "comes from a fork" in fork["steps"][0]["run"]
+    assert "GITHUB_STEP_SUMMARY" in fork["steps"][0]["run"]
+
+
+def test_the_key_of_the_check_is_given_to_the_step_that_asks_and_to_no_other():
+    workflow = load(EVAL_PR)
+    job = workflow["jobs"]["check"]
+    assert len(SECRET.findall(EVAL_PR.read_text())) == 1
+    assert "env" not in workflow and "env" not in job
+    with_key = [s["name"] for s in job["steps"] if "ANTHROPIC_API_KEY" in json.dumps(s)]
+    assert with_key == ["Evaluate"]
+    evaluate = next(step for step in job["steps"] if step.get("name") == "Evaluate")
+    assert evaluate["env"] == {
+        "UNIV3_DATA_DIR": "${{ runner.temp }}/eval-data",
+        "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
+    }
+    run = evaluate["run"]
+    assert "python -m evalkit.run evals/golden.jsonl" in run and "--group agent" in run
+    # The fixed cases, the variant that makes them fit, and the cap of a run.
+    for given in ("--variant ci", "--split all", "--ids evals/ci_cases.json", "--max-usd 0.25"):
+        assert given in run, given
+    assert (config.REPO_ROOT / "evals" / "ci_cases.json").is_file()
+    assert (config.REPO_ROOT / "evals" / "variants" / "ci.yml").is_file()
+    # Six model calls a question, as in every other run: nothing here changes that.
+    assert "max_iterations: 6" in (config.REPO_ROOT / "evals" / "warehouse.yml").read_text()
+
+
+def test_the_check_pins_the_actions_of_the_eval_workflow_and_uses_the_same_warehouse():
+    def pins(path):
+        return {step["uses"] for step in steps(load(path)) if "uses" in step}
+
+    assert pins(EVAL_PR) == pins(EVAL)
+    names = [
+        step.get("name", step.get("uses", "").split("@")[0])
+        for step in load(EVAL_PR)["jobs"]["check"]["steps"]
+    ]
+    assert names == [
+        "actions/checkout",
+        "Install uv",
+        "uv sync --frozen --group agent",
+        "Start the warehouse",
+        "Evaluate",
+        "Apply the rule",
+        "Report",
+        "Upload the results and the report",
+        "Upload the transcripts",
+        "The check passed",
+    ]
+    by_name = {s.get("name"): s for s in load(EVAL_PR)["jobs"]["check"]["steps"]}
+    assert by_name["Start the warehouse"]["run"] == "bash scripts/ci_warehouse.sh"
+    # The summary is the rule's table, then the tables eval.yml writes, in its words.
+    theirs = {s.get("name"): s for s in load(EVAL)["jobs"]["evaluate"]["steps"]}
+    assert by_name["Report"]["run"] == theirs["Report"]["run"]
+    assert (
+        by_name["Upload the results and the report"] == theirs["Upload the results and the report"]
+    )
+
+
+def test_the_check_fails_on_the_rule_and_never_asks_twice():
+    by_name = {s.get("name"): s for s in load(EVAL_PR)["jobs"]["check"]["steps"]}
+    rule = by_name["Apply the rule"]["run"]
+    assert "python -m evalkit.ci check eval-results.json" in rule
+    assert "--cases evals/ci_cases.json" in rule
+    assert "--baseline evals/results/ci_baseline.json" in rule
+    assert '--summary "$GITHUB_STEP_SUMMARY"' in rule and "check-exit-code.txt" in rule
+    for name in ("Apply the rule", "Report", "Upload the results and the report"):
+        assert by_name[name]["if"] == "always()", name
+    last = by_name["The check passed"]
+    assert "if" not in last
+    assert "the evaluation did not execute" in last["run"]
+    assert "the regression check failed" in last["run"] and last["run"].count("exit 1") == 2
+    # One call of the runner in the whole file, and nothing that would run it again.
+    text = EVAL_PR.read_text()
+    assert text.count("python -m evalkit.run evals/golden.jsonl") == 1
+    for word in ("retry", "--only-errors", "continue-on-error"):
+        assert word not in text, word

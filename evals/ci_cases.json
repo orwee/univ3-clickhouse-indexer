@@ -1,0 +1,200 @@
+{
+ "format": 1,
+ "seed": 20261013,
+ "picked_from": [
+  "2026-10-12_baseline-regrounded_38242644460.json",
+  "2026-10-12_baseline-regrounded_38245003388.json",
+  "2026-10-12_baseline-regrounded_38247610883.json"
+ ],
+ "rule": "right in every one of those runs; so many of each kind, spread over its families",
+ "quotas": {
+  "template": 20,
+  "hand": 5,
+  "unanswerable": 5
+ },
+ "preferred_split": "dev",
+ "from_another_split": {},
+ "golden_sha256": "21f1c675a593eb0ee81afb90376e1a462e5694b305c7e667a1607433d0a2c620",
+ "cases": [
+  {
+   "id": "h-gross-net-004",
+   "kind": "hand",
+   "family": "gross-net",
+   "split": "dev"
+  },
+  {
+   "id": "h-missing-row-004",
+   "kind": "hand",
+   "family": "missing-row",
+   "split": "dev"
+  },
+  {
+   "id": "h-multi-step-002",
+   "kind": "hand",
+   "family": "multi-step",
+   "split": "dev"
+  },
+  {
+   "id": "h-ordered-list-001",
+   "kind": "hand",
+   "family": "ordered-list",
+   "split": "dev"
+  },
+  {
+   "id": "h-units-003",
+   "kind": "hand",
+   "family": "units",
+   "split": "dev"
+  },
+  {
+   "id": "t-fees-003",
+   "kind": "template",
+   "family": "fees",
+   "split": "dev"
+  },
+  {
+   "id": "t-peak-day-range-002",
+   "kind": "template",
+   "family": "peak-day-range",
+   "split": "dev"
+  },
+  {
+   "id": "t-peak-day-range-008",
+   "kind": "template",
+   "family": "peak-day-range",
+   "split": "dev"
+  },
+  {
+   "id": "t-share-001",
+   "kind": "template",
+   "family": "share",
+   "split": "dev"
+  },
+  {
+   "id": "t-share-008",
+   "kind": "template",
+   "family": "share",
+   "split": "dev"
+  },
+  {
+   "id": "t-swaps-all-range-005",
+   "kind": "template",
+   "family": "swaps-all-range",
+   "split": "dev"
+  },
+  {
+   "id": "t-swaps-all-range-009",
+   "kind": "template",
+   "family": "swaps-all-range",
+   "split": "dev"
+  },
+  {
+   "id": "t-swaps-day-002",
+   "kind": "template",
+   "family": "swaps-day",
+   "split": "dev"
+  },
+  {
+   "id": "t-swaps-day-010",
+   "kind": "template",
+   "family": "swaps-day",
+   "split": "dev"
+  },
+  {
+   "id": "t-token-volume-day-005",
+   "kind": "template",
+   "family": "token-volume-day",
+   "split": "dev"
+  },
+  {
+   "id": "t-token-volume-day-007",
+   "kind": "template",
+   "family": "token-volume-day",
+   "split": "dev"
+  },
+  {
+   "id": "t-top-pool-day-007",
+   "kind": "template",
+   "family": "top-pool-day",
+   "split": "dev"
+  },
+  {
+   "id": "t-top-pool-day-010",
+   "kind": "template",
+   "family": "top-pool-day",
+   "split": "dev"
+  },
+  {
+   "id": "t-volume-all-day-005",
+   "kind": "template",
+   "family": "volume-all-day",
+   "split": "dev"
+  },
+  {
+   "id": "t-volume-change-002",
+   "kind": "template",
+   "family": "volume-change",
+   "split": "dev"
+  },
+  {
+   "id": "t-volume-day-005",
+   "kind": "template",
+   "family": "volume-day",
+   "split": "dev"
+  },
+  {
+   "id": "t-volume-range-006",
+   "kind": "template",
+   "family": "volume-range",
+   "split": "dev"
+  },
+  {
+   "id": "t-volume-range-009",
+   "kind": "template",
+   "family": "volume-range",
+   "split": "dev"
+  },
+  {
+   "id": "t-vwap-day-002",
+   "kind": "template",
+   "family": "vwap-day",
+   "split": "dev"
+  },
+  {
+   "id": "t-vwap-day-006",
+   "kind": "template",
+   "family": "vwap-day",
+   "split": "dev"
+  },
+  {
+   "id": "u-forecast-001",
+   "kind": "unanswerable",
+   "family": "forecast",
+   "split": "dev"
+  },
+  {
+   "id": "u-legs-trap-001",
+   "kind": "unanswerable",
+   "family": "legs-trap",
+   "split": "dev"
+  },
+  {
+   "id": "u-not-in-marts-004",
+   "kind": "unanswerable",
+   "family": "not-in-marts",
+   "split": "dev"
+  },
+  {
+   "id": "u-other-chain-003",
+   "kind": "unanswerable",
+   "family": "other-chain",
+   "split": "dev"
+  },
+  {
+   "id": "u-out-of-range-003",
+   "kind": "unanswerable",
+   "family": "out-of-range",
+   "split": "dev"
+  }
+ ]
+}

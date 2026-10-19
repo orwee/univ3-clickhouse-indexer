@@ -1,0 +1,175 @@
+# The regression check: 30 fixed cases asked of the agent on a pull request that touches it.
+#
+# In the image of eval.yml, with three differences: it starts by itself, on a pull request
+# that changes the agent, the evaluation code, the evaluation's files or the prompt; it runs
+# in the environment `agent-eval-pr`, which has no branch restriction, so that a pull
+# request's job can use it; and it can fail on its score. DECISIONS.md, entry 24, says why
+# each of those is so and what still has no barrier.
+#
+# `pull_request`, never `pull_request_target`: the code of the pull request is what runs,
+# and with the other trigger it would run with the repository's own rights.
+#
+# Every run waits for the owner's approval: `agent-eval-pr` has him as required reviewer.
+# The approval is the barrier. The code a pull request changes is the code that runs with
+# the key, so whoever approves a run has to have read what it changes.
+#
+# A pull request from a fork gets no key. The job that would use it is skipped, and another
+# job says so in its summary.
+#
+# What a run may spend: 0.25 USD in all, and each question at most six model calls, as in
+# every other run. The variant `ci` sets the ceiling per question to 0.05 USD so that the
+# thirty questions fit under that.
+#
+# The job fails when the rule of `python -m evalkit.ci check` fails: a case not asked, a
+# question that ended in an error, more cases wrong than the noise between identical runs
+# allows, or a question that costs half as much again as the baseline's. docs/EVALS.md has
+# the numbers and where they come from. A run that fails is not run again to make it pass.
+#
+# Three rules this file keeps, and tests/test_workflows.py checks:
+#   - no GitHub expression is written inside a `run:` script;
+#   - the model key is given to one step, the one that runs the evaluation, and to no other;
+#   - the token is read-only.
+#
+# The actions are the ones eval.yml pins, at the same commits.
+name: eval-pr
+
+on:
+  pull_request:
+    paths:
+      - "src/agent/**"
+      - "src/evalkit/**"
+      - "evals/**"
+      - "src/agent/prompts/**"
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels the run of the push before it.
+concurrency:
+  group: eval-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fork:
+    name: a pull request from a fork gets no key
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Say why the check did not run
+        run: |
+          {
+            echo "### The regression check did not run"
+            echo ""
+            echo "This pull request comes from a fork. A fork's pull request is given no secret, so the agent cannot be asked anything. The check runs when the change is on a branch of this repository and the owner approves the run."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  check:
+    name: the regression check
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: agent-eval-pr
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.16" # the version demo/Dockerfile installs
+
+      - name: uv sync --frozen --group agent
+        run: uv sync --frozen --group agent
+
+      # ClickHouse with the read-only user and the fixture. Exports AGENT_READER_*.
+      - name: Start the warehouse
+        run: bash scripts/ci_warehouse.sh
+
+      # The only step that sees the key. It never fails the job by itself: the run is
+      # judged at the end, after the summary and the artifacts.
+      - name: Evaluate
+        timeout-minutes: 12
+        env:
+          UNIV3_DATA_DIR: ${{ runner.temp }}/eval-data
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set +e
+          PYTHONPATH=src uv run --frozen --group agent python -m evalkit.run evals/golden.jsonl \
+            --variant ci --split all --ids evals/ci_cases.json --max-usd 0.25 \
+            --out eval-results.json 2> eval-stderr.txt
+          code=$?
+          set -e
+          echo "$code" > eval-exit-code.txt
+          echo "python -m evalkit.run exited with $code"
+          cat eval-stderr.txt >&2
+
+      # The rule, first in the summary. No key here. Its exit code is kept for the end.
+      - name: Apply the rule
+        if: always()
+        run: |
+          if [ -f eval-results.json ]; then
+            set +e
+            PYTHONPATH=src uv run --frozen python -m evalkit.ci check eval-results.json \
+              --cases evals/ci_cases.json --baseline evals/results/ci_baseline.json \
+              --summary "$GITHUB_STEP_SUMMARY"
+            code=$?
+            set -e
+            echo "$code" > check-exit-code.txt
+            echo "python -m evalkit.ci check exited with $code"
+          fi
+
+      # The whole report to a file, its first tables to the job summary, as in eval.yml.
+      - name: Report
+        if: always()
+        run: |
+          if [ -f eval-results.json ]; then
+            PYTHONPATH=src uv run --frozen python -m evalkit.report eval-results.json --out eval-report.md
+            PYTHONPATH=src uv run --frozen python -m evalkit.report eval-results.json --top \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### The evaluation did not run"
+              echo ""
+              echo "\`python -m evalkit.run\` exited with \`$(cat eval-exit-code.txt 2>/dev/null || echo unknown)\` and wrote no results file. What it wrote to standard error:"
+              echo ""
+              echo "<pre>"
+              sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' eval-stderr.txt 2>/dev/null || true
+              echo "</pre>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the results and the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-results
+          path: |
+            eval-results.json
+            eval-report.md
+          if-no-files-found: warn
+
+      # Every turn of every question, rows included. Not for the repository.
+      - name: Upload the transcripts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-transcripts
+          path: ${{ runner.temp }}/eval-data/evals/
+          if-no-files-found: warn
+
+      # What fails the job: the run did not execute, or the rule says the agent got worse.
+      - name: The check passed
+        run: |
+          code=$(cat eval-exit-code.txt 2>/dev/null || echo "none")
+          if [ ! -f eval-results.json ]; then
+            echo "::error::the evaluation did not execute (exit code $code)"
+            exit 1
+          fi
+          rule=$(cat check-exit-code.txt 2>/dev/null || echo "none")
+          if [ "$rule" != "0" ]; then
+            echo "::error::the regression check failed (exit code $rule): see the summary"
+            exit 1
+          fi
+          echo "the regression check passed; its figures are in the summary and in the artifact"

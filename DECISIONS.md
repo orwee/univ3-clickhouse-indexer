@@ -884,6 +884,74 @@ the reason the rule above is about what is sent, not about what is promised.
 be used. A 402 from the gateway means its wallet is empty: the run stops there, and the
 questions it did not ask are recorded as not asked, never as wrong.
 
+## 24. A regression check of the agent on pull requests
+
+Written by the agent at the owner's request on 2026-10-13. The owner asked for this entry to
+be written for him, for this phase only; the decision is his.
+
+- Date: 2026-10-13
+- Status: Accepted
+
+**Context.** An evaluation was started by hand, on `main`, after the owner's approval. A
+change to the agent could be merged without anyone asking the agent a question. The
+owner's original request included a check on pull requests: about 30 fixed cases, a cap on
+what it spends, and a failure when the agent gets worse. The environment that holds the
+model key, `agent-eval`, allows only `main`, so a pull request's job cannot use it.
+
+**Decision.**
+
+- **The trigger** is `pull_request`, on changes under `src/agent/**`, `src/evalkit/**`,
+  `evals/**` and the prompt files (`src/agent/prompts/**`). Never `pull_request_target`,
+  which would run a pull request's code with the repository's own rights. A pull request
+  from a fork gets no secret: the job that asks the agent is skipped, and another job says
+  why in its summary.
+- **The job runs in a second environment, `agent-eval-pr`**, which has the owner as
+  required reviewer, no branch restriction and its own copy of the model key. Every run
+  waits for his approval. The key reaches one step, the one that asks the questions.
+  `agent-eval` and `eval.yml` are not changed.
+- **What a run may spend**: 0.25 USD in all, and six model calls per question, as in every
+  other run. The variant `ci` lowers the ceiling per question to 0.05 USD, because the
+  runner asks that a whole question's ceiling fits in what is left before it asks, and
+  with the default the run would stop after its first question.
+- **The cases** are 30, picked by code with a fixed seed from the three baseline runs:
+  20 from templates, 5 written by hand, 5 with no answer, all of them right in all three
+  runs, spread over the families of each kind, all from `dev`
+  (`evals/ci_cases.json`).
+- **What the job fails on**:
+  - a case that was not asked, for any reason. A run that stops on its budget is a failed
+    run, not a score;
+  - a question that ended in an error;
+  - more cases wrong than the noise allows. Six runs sent the model the baseline's text:
+    the three baseline runs, right on all 30 by construction, and the three runs with the
+    prompt cached, which got 2, 1 and 0 of the 30 wrong. The limit is the worst of the six
+    plus one: **more than 3 wrong fails**;
+  - a mean cost per question over 1.5 times the baseline's on the same 30 cases.
+- **A score is never asked for twice.** The workflow runs the agent once. A run that fails
+  is not run again to see whether it passes: a check that is retried until it is green
+  measures patience. A new push is a new change and gets its own run.
+
+**What the check can and cannot catch.** With the limit at 3 of 30 it catches an agent
+that broke: a prompt that makes it stop refusing, a tool that returns nothing, a model
+that no longer follows the format. It does not catch a small loss. The spread between
+identical runs is two cases in thirty, so a change that costs one or two cases passes.
+That is the price of a check that does not fail by chance, and the full evaluation with
+its three runs is still what a claim about quality needs.
+
+**What still has no barrier.** The code a pull request changes is the code that runs with
+the key. A pull request can change the agent, the runner, the rule that judges the run and
+the workflow file itself, and all of it runs in the job once the run is approved. Nothing
+in the repository stands between a change that prints the key, or spends the budget on
+something else, and the key: the approval click is the barrier, and it is only as good as
+the reading that comes before it. The run cap limits what one approved run can spend
+through this code, not what a leaked key could. Two more things hold today and are not
+enforced: the environment allows the owner to approve his own run, and the credential the
+agent sessions push with is the owner's account, so a session could approve the run of its
+own pull request. Only the written rule stops it.
+
+**Consequences.** A pull request that touches the agent or the evaluation waits for an
+approval before its check runs, and costs about 0.05 USD when it does. A pull request that
+touches neither does not start the check.
+
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.

@@ -120,8 +120,11 @@ def select(cases: list[dict], split: str, ids: Path | None, limit: int | None) -
     """The cases of a run, in the order of the file: by split, then by id, then the first N."""
     chosen = [case for case in cases if split == "all" or case["split"] == split]
     if ids is not None:
-        wanted = [line.strip() for line in ids.read_text(encoding="utf-8").splitlines()]
-        wanted = [line for line in wanted if line and not line.startswith("#")]
+        if ids.suffix == ".json":  # a file of picked cases: {"cases": [{"id": ...}, ...]}
+            wanted = [str(case["id"]) for case in json.loads(ids.read_text("utf-8"))["cases"]]
+        else:
+            wanted = [line.strip() for line in ids.read_text(encoding="utf-8").splitlines()]
+            wanted = [line for line in wanted if line and not line.startswith("#")]
         known = {case["id"] for case in cases}
         unknown = [case_id for case_id in wanted if case_id not in known]
         if unknown:

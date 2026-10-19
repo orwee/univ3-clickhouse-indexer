@@ -268,7 +268,7 @@ def test_the_agent_section_says_what_it_is_what_it_cannot_do_and_what_is_not_don
     not_done = body.split("**What is not done.**")[1]
     for said in (
         "The judge is not calibrated.",
-        "There is no regression check on pull requests.",
+        "The regression check on pull requests is new and coarse.",
         "No other model or provider has been compared.",
     ):
         assert said in not_done, said
