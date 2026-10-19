@@ -2,6 +2,7 @@
 
     python -m univ3_indexer.cli --days 30                  # last 30 days
     python -m univ3_indexer.cli --from-block A --to-block B
+    python -m univ3_indexer.cli --date 2026-10-01          # one UTC day (what the Airflow DAG runs)
     python -m univ3_indexer.cli --days 30 --dry-run        # show the plan, write nothing
 
 Run the same command again to resume: the plan (block range and pools) is saved
@@ -24,6 +25,7 @@ the end of a batch whose file is completely on disk.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import logging
 import os
@@ -34,7 +36,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from univ3_indexer import config
+from univ3_indexer import config, landing
 from univ3_indexer.backfill import (
     CONFIRMATIONS,
     BackfillError,
@@ -118,6 +120,59 @@ def safe_head(client, confirmations: int = CONFIRMATIONS) -> tuple[int, str]:
 def plan_window(end: int, days: float) -> tuple[int, int]:
     """(start, end) for the ``days`` days that end at block ``end`` (see safe_head)."""
     return end - round(days * BLOCKS_PER_DAY) + 1, end
+
+
+def first_block_at_or_after(client, timestamp: int, tip: int) -> int:
+    """The lowest block number whose timestamp is >= ``timestamp`` (a binary search).
+
+    Block timestamps only ever grow with the block number, so the search is valid. Raises when
+    even the tip is older than ``timestamp``: that moment is still in the future."""
+    if client.block_timestamp(tip) < timestamp:
+        raise BackfillError(f"the chain tip (block {tip}) is older than the time asked for")
+    low, high = 0, tip  # invariant: the answer is in [low, high]
+    while low < high:
+        middle = (low + high) // 2
+        if client.block_timestamp(middle) >= timestamp:
+            high = middle
+        else:
+            low = middle + 1
+    return low
+
+
+def day_blocks(client, day: dt.date) -> tuple[int, int]:
+    """(first, last) block of the UTC day ``day``: timestamps from 00:00:00 up to 23:59:59."""
+    start = int(dt.datetime(day.year, day.month, day.day, tzinfo=dt.UTC).timestamp())
+    tip = client.block_number()
+    first = first_block_at_or_after(client, start, tip)
+    try:
+        last = first_block_at_or_after(client, start + 86_400, tip) - 1
+    except BackfillError as exc:
+        raise BackfillError(f"{day} is not over yet on the chain: {exc}") from exc
+    if last < first:
+        raise BackfillError(f"no block on {day}")
+    return first, last
+
+
+def window_for_day(first: int, last: int, coverage: tuple[int, int] | None):
+    """What is still to fetch of the day's blocks ``first``..``last``, given the landing zone's
+    ``coverage``; None when the day is already there. The landing zone must stay one gap-free
+    range (landing.check_coverage), so the day is fetched from the block after what is landed."""
+    if coverage is None:
+        return first, last
+    low, high = coverage
+    if low > first:
+        raise BackfillError(
+            f"the landing zone starts at block {low}, after the day's first block {first}: "
+            "a day can only be added at the end of the landed range"
+        )
+    if high >= last:
+        return None
+    if high < first - 1:
+        raise BackfillError(
+            f"the landing zone ends at block {high} and the day starts at {first}: "
+            "fetch the days in between first (it would leave a gap)"
+        )
+    return high + 1, last
 
 
 def load_or_create_plan(
@@ -215,6 +270,13 @@ def build_parser() -> argparse.ArgumentParser:
     window.add_argument("--days", type=float, help="this many days back from the chain tip")
     window.add_argument("--from-block", type=int)
     window.add_argument("--to-block", type=int)
+    window.add_argument(
+        "--date",
+        type=dt.date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="the UTC day with this date: its first and last block are looked up on the node. "
+        "The plan and checkpoint are per day; what the landing zone already has is skipped",
+    )
     parser.add_argument("--sink", choices=["jsonl"], default="jsonl")
     parser.add_argument("--out", type=Path, help="output directory (default: <data dir>/landing)")
     parser.add_argument("--checkpoint", type=Path, help="default: <data dir>/checkpoint.json")
@@ -253,6 +315,9 @@ def main(argv: Sequence[str] | None = None, *, client=None) -> int:
     args = build_parser().parse_args(argv)
     _setup_logging(args.log_file)
     explicit = args.from_block is not None or args.to_block is not None
+    if args.date is not None and (explicit or args.days is not None):
+        log.error("--date cannot be combined with --days, --from-block or --to-block")
+        return EXIT_USAGE
     if explicit and (args.days is not None or args.from_block is None or args.to_block is None):
         log.error("give either --days, or both --from-block and --to-block")
         return EXIT_USAGE
@@ -263,18 +328,36 @@ def main(argv: Sequence[str] | None = None, *, client=None) -> int:
     try:
         data_dir = config.data_dir()
         out = (args.out or data_dir / "landing").resolve()
-        checkpoint_path = (args.checkpoint or data_dir / "checkpoint.json").resolve()
+        default_checkpoint = (
+            data_dir / "days" / args.date.isoformat() / "checkpoint.json"
+            if args.date
+            else data_dir / "checkpoint.json"
+        )
+        checkpoint_path = (args.checkpoint or default_checkpoint).resolve()
         for path in (out, checkpoint_path):
             if path == config.REPO_ROOT or config.REPO_ROOT in path.parents:
                 raise config.ConfigError(f"{path} is inside the working copy: choose another path")
         pools = tuple(sorted(p.key for p in load_pools()))
         plan_path = checkpoint_path.with_name("plan.json")
 
-        if client is None and not (args.dry_run and (explicit or plan_path.exists())):
+        if client is None and (
+            args.date is not None or not (args.dry_run and (explicit or plan_path.exists()))
+        ):
             key = config.require_api_key("ALCHEMY_API_KEY")
             client = JsonRpcClient(alchemy_mainnet_url(key), min_interval=1 / args.rps)
 
         wanted, chosen_by = None, ""
+        if args.date is not None:
+            first, last = day_blocks(client, args.date)
+            log.info("%s is blocks %d-%d", args.date, first, last)
+            coverage = landing.check_coverage(out) if out.exists() else None
+            window = window_for_day(first, last, coverage)
+            if window is None:
+                log.info("%s is already in the landing zone: nothing to fetch", args.date)
+                return EXIT_OK
+            if not plan_path.exists():  # a saved plan (a run that was cut short) is resumed
+                args.from_block, args.to_block = window
+                explicit = True
         if explicit:
             wanted = Plan(args.from_block, args.to_block, pools)
             if client is not None and not plan_path.exists():
@@ -296,7 +379,7 @@ def main(argv: Sequence[str] | None = None, *, client=None) -> int:
                 f"{plan_path} already fixes blocks {plan.start_block}-{plan.end_block}. "
                 "Resume with the same command, or use another --checkpoint for a new window."
             )
-    except (config.ConfigError, BackfillError, ValueError) as exc:
+    except (config.ConfigError, BackfillError, landing.LandingError, ValueError) as exc:
         log.error("%s", exc)
         return EXIT_USAGE
 
