@@ -128,6 +128,13 @@ class JsonRpcClient:
             raise RpcError("eth_getBlockByNumber(finalized): the node returned no block")
         return int(block["number"], 16)
 
+    def block_timestamp(self, number: int) -> int:
+        """Unix time of the block, in seconds, as the node reports it."""
+        block = self.call("eth_getBlockByNumber", [hex(number), False])
+        if not isinstance(block, dict) or not isinstance(block.get("timestamp"), str):
+            raise RpcError(f"eth_getBlockByNumber({number}): the node returned no block")
+        return int(block["timestamp"], 16)
+
     def block_hash(self, number: int) -> str:
         """Hash of the canonical block at this height, as the node sees the chain NOW."""
         block = self.call("eth_getBlockByNumber", [hex(number), False])

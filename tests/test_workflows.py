@@ -75,7 +75,7 @@ def test_the_tests_workflow_has_no_secret_and_no_environment():
     assert not SECRET.search(TESTS.read_text())
     assert all("environment" not in job for job in workflow["jobs"].values())
     assert workflow["concurrency"]["cancel-in-progress"] is True
-    assert set(workflow["jobs"]) == {"lint-and-test", "demo", "warehouse"}
+    assert set(workflow["jobs"]) == {"lint-and-test", "demo", "warehouse", "airflow"}
 
 
 def test_the_warehouse_job_runs_the_reader_tests_and_fails_if_they_skip():

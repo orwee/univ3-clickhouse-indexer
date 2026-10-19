@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 DEMO = docker compose -f docker-compose.demo.yml
 
-.PHONY: help demo up up-reader down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis eval-fixture eval-ci eval-ci-cases golden dbt-seed dbt-build dbt-test dbt-prove dashboard
+.PHONY: help demo up up-reader down airflow-up airflow-down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis eval-fixture eval-ci eval-ci-cases golden dbt-seed dbt-build dbt-test dbt-prove dashboard
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -21,6 +21,18 @@ up-reader: ## start ClickHouse with the read-only user agent_reader mounted
 
 down: ## stop ClickHouse (the named volume, and so the data, is kept)
 	docker compose down
+
+# Airflow is opt-in too (airflow/README.md). ClickHouse starts with it, from docker-compose.yml.
+# Needs AIRFLOW_DATA_DIR (outside the working copy) and the env file airflow/airflow.env.example
+# describes. A later `make up-reader` or `make up` recreates ClickHouse without Airflow's file.
+AIRFLOW = docker compose -f docker-compose.yml -f docker-compose.airflow.yml
+
+airflow-up: ## start Airflow (UI on http://127.0.0.1:8080) and ClickHouse; builds the image
+	mkdir -p "$${AIRFLOW_DATA_DIR:?set AIRFLOW_DATA_DIR to a directory outside the working copy}/reports"
+	$(AIRFLOW) up -d --build
+
+airflow-down: ## stop and remove the Airflow containers only (ClickHouse and every volume are kept)
+	$(AIRFLOW) rm --stop --force airflow-apiserver airflow-scheduler airflow-dag-processor airflow-init airflow-postgres
 
 logs: ## follow the server log
 	docker compose logs -f --tail=100 clickhouse

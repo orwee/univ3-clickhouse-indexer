@@ -952,6 +952,84 @@ own pull request. Only the written rule stops it.
 approval before its check runs, and costs about 0.05 USD when it does. A pull request that
 touches neither does not start the check.
 
+## 25. Airflow runs the daily pipeline, in a compose file of its own and outside the main dependencies
+
+Written by the agent at the owner's request on 2026-10-19. The owner asked for this entry to
+be written for him, for this run only; the decision is his.
+
+- Date: 2026-10-19
+- Status: Accepted
+
+**Context.** Every step of the pipeline is a `make` target run by hand: fetch, load, dbt,
+reconcile. Nothing runs them in order, retries a step that failed on the network, remembers
+which day was done, or shows what failed. The owner also wants to learn Airflow by building
+this (README, roadmap item 7).
+
+**Decision.**
+
+- **Airflow, not cron.** One DAG, `univ3_daily` (`airflow/dags/univ3_daily.py`), five
+  `BashOperator` tasks in a line: `fetch_day`, `load_swaps`, `dbt_run`, `dbt_test`,
+  `reconcile`. Each is one command that already exists. The loading logic and the dbt models
+  are unchanged. What cron cannot do and Airflow does: a task runs only if the one before
+  it succeeded; a failed task is retried (2 times, 5 minutes apart) without running the
+  ones that passed; every run is tied to a day (`{{ ds }}`), so a past range is run again
+  with `airflow dags backfill`; the state and the logs of each attempt are kept and shown.
+  What it costs: a scheduler, an API server, a DAG processor and a Postgres to run, for five
+  commands.
+- **Version 3.3.2, not 2.x.** The owner asked for 2.x. The support page of the Airflow
+  documentation (https://airflow.apache.org/docs/apache-airflow/stable/installation/supported-versions.html,
+  read 2026-10-19) lists 2.x at 2.11.2 with status EOL, limited maintenance from
+  2025-10-22 and end of life on 2026-04-22; 3.x is at 3.3.2. A new pipeline on a series
+  without security fixes would be the wrong thing to learn on. The DAG is the same idea in
+  both; the differences in this file are the imports (`airflow.sdk`, the standard provider)
+  and that the scheduler no longer runs tasks itself: tasks report to the API server.
+- **The schedule is a data interval.** `CronDataIntervalTimetable("@daily", "UTC")`, so the
+  run with `ds = 2026-10-01` starts at 2026-10-02 00:00 UTC, when that day is over. Airflow
+  3 reads the plain string `"@daily"` as a trigger at 00:00 of the day it names, and `ds`
+  would be a day that has just begun. `catchup=False`, `max_active_runs=1`.
+- **`max_active_runs=1`** because every run appends to one landing zone, which has to be a
+  single range without gaps or overlaps (`landing.check_coverage`). Two days fetched at the
+  same time could leave a gap, and the load would refuse it.
+- **`fetch_day` needs `cli --date`.** The backfill takes `--days` or block numbers, not a
+  date. `--date YYYY-MM-DD` looks up the day's first and last block on the node (a binary
+  search over block timestamps, about 25 calls per end), then takes the existing
+  `--from-block/--to-block` path. Two additions follow from the landing zone, not from taste:
+  the plan and the checkpoint are per day (`<data dir>/days/<date>/`), because a plan fixes
+  one window; and what the landing zone already has is not fetched again, because files are
+  named after their block range and two windows cut at different blocks would overlap. A
+  day the zone has in full is a no-op (so a backfill over the days already loaded is
+  harmless); a day after a partly landed one starts at the next block; a day that would
+  leave a gap is refused.
+- **A compose file of its own**, `docker-compose.airflow.yml`, used with the main one, as
+  `docker-compose.reader.yml` is. `docker-compose.yml` is not touched, a plain `make up` does
+  not start Airflow, and the stack can be deleted without a trace in the database's file.
+  It is the official file cut to LocalExecutor: no Celery, Redis, workers or triggerer.
+- **Airflow is not in the main dependencies.** It pins hundreds of packages
+  (https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt)
+  and would be resolved together with dbt and clickhouse-connect in `uv.lock`, for a test
+  that loads one file. In the image, the project has its own virtualenv from `uv.lock` and
+  Airflow keeps the base image's. In CI, one job installs Airflow with the constraints file
+  into a virtualenv outside the working copy and runs `tests/test_airflow_dag.py` alone;
+  `make test` skips that file when Airflow is not importable.
+- **Secrets.** From the environment only: `clickhouse.env` as always, and an
+  `airflow.env` outside the repository (names in `airflow/airflow.env.example`) with the
+  database password, Fernet key, JWT secret, the admin password and `ALCHEMY_API_KEY`
+  only. The Nansen and model keys are not given to the tasks.
+
+**What this does not do.** The `docker compose up` of this stack was not run when it was
+written: the agent has no Docker. Its parts were checked as far as they can be without it
+(the DAG loads in Airflow 3.3.2 and its test passes; the YAML parses; the tests of `--date`
+run on a scripted chain). `fetch_day` at midnight asks for a block that is not finalized yet
+(finality trails the tip by about 13 to 19 minutes), which `cli` refuses; the two retries
+5 minutes apart may not be enough on the first nights. If so, the schedule should move to
+00:30 or the retry delay grow: not decided here.
+
+**Tradeoff.** Four always-on containers and a Postgres for one daily job. `BashOperator` makes
+each task opaque: Airflow sees an exit code, not rows or blocks.
+
+**Revisit when.** A step needs to pass data to the next one (TaskFlow), a second DAG appears,
+or the checks should be assets with their own freshness (Dagster, roadmap item 7).
+
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.
