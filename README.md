@@ -323,6 +323,15 @@ explicit reason when the server is not reachable.
 ClickHouse listens on `127.0.0.1` only (8123 HTTP, 9000 native). `make ch-client` opens a
 SQL shell; `make down` stops the server and keeps the data in a named volume.
 
+### Orchestration (Airflow)
+
+`univ3_daily` is a daily Airflow 3 DAG (LocalExecutor) that runs `fetch_day` (the swaps of one
+UTC day, `cli --date`), `load_swaps`, `dbt_run`, `dbt_test` and `reconcile`, each the command
+its `make` target runs. It is opt-in: `make airflow-up` starts it next to ClickHouse from
+`docker-compose.airflow.yml`, `make airflow-down` stops it. It is not in the main
+dependencies. `airflow/README.md` has the steps and explains DAG, operator, scheduler,
+executor, `ds`, retries, catchup and backfill.
+
 ### Backfill
 
 ```
@@ -490,8 +499,8 @@ located to one to three hours, listed at the end of the draft.
   window): it is never read.
 - **One external source, with no published methodology.** Finding 7 is a reading that fits the
   numbers, not a fact about GeckoTerminal.
-- **Batch backfill.** No continuous ingestion, no orchestration, no alerting: `make` targets
-  run by hand.
+- **Batch backfill.** No continuous ingestion and no alerting. The daily Airflow DAG has not
+  been run on a server yet (see Orchestration); the `make` targets are what it calls.
 - **"`onchain` is read-only for agents" is a rule without a barrier on the real server**: its
   one ClickHouse user can drop anything. A read-only user limited to the five marts is
   defined, and it is what the agent connects as on GitHub's runner. The real server has not
@@ -544,10 +553,12 @@ described above, and items 10 to 12 are what those are missing.
    by hand, freshness and volume checks against their own history rather than fixed
    thresholds, alerting on the result, and a second external source with per-swap rows to
    close the [open findings](docs/RECONCILIATION_FINDINGS.md#what-is-still-open).
-7. **Orchestration.** An orchestrator with asset checks (Dagster or Airflow) in place of
-   `make` targets run by hand. The other half of this item is done: since 2026-10-11 CI runs
-   lint, the tests, `make demo` and the read-only user's tests on every pull request
-   ([tests.yml](.github/workflows/tests.yml)).
+7. **Orchestration.** Done in part: a daily Airflow DAG, `univ3_daily`, runs fetch, load,
+   dbt and reconciliation in order, with retries and a backfill by date
+   ([airflow/README.md](airflow/README.md), [decision 25](DECISIONS.md)). What is missing is
+   an orchestrator that knows the data (asset checks, freshness: Dagster or Airflow assets) and
+   alerting on failure. CI runs lint, the tests, `make demo` and the read-only user's tests on
+   every pull request ([tests.yml](.github/workflows/tests.yml)).
 8. **Access.** Turn the read-only user on in the real server. It is defined, tested in CI
    and used by the agent there ([docs/AGENT_ACCESS.md](docs/AGENT_ACCESS.md)); the real
    server still has one user, and it can drop anything.
