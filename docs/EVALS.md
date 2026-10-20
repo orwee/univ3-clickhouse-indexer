@@ -806,6 +806,16 @@ intraday and per-swap questions, days and pools outside the data, other chains a
 protocols, smart money (the mart is empty), prices and balances the marts do not hold,
 forecasts and counterfactuals, wallets, liquidity, and other data sources.
 
+**One correction after review, 2026-10-20.** Seven of the ten `absent-poolday` cases ask
+about a pool on 2026-08-09 or 2026-09-25, which the data covers only in part. There, no row
+means no swap in the part of the day the data holds, not on the whole day, and unlike the
+`partial-day` questions they did not say so. They now end the date with "as far as the data
+goes", and the family's note says what no row means on those days. Nothing else changed:
+the same 240 ids, splits, answers and SQL. The file's SHA-256 went from
+`b5c9dbca282191252ce427a13ce7d652c9e4e4f807d3dccf16cd4450ce25bfdf` to
+`9f920d576c88de70e8d920ab59be2e11d26f5b9e9d1573873d7f16fe83f27cf7`. The partial runs below
+were asked the old wording.
+
 ### Baseline on v2: partial runs, and what they show
 
 Three runs of `baseline` (`claude-haiku-5-5`), split `all`, repetitions 1, `max_usd` 0.66 each,

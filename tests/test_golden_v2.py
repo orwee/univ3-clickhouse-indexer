@@ -218,6 +218,27 @@ def test_the_edge_families_ask_about_partial_and_absent_days(cases):
     assert asked == 20
 
 
+def test_a_zero_on_a_day_the_data_covers_only_in_part_says_so_in_the_question(cases):
+    """No row on the first or the last day means no swap in the part of the day the data
+    holds, not on the whole day. Those questions say "as far as the data goes", as the
+    partial-day ones do; a zero on a whole day does not need it."""
+    edge, whole = 0, 0
+    for case in cases:
+        if case["family"] != "absent-poolday" or case["kind"] != "template":
+            continue
+        day = re.search(r"block_date = '([^']+)'", case["reference_sql"]).group(1)
+        said = "as far as the data goes" in case["question"]
+        if day in ("2026-08-09", "2026-09-25"):
+            assert said, case["id"]
+            edge += 1
+        else:
+            assert not said, case["id"]
+            whole += 1
+        assert "no swap in the part covered" in case["notes"]
+        assert "because it had no swap" not in case["notes"]
+    assert (edge, whole) == (7, 3)
+
+
 def test_the_fee_cases_use_the_units_the_question_names(cases):
     units = {c["unit"] for c in cases if c["family"] == "fee-units" and c["kind"] == "template"}
     assert units == {"hundredths of a basis point", "basis points", "percent", "fraction"}

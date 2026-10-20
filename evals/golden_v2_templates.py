@@ -163,7 +163,13 @@ def absent_poolday(f: Facts, rng: random.Random, i: int):
     }[metric]  # fmt: skip
     unit = METRICS[metric][1]
     sql = f"SELECT ifNull(sum({metric}), 0) FROM {DAILY} WHERE pool_label = {lit(label)} AND block_date = {lit(day.isoformat())}"  # fmt: skip
-    question = _wording(wording, i // 3).format(label=label, day=said(day, i))
+    when = said(day, i)
+    if day in (FIRST_DAY, LAST_DAY):
+        # The data covers only part of that day, so no row means no swap in that part: the
+        # question says so, as the partial-day questions do, or 0 would be a claim about
+        # hours the data does not hold.
+        when += ", as far as the data goes"
+    question = _wording(wording, i // 3).format(label=label, day=when)
     return {"label": label, "day": day, "metric": metric}, question, "number", unit, "count", sql, None  # fmt: skip
 
 
@@ -419,7 +425,7 @@ FAMILIES = {
     ),  # fmt: skip
     "absent-poolday": (
         absent_poolday,
-        "The pool has no row on that day because it had no swap. The right answer is 0, not a refusal and not a guess. A model that reads 'no row' as 'no data' refuses. Wrong answer: a refusal, or any number other than 0.",
+        "The pool has no row on that day: within the days the data covers, no row means no swap. On the first and the last day, which the data covers only in part, it means no swap in the part covered, and the question says 'as far as the data goes'. The right answer is 0, not a refusal and not a guess. A model that reads 'no row' as 'no data' refuses. Wrong answer: a refusal, or any number other than 0.",
     ),  # fmt: skip
     "fee-units": (
         fee_units,

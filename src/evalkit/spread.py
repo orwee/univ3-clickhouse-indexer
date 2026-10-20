@@ -135,6 +135,11 @@ def csv_text(rows: list[dict]) -> str:
     return out.getvalue()
 
 
+def partial_run(results: dict) -> bool:
+    """A run that did not ask every case it selected, whatever its state says."""
+    return any(record["status"] != "ran" for record in results["records"])
+
+
 def render(files: list[tuple[str, dict]]) -> str:
     first = files[0][1]
     lines = [
@@ -145,6 +150,16 @@ def render(files: list[tuple[str, dict]]) -> str:
         + ".",
         "",
     ]
+    partial = [name for name, results in files if partial_run(results)]
+    if partial:
+        lines += [
+            "**PARTIAL RUNS: "
+            + ", ".join(f"`{name}`" for name in partial)
+            + " did not ask every case.** A case not asked is in no count below, so these "
+            "counts are over different sets of cases and no guard or rule may be read from "
+            "them.",
+            "",
+        ]
     for split in ("test", "dev"):
         rows = per_case(files, split)
         answerable = [r for r in rows if not r["should_refuse"]]

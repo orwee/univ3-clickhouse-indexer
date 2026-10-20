@@ -60,3 +60,20 @@ def test_runs_of_different_things_are_refused(tmp_path, files, capsys):
     first = config.REPO_ROOT / "evals/results" / name
     assert spread.main([str(first), str(path)]) == 2
     assert "golden_sha256" in capsys.readouterr().err
+
+
+def test_partial_runs_are_said_to_be_partial_at_the_top_of_the_report(files):
+    assert not any(spread.partial_run(results) for _, results in files)
+    assert "PARTIAL RUNS" not in spread.render(files)
+    name, results = files[0]
+    cut = {**results, "records": [*results["records"][:-1],
+                                  {**results["records"][-1], "status": "not_run"}]}  # fmt: skip
+    text = spread.render([(name, cut), *files[1:]])
+    assert f"**PARTIAL RUNS: `{name}` did not ask every case.**" in text
+    assert "no guard or rule may be read from them" in text
+    assert text.index("PARTIAL RUNS") < text.index("## `test`")
+
+
+def test_the_committed_report_of_the_v2_partial_runs_says_they_are_partial():
+    text = (config.REPO_ROOT / "evals/results/2026-10-19_baseline_golden_v2_spread.md").read_text()
+    assert text.count("did not ask every case") == 1 and "**PARTIAL RUNS:" in text

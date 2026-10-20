@@ -2,6 +2,8 @@
 
 Golden file SHA-256 `b5c9dbca282191252ce427a13ce7d652c9e4e4f807d3dccf16cd4450ce25bfdf`. Runs: `2026-10-19_baseline_39343348798.json`, `2026-10-19_baseline_39343368406.json`, `2026-10-19_baseline_39343371673.json`.
 
+**PARTIAL RUNS: `2026-10-19_baseline_39343348798.json`, `2026-10-19_baseline_39343368406.json`, `2026-10-19_baseline_39343371673.json` did not ask every case.** A case not asked is in no count below, so these counts are over different sets of cases and no guard or rule may be read from them.
+
 ## `test`: cases whose runs disagree
 
 | Cases | Count | Of which the runs do not agree |
