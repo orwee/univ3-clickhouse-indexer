@@ -981,12 +981,14 @@ not the run's: each run spent less than a quarter of its `max_usd`.
 
 **The rule, applied.** The fifth entry does not apply its rule to an incomplete set, and
 then the default does not change. No score is drawn from these runs, and none is given here.
-The same pull request took the rule back out of the prompt, the sentence out of the tool's
-description and the coverage out of `evals/warehouse.yml` (`67c9d48`): the default prompt is
+Pull request #87 had been merged two minutes after the runs ended, before their results
+were read, so the new default reached `main`. A follow-up pull request from `main` took the
+rule back out of the prompt, the sentence out of the tool's description and the coverage out
+of `evals/warehouse.yml` (`e8b8139`): the default prompt is
 again `9df22d15…`, the one of the v2 baseline. The runs were not repeated: that needs the
 owner's word, and the API refuses calls until 2026-11-01.
 
-The regression check of the same pull request, at `3a9c978` with the new default, ran before
+The regression check of #87, at `3a9c978` with the new default, ran before
 the limit was reached and passed: 30 of 30 asked and right, no error, 0.00176 USD a question
 against a limit of 0.00268 (`eval-pr` run
 [39415282729](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39415282729)).
