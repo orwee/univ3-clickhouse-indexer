@@ -200,6 +200,14 @@ from chance. The figures are in
 [`evals/results/2026-10-12_baseline_vs_refuse-early.md`](evals/results/2026-10-12_baseline_vs_refuse-early.md),
 and what each run cost is in [docs/EVALS.md](docs/EVALS.md#what-a-run-costs-measured).
 
+**A harder set.** Golden set v1 is too easy to measure a change: 98.9% of the answerable cases
+are right. [Golden set v2](docs/EVALS.md#golden-set-v2-a-harder-test-the-agent-can-fail) has 240
+cases (v1 is untouched); three partial baseline runs on it, 205 to 211 of the 240 cases
+asked because of a budget set too low, are right in 445 of 480 answers with an answer, 92.7%
+([`evals/results/2026-10-19_baseline.md`](evals/results/2026-10-19_baseline.md)), and the
+agent refuses 25 of 30 times a pool-day with no row, where the answer is 0. The change measured
+on v1 has not been run on v2.
+
 **Cost.** What a question costs and how long it takes, from
 [`evals/results/2026-10-13_cost.md`](evals/results/2026-10-13_cost.md), which names the
 results file of every run behind each row. The first three rows are the 127 held-out

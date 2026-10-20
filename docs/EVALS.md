@@ -780,6 +780,86 @@ what the model is sent, so the run would no longer be the agent that was measure
 **A run of 45 questions chosen by which ones did not fail is not a sample of the 53.** The
 figures above are what happened, and they are not a comparison of cost or of quality.
 
+## Golden set v2: a harder test the agent can fail
+
+On v1 the agent is right in 98.9% of the answerable cases (445 of 450,
+`evals/results/2026-10-12_baseline-regrounded.md`), so a change to the agent cannot be
+measured there. v1 stays exactly as it is (a test pins its SHA-256); v2 is a second file,
+[`evals/golden_v2.jsonl`](../evals/golden_v2.jsonl), with the same fields, scoring and
+tolerance rules ([decision 26](../DECISIONS.md#26-golden-set-v2-is-a-second-harder-file-and-v1-stays-as-it-is)).
+`make golden-v2` computes it from [`evals/golden_v2_templates.py`](../evals/golden_v2_templates.py)
+and [`evals/hand_cases_v2.yml`](../evals/hand_cases_v2.yml) on the committed fixture, in a
+throw-away database; seed 20261019.
+
+| | Cases | `dev` | `test` |
+|---|---|---|---|
+| Template, ten families of ten | 100 | 30 | 70 |
+| Hard, written by hand, ten families of six | 60 | 20 | 40 |
+| No answer, ten families of eight | 80 | 20 | 60 |
+| Total | 240 | 70 | 170 |
+
+What is hard: pool-days with no row (the answer is 0 and a refusal is wrong), the first and
+last day of the data (partial), the fee in hundredths of a basis point, token0 being USDC in
+one pool family and wstETH in the other, gross against net volume, averages that are not
+means of means, joins, two-query questions, and, for the 80 with no answer, near misses:
+intraday and per-swap questions, days and pools outside the data, other chains and
+protocols, smart money (the mart is empty), prices and balances the marts do not hold,
+forecasts and counterfactuals, wallets, liquidity, and other data sources.
+
+### Baseline on v2: partial runs, and what they show
+
+Three runs of `baseline` (`claude-haiku-5-5`), split `all`, repetitions 1, `max_usd` 0.66 each,
+on `feat/golden-v2` at `a628239`, dispatched together on 2026-10-19:
+[39343348798](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39343348798),
+[39343368406](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39343368406) and
+[39343371673](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39343371673).
+Files: `evals/results/2026-10-19_baseline_<RUN_ID>.json`, the report
+`evals/results/2026-10-19_baseline.md`, the spread and guards
+`evals/results/2026-10-19_baseline_golden_v2_spread.md`, one row per case
+`evals/results/2026-10-19_baseline_golden_v2_per_case.csv`.
+
+**The runs are partial, by my mistake.** The runner stops when the budget left is less than
+the ceiling of one question (0.25 USD). Each run spent 0.4141, 0.4109 and 0.4115 USD and
+then stopped: 211, 210 and 205 of 240 cases were asked; 29, 30 and 35 were `not_run`, even
+though the file says `complete`. Every case with an answer was asked in every run. The cases
+not asked are questions with no answer, at the end of the file. Counting the three runs
+together (94 `not_run` records): forecast 19, near-miss 24, liquidity 24, other-sources 24,
+not-held 3. On `test`, 22, 22
+and 26 of the 60 cases with no answer were not asked. Nothing was repeated: the night allowed
+six runs and the second part needs three.
+
+| On v2, three runs | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| Right, of the 160 cases with an answer | 148 (92.5%) | 149 (93.1%) | 148 (92.5%) |
+| `test`: right, of 110 with an answer | 102 | 102 | 102 |
+| `test`: refused although they have an answer | 7 | 7 | 7 |
+| `test`: refused, of the cases with no answer that were asked | 36 of 38 | 36 of 38 | 31 of 34 |
+| Spent, USD | 0.4141 | 0.4109 | 0.4115 |
+
+- **The agent can fail this set.** Over the three runs 445 of 480 answers with an answer are
+  right, 92.7%, interval [88.8%, 96.2%] (`evals/results/2026-10-19_baseline.md`), against 98.9%
+  on v1.
+- **The failures are concentrated.** Of the 35 wrong answers, 28 are on the pool-days with no
+  row (`absent-poolday` 28 of 30, `missing-pool-day` 3 of 18): in 25 and 3 of them the agent
+  refused where the answer is 0.
+- **The spread between runs is small on the cases with an answer** (0 cases on `test` by
+  total, 2 cases whose runs disagree), and large on refusals: 36, 36 and 31 refused on `test`,
+  a spread of 5 cases.
+- **Guards, from that spread** (rule in `src/evalkit/spread.py`): on the 110 `test` cases with
+  an answer the baseline is right in 102 by majority; a variant may lose at most
+  max(1, 0) = 1 net. 7 are refused although they have an answer; a variant may have at most
+  7 + max(1, 0) = 8.
+- **The refusal recall of the baseline cannot be stated.** 36 of 38 asked cases on `test` is
+  94.7% [82.7%, 98.5%] but it excludes the 22 that were not asked, which differ between runs.
+
+### The change on v2, `refuse-early`: not run
+
+The pre-registration, the three runs of `refuse-early` and the rule were not carried out. The
+three baseline runs above are partial in the cases that metric is about, and the allowance of
+the night (6 runs, 4.00 USD of `max_usd`) cannot repeat them and also run the variant at a
+budget that completes a run (about 0.72 USD or more per run, 0.41 spent plus the 0.25
+reserve and the margin). There is no second row. The proposed plan is in the pull request.
+
 ## The regression check on pull requests
 
 A pull request that changes the agent, the evaluation code, the evaluation's files or the
