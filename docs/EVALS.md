@@ -957,3 +957,37 @@ Both things that were expected were checked against the key, and both held:
   three rows it called unfaithful are the three the judge no longer does. That is the
   correction showing, not a regression. It is still not a human calibration, and no figure
   here says how the judge agrees with a person.
+
+## Retrieval over the documentation
+
+The agent answers questions about the data with SQL. Questions about what the data means
+are answered in `README.md`, `DECISIONS.md` and `docs/*.md`, so there is a search over those
+files and a measurement of it ([decision 27](../DECISIONS.md#27-questions-about-what-the-data-means-are-answered-from-the-documentation-by-search-and-with-citations)).
+
+- [`agent.docs_index`](../src/agent/docs_index.py) splits the files at their headings (id
+  `file#heading`) and ranks with BM25 in plain Python. 459 chunks.
+- [`evals/rag_cases.jsonl`](../evals/rag_cases.jsonl): 44 questions, 15 `dev` and 29 `test`
+  (fixed seed), each with the sections that answer it and 2 to 4 key facts.
+  **The labels were written by a model, not by a person**, and nobody has checked them.
+- [`evalkit.retrieval`](../src/evalkit/retrieval.py) computes recall@k (the share of cases
+  with a relevant section among the first k different sections) and MRR. No model, no cost;
+  `tests/test_docs_retrieval.py` runs it in `make test` on `dev` only.
+
+Settings were chosen on `dev` only: 25 combinations of chunk size and heading weight,
+ordered by MRR (`python -m evalkit.retrieval evals/rag_cases.jsonl --tune`). The best,
+1,000 characters and weight 8, led the next by one case of 15, so it is a choice and not a
+finding. `test` was read once, after that, with those settings:
+
+| Split | Cases | recall@1 | recall@3 | recall@5 | MRR |
+|---|---|---|---|---|---|
+| `dev` (tuned on) | 15 | 12 (80.0%) | 12 (80.0%) | 14 (93.3%) | 0.838 |
+| `test` (read once) | 29 | 20 (69.0%) | 25 (86.2%) | 27 (93.1%) | 0.783 |
+
+From `python -m evalkit.retrieval evals/rag_cases.jsonl --split dev|test` at the commit of
+this section. With 29 cases one case is 3.4 points; read these as "most questions find
+their section in the first five", not as a ranking of rankers.
+
+**A gap the cases do not show.** Two questions the owner suggested, "why is fee 500 for a
+0.05% pool?" and why 2026-08-09 is partial, are answered in different places. The first
+only in the dbt column descriptions, which are not indexed, so there is no case for it. The
+second is in this file and in decision 15.
