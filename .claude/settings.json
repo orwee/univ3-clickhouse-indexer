@@ -7,7 +7,7 @@
           {
             "type": "command",
             "timeout": 600,
-            "command": "jq -r '.tool_input.command // empty' | grep -Eq '(^|[[:space:];&|(])git[[:space:]]([^;&|]*[[:space:]])?commit([[:space:]]|$)' || exit 0\ncd \"$CLAUDE_PROJECT_DIR\" || exit 2\nexport PATH=\"$HOME/.local/bin:$PATH\"\nlogs=$(mktemp -d)\nmake lint > \"$logs/lint.log\" 2>&1\nlint=$?\nmake test > \"$logs/test.log\" 2>&1\ntests=$?\n[ \"$lint\" -eq 0 ] && [ \"$tests\" -eq 0 ] && exit 0\necho \"git commit blocked: make lint exited $lint, make test exited $tests. Full output in $logs\" >&2\n[ \"$lint\" -eq 0 ] || tail -n 20 \"$logs/lint.log\" >&2\n[ \"$tests\" -eq 0 ] || tail -n 20 \"$logs/test.log\" >&2\nexit 2"
+            "command": "input=$(cat)\ncmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty' 2>/dev/null) || cmd=$input\nprintf '%s' \"$cmd\" | grep -Eq '(^|[[:space:];&|(\"])git[[:space:]]([^;&|]*[[:space:]])?commit([[:space:]]|$)' || exit 0\ncd \"$CLAUDE_PROJECT_DIR\" || exit 2\nexport PATH=\"$HOME/.local/bin:$PATH\"\nlogs=$(mktemp -d)\nmake lint > \"$logs/lint.log\" 2>&1\nlint=$?\nmake test > \"$logs/test.log\" 2>&1\ntests=$?\n[ \"$lint\" -eq 0 ] && [ \"$tests\" -eq 0 ] && exit 0\necho \"git commit blocked: make lint exited $lint, make test exited $tests. Full output in $logs\" >&2\n[ \"$lint\" -eq 0 ] || tail -n 20 \"$logs/lint.log\" >&2\n[ \"$tests\" -eq 0 ] || tail -n 20 \"$logs/test.log\" >&2\nexit 2"
           }
         ]
       }
