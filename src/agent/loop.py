@@ -28,6 +28,7 @@ the result.
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 from collections.abc import Callable
@@ -35,6 +36,7 @@ from dataclasses import asdict, dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from agent import docs_index
 from agent import llm as llm_module
 from agent.budget import BudgetExceeded, DollarBudget
 from agent.llm import LLM, Usage
@@ -118,6 +120,54 @@ TOOL_DEFINITIONS = [
     },
 ]
 
+SEARCH_DOCS_DEFINITION = {
+    "name": "search_docs",
+    "description": (
+        "Search the project's documentation (README, decisions, docs) for what the data "
+        "means and why things are the way they are. Returns the best matching chunks, each "
+        "with an id. Use it for questions the tables cannot answer by themselves."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Words to search for."},
+            "k": {
+                "type": "integer",
+                "description": f"How many chunks, 1 to {docs_index.MAX_K}. Default "
+                f"{docs_index.DEFAULT_K}.",
+            },
+        },
+        "required": ["query"],
+    },
+}
+TEXT_ANSWER = "text"
+CITATIONS = "citations"
+
+
+def tool_definitions(docs: bool = False) -> list:
+    """The tools the model is offered. Without ``docs`` it is ``TOOL_DEFINITIONS`` itself.
+
+    With ``docs`` there is a fourth tool, ``search_docs``, and ``submit_answer`` also takes
+    the type ``text`` (the value is the answer in words) and ``citations``, the ids of the
+    chunks the answer rests on, which must be ids that ``search_docs`` returned.
+    """
+    if not docs:
+        return TOOL_DEFINITIONS
+    definitions = copy.deepcopy(TOOL_DEFINITIONS)
+    submit = next(d for d in definitions if d["name"] == "submit_answer")
+    properties = submit["input_schema"]["properties"]
+    properties["type"]["enum"].append(TEXT_ANSWER)
+    properties[CITATIONS] = {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": (
+            "For type text: the ids of the chunks from search_docs that the answer rests on. "
+            "An answer in words from the documentation with no citation is ungrounded."
+        ),
+    }
+    return [*definitions[:2], SEARCH_DOCS_DEFINITION, submit]
+
+
 NUDGE = (
     "You did not call a tool. Continue with describe_schema or run_sql, or finish with "
     "submit_answer: an answer whose value is a cell of your last result, or a refusal."
@@ -166,9 +216,11 @@ class Result:
     served_models: list[str] = field(default_factory=list)
     billed_usd: Decimal | None = None
     reports: dict[str, list[str]] = field(default_factory=dict)
+    # With the docs tool: every chunk search_docs returned in this question, id and text.
+    documents: list[dict] = field(default_factory=list)
 
     def to_json(self) -> dict:
-        return {
+        out = {
             "question": self.question,
             "model": self.model,
             "status": self.status,
@@ -187,6 +239,9 @@ class Result:
             "billed_usd": None if self.billed_usd is None else str(self.billed_usd),
             "reports": {name: list(values) for name, values in self.reports.items()},
         }
+        if self.documents:  # only a run with the docs tool has them: the baseline is as it was
+            out["documents"] = list(self.documents)
+        return out
 
 
 def system_prompt(
@@ -280,6 +335,8 @@ class TurnRows:
 def _summary(name: str, output: dict) -> dict:
     if not output.get("ok"):
         return {"ok": False, **output.get("error", {})}
+    if name == "search_docs":
+        return {"ok": True, "ids": [chunk["id"] for chunk in output["chunks"]]}
     if name == "describe_schema":
         return {"ok": True, "tables": {t: len(c) for t, c in output["tables"].items()}}
     return {
@@ -290,14 +347,24 @@ def _summary(name: str, output: dict) -> dict:
     }
 
 
-def _check_answer(given: object) -> tuple[dict | None, str]:
-    """The six fields, or what is wrong with them, in a sentence for the model."""
+def _check_answer(given: object, docs: bool = False) -> tuple[dict | None, str]:
+    """The six fields, or what is wrong with them, in a sentence for the model.
+
+    With ``docs`` the type ``text`` is allowed, and the answer also keeps ``citations``.
+    """
     if not isinstance(given, dict):
         return None, "submit_answer takes an object."
     answer = {name: given.get(name) for name in ANSWER_FIELDS}
     kind = answer["type"]
-    if kind not in ANSWER_TYPES:
-        return None, f"type must be one of: {', '.join(ANSWER_TYPES)}."
+    allowed = (*ANSWER_TYPES, TEXT_ANSWER) if docs else ANSWER_TYPES
+    if kind not in allowed:
+        return None, f"type must be one of: {', '.join(allowed)}."
+    if docs:
+        answer[CITATIONS] = given.get(CITATIONS)
+    if kind == TEXT_ANSWER:
+        if not isinstance(answer["value"], str) or not answer["value"].strip():
+            return None, "For type text the value must be the answer, in words."
+        return answer, ""
     if kind == "refusal":
         reason = answer["refusal_reason"]
         if not isinstance(reason, str) or not reason.strip():
@@ -327,6 +394,7 @@ def run(
     prompt_addendum: str = "",
     sleep: Callable[[float], None] = time.sleep,
     prompt_cache: bool = False,
+    docs: docs_index.Index | None = None,
 ) -> Result:
     """Run one question. With ``transcript``, every turn is appended to that list as plain
     data: the question, what the model said and called, and what each tool returned in
@@ -335,7 +403,9 @@ def run(
     is for whoever keeps a record outside the result; the loop does not read it.
     ``prompt_addendum`` is text appended to the system prompt; where it comes from is the
     caller's business. With ``prompt_cache``, the tool definitions and the system prompt
-    are sent as a cached prefix: the model is sent the same text, billed differently."""
+    are sent as a cached prefix: the model is sent the same text, billed differently.
+    With ``docs`` (an index of the documentation) the model is also offered ``search_docs``
+    and may answer in words with citations; without it nothing about the tools changes."""
     started = clock()
     result = Result(question=question, model=llm.model)
     system = system_prompt(
@@ -357,6 +427,8 @@ def run(
 
     keep("user", question)
     checked = TurnRows()
+    definitions = tool_definitions(docs is not None)
+    returned: set[str] = set()  # ids that search_docs gave in this question
 
     def finish(status: str, reason: str = "") -> Result:
         result.status, result.reason = status, reason
@@ -365,7 +437,7 @@ def run(
 
     sent = llm_module.cached_prefix(system) if prompt_cache else system
     for iteration in range(1, max_iterations + 1):
-        ceiling = llm_module.input_token_ceiling(sent, messages, TOOL_DEFINITIONS)
+        ceiling = llm_module.input_token_ceiling(sent, messages, definitions)
         may_write = prompt_cache or bool(getattr(llm, "may_write_cache", False))
         worst = llm_module.worst_case_usd(llm.model, ceiling, max_tokens, may_write)
         try:
@@ -378,7 +450,7 @@ def run(
                 response = llm.complete(
                     system=sent,
                     messages=messages,
-                    tools=TOOL_DEFINITIONS,
+                    tools=definitions,
                     max_tokens=max_tokens,
                 )
                 break
@@ -452,7 +524,7 @@ def run(
         for call in calls:
             name, given = call["name"], call.get("input") or {}
             if name == "submit_answer":
-                answer, problem = _check_answer(given)
+                answer, problem = _check_answer(given, docs is not None)
                 if answer is None:
                     result.tool_calls.append(
                         ToolCall(iteration, name, given, {"ok": False, "message": problem})
@@ -463,16 +535,35 @@ def run(
                 if answer["type"] == "refusal":
                     result.tool_calls.append(ToolCall(iteration, name, given, {"ok": True}))
                     return finish("refused")
-                grounded = is_grounded(answer["type"], answer["value"], checked.rows)
+                if answer["type"] == TEXT_ANSWER:
+                    cited = answer[CITATIONS]
+                    grounded = (
+                        isinstance(cited, list)
+                        and bool(cited)
+                        and all(isinstance(c, str) and c in returned for c in cited)
+                    )
+                    reason = "the answer cites no chunk that search_docs returned"
+                else:
+                    grounded = is_grounded(answer["type"], answer["value"], checked.rows)
+                    reason = "the value is not a cell of the last result"
                 result.tool_calls.append(
                     ToolCall(iteration, name, given, {"ok": True, "grounded": grounded})
                 )
                 if grounded:
                     return finish("answered")
-                return finish("ungrounded", "the value is not a cell of the last result")
+                return finish("ungrounded", reason)
             if name == "describe_schema":
                 wanted = given.get("tables") if isinstance(given, dict) else None
                 output = tools.describe_schema(wanted if isinstance(wanted, list) else None)
+            elif name == "search_docs" and docs is not None:
+                asked = given if isinstance(given, dict) else {}
+                output = docs_index.search_docs(
+                    docs, asked.get("query"), asked.get("k", docs_index.DEFAULT_K)
+                )
+                for chunk in output.get("chunks", []):
+                    if chunk["id"] not in returned:
+                        returned.add(chunk["id"])
+                        result.documents.append(chunk)
             elif name == "run_sql":
                 sql = given.get("sql") if isinstance(given, dict) else None
                 output = tools.run_sql(sql)

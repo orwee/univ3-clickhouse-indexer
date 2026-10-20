@@ -153,3 +153,23 @@ class Index:
         """The ids of the first ``k`` different sections for the query, best first."""
         ranked = [chunk.section for _, chunk in self.search(query, len(self.chunks))]
         return list(dict.fromkeys(ranked))[:k]
+
+
+DEFAULT_K = 5
+MAX_K = 8
+
+
+def search_docs(index: Index, query: object, k: object = DEFAULT_K) -> dict:
+    """What the ``search_docs`` tool returns: the best chunks with their ids and their text.
+
+    Never raises: a bad argument comes back as a result with ``ok`` false, as the other tools
+    do. ``k`` is clamped to 1 to ``MAX_K``.
+    """
+    if not isinstance(query, str) or not query.strip():
+        return {"ok": False, "error": {"kind": "rejected", "message": "query must be text."}}
+    count = k if isinstance(k, int) and not isinstance(k, bool) else DEFAULT_K
+    found = index.search(query, min(max(count, 1), MAX_K))
+    return {
+        "ok": True,
+        "chunks": [{"id": chunk.id, "text": chunk.text} for _, chunk in found],
+    }

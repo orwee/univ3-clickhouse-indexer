@@ -1,0 +1,11 @@
+# The baseline agent with one more tool, search_docs, and the prompt text that says how to
+# use it (docs_addendum.md). Written for the suite `docs` (evals/rag_cases.jsonl, run with
+# `python -m evalkit.rag_run`); the model, the other tools and the six calls are the
+# baseline's.
+#
+# The ceiling is lower than the default 0.25 because the run asks that a whole question's
+# ceiling fits in what is left before it asks, and a question that only searches the
+# documentation costs a fraction of a cent.
+docs_tool: true
+prompt_addendum: docs_addendum.md
+max_usd_per_question: 0.05
