@@ -104,3 +104,13 @@ def test_every_key_fact_can_be_found_in_the_relevant_chunks(cases):
         for fact in case["key_facts"]:
             assert all(t == t.lower() for t in fact["any_of"]), case["id"]
             assert any(t in source for t in fact["any_of"]), (case["id"], fact["fact"])
+
+
+def test_the_index_can_be_built_without_the_dbt_chunks_and_then_has_only_documents():
+    plain = docs_index.load_chunks(ROOT, dbt=False)
+    full = docs_index.load_chunks(ROOT)
+    assert not any(c.id.startswith("dbt/") for c in plain)
+    assert [c for c in full if not c.id.startswith("dbt/")] == plain
+    # The old cases point at documents only, so they can be scored either way.
+    old = retrieval.load_cases(ROOT / "evals" / "rag_cases.jsonl")
+    assert retrieval.unknown_sections(plain, old) == []

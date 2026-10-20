@@ -1147,7 +1147,8 @@ Written by the agent at the owner's request on 2026-10-20. The owner asked for t
 be written for him; the decision is his.
 
 - Date: 2026-10-20
-- Status: Accepted
+- Status: Accepted, **not in force**: the fifth entry's runs were incomplete, so by its rule
+  the default did not change (see "Outcome" at the end of this entry)
 
 **Context.** On golden set v2 the variant `zero-day` fixed all 8 `test` cases with an answer
 that the baseline got wrong, with every guard holding (fourth entry of
@@ -1208,6 +1209,18 @@ costs one aggregate per call to `describe_schema`.
 
 **Revisit when.** The data stops being one range without gaps; a mart with times makes
 partial days computable; or a second daily table needs the same rule.
+
+**Outcome.** The three runs of the fifth entry
+(39415287455, 39415291174, 39415294685, at `3a9c978`) asked all 240 questions, and 142, 139
+and 135 of them ended in an error: the model API refused further calls ("You have reached
+your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC"). The
+rule is not applied to an incomplete set, and then the default does not change. #87 had been
+merged at 11:53Z, two minutes after the runs ended and before their results were read, so
+the new default reached `main`; a follow-up pull request from `main` takes the section out
+of the prompt, the sentence out of the tool's description and the `coverage` block out of
+`evals/warehouse.yml` (`5296cfe`), and the default prompt is again `9df22d15…`. The code
+that computes the coverage stays, unused. The regression check of #87 passed (30 of 30). Reverting `5296cfe` restores the default the fifth entry
+froze; its runs can be repeated only with the owner's word and after the API limit allows it.
 
 ## Agent corrections
 

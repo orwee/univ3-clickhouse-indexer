@@ -1,7 +1,7 @@
 """How well the documentation search finds the section that answers a question.
 
     PYTHONPATH=src uv run python -m evalkit.retrieval evals/rag_cases.jsonl \\
-        [--split dev|test|all] [--max-chars N] [--heading-weight N]
+        [--split dev|test|all] [--max-chars N] [--heading-weight N] [--without-dbt]
     PYTHONPATH=src uv run python -m evalkit.retrieval evals/rag_cases.jsonl --tune
 
 A case is a question, the sections of the documentation that answer it (``relevant``, ids
@@ -17,6 +17,9 @@ recall@k
 MRR
     The mean over the cases of 1 / (the rank of the first relevant section), 0 when none is
     in the ranking.
+
+``--without-dbt`` leaves the dbt column descriptions out of the index, to compare with the
+index as it was before they were added.
 
 ``--tune`` tries the settings of the ranker on ``dev`` and on nothing else, and prints them
 ordered by MRR. There is no way to ask it for ``test``: that split is read once, at the end,
@@ -157,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--split", choices=("dev", "test", "all"), default="dev")
     parser.add_argument("--max-chars", type=int, default=docs_index.DEFAULT_MAX_CHARS)
     parser.add_argument("--heading-weight", type=int, default=docs_index.DEFAULT_HEADING_WEIGHT)
+    parser.add_argument("--without-dbt", action="store_true", help="index the documents only")
     parser.add_argument("--tune", action="store_true", help="try the settings on dev")
     args = parser.parse_args(argv)
     try:
@@ -175,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"recall@5 {row['recall@5']}  MRR {row['mrr']:.3f}  (of {row['cases']})"
             )
         return 0
-    chunks = docs_index.load_chunks(root, args.max_chars)
+    chunks = docs_index.load_chunks(root, args.max_chars, dbt=not args.without_dbt)
     missing = unknown_sections(chunks, cases)
     if missing:
         print(f"relevant sections that do not exist: {missing}", file=sys.stderr)

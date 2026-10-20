@@ -144,12 +144,13 @@ def dbt_chunks(path: str, text: str) -> list[Chunk]:
     return chunks
 
 
-def load_chunks(root: Path, max_chars: int = DEFAULT_MAX_CHARS) -> list[Chunk]:
+def load_chunks(root: Path, max_chars: int = DEFAULT_MAX_CHARS, dbt: bool = True) -> list[Chunk]:
+    """The chunks of the documents and, unless ``dbt`` is false, of the dbt schema files."""
     chunks = []
     for path in document_files(root):
         relative = path.relative_to(root).as_posix()
         chunks.extend(chunk_text(relative, path.read_text(encoding="utf-8"), max_chars))
-    for path in dbt_schema_files(root):
+    for path in dbt_schema_files(root) if dbt else []:
         relative = path.relative_to(root).as_posix()
         chunks.extend(dbt_chunks(relative, path.read_text(encoding="utf-8")))
     return chunks

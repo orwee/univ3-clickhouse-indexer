@@ -949,6 +949,52 @@ nothing measured got worse by more than identical runs differ. It does not say t
 better in general. The set was built around known weak spots, and the paragraph names the
 dates of this fixture, so it is a fix for this data, not a lesson the agent learnt.
 
+### The zero-day rule as the default: not adopted, because its runs were incomplete
+
+The `zero-day` paragraph writes the dates of this fixture, and the daily DAG adds a day every
+day. So the rule was rewritten to read the dates from the data: `describe_schema` can return
+a `coverage` (the first and last `block_date` of `fct_pool_daily`, computed at each call) and
+the default prompt referred to it, with no table name and no date
+([decision 28](../DECISIONS.md#28-a-pool-day-with-no-row-is-zero-by-default-and-the-dates-come-from-the-data)).
+That text is not the one the fourth entry froze, so the
+[fifth entry](EVAL_PREREGISTRATION.md#fifth-entry-the-zero-day-rule-as-the-default-checked-for-not-being-worse)
+was pushed in `3a9c978`, before any run: by majority of three runs on `test`, at least 109 of
+110 with an answer right, at least 55 of 60 with no answer refused, at most 2 with an answer
+refused, margins taken from the spread of the `zero-day` and v2 baseline runs.
+
+Three runs of `baseline` with that default, golden v2, split `all`, repetitions 1, `max_usd`
+1.00, on `3a9c978`:
+[39415287455](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39415287455),
+[39415291174](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39415291174) and
+[39415294685](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39415294685).
+Files: `evals/results/2026-10-20_baseline-coverage_<RUN_ID>.json`.
+
+| Run | Questions asked | Ended in an error | Spent, USD |
+|---|---|---|---|
+| 39415287455 | 240 | 142 | 0.2121334 |
+| 39415291174 | 240 | 139 | 0.2119917 |
+| 39415294685 | 240 | 135 | 0.2165488 |
+
+Every error is the same: HTTP 400 from the model API, "You have reached your specified API
+usage limits. You will regain access on 2026-11-01 at 00:00 UTC". The limit is the account's,
+not the run's: each run spent less than a quarter of its `max_usd`.
+
+**The rule, applied.** The fifth entry does not apply its rule to an incomplete set, and
+then the default does not change. No score is drawn from these runs, and none is given here.
+Pull request #87 had been merged two minutes after the runs ended, before their results
+were read, so the new default reached `main`. A follow-up pull request from `main` took the
+rule back out of the prompt, the sentence out of the tool's description and the coverage out
+of `evals/warehouse.yml` (`5296cfe`): the default prompt is
+again `9df22d15…`, the one of the v2 baseline. The runs were not repeated: that needs the
+owner's word, and the API refuses calls until 2026-11-01.
+
+The regression check of #87, at `3a9c978` with the new default, ran before
+the limit was reached and passed: 30 of 30 asked and right, no error, 0.00176 USD a question
+against a limit of 0.00268 (`eval-pr` run
+[39415282729](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39415282729)).
+It catches an agent that broke, not one that got slightly worse, so it does not stand in for
+the fifth entry.
+
 ## The regression check on pull requests
 
 A pull request that changes the agent, the evaluation code, the evaluation's files or the
@@ -1161,6 +1207,29 @@ their section in the first five", not as a ranking of rankers.
 0.05% pool?" and why 2026-08-09 is partial, are answered in different places. The first
 only in the dbt column descriptions, which are not indexed, so there is no case for it. The
 second is in this file and in decision 15.
+
+**The dbt column descriptions, indexed since `feat/zero-day-default`.** The index also reads
+every `schema.yml` under `dbt/` (not dbt's `target/` or `dbt_packages/`): one chunk per model
+and per seed, with its description and each column with its own, id
+`dbt/models/<layer>/schema.yml#<name>`, never cut. That adds 7 chunks. Twelve new cases whose
+answer is only there, the fee question among them, are a second file,
+[`evals/rag_cases_dbt.jsonl`](../evals/rag_cases_dbt.jsonl), so that the seeded split of the
+first does not move; **a model wrote their labels too**. Both sets were scored with and
+without the new chunks on the same documents (`--without-dbt`;
+`evals/results/2026-10-20_retrieval_dbt.md`):
+
+| Set | Split | Documents only: recall@1 / @3 / @5, MRR | With dbt: recall@1 / @3 / @5, MRR |
+|---|---|---|---|
+| Old, 44 cases | `dev` (15) | 12 / 12 / 15, 0.840 | 12 / 12 / 13, 0.836 |
+| Old, 44 cases | `test` (29) | 20 / 25 / 27, 0.788 | 18 / 24 / 27, 0.749 |
+| New, 12 cases | `dev` (4) | cannot be scored | 4 / 4 / 4, 1.000 |
+| New, 12 cases | `test` (8) | cannot be scored | 8 / 8 / 8, 1.000 |
+
+The dbt chunks cost the old questions: six moved down and none up, because a short chunk
+whose model and column names share the question's words now ranks above the section that
+answers it. `dev` recall@5 is at the floor the tests hold. The new set's 12 of 12 says only
+that the chunks can be found: most of its questions name a column, whose words are in one
+chunk only. The ranker's settings were not tuned again.
 
 ### The agent with the docs tool: one run
 

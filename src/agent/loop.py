@@ -64,8 +64,8 @@ TOOL_DEFINITIONS = [
     {
         "name": "describe_schema",
         "description": (
-            "Column names and types of the tables you can read, and the dates the data "
-            "covers. Call it before writing SQL. With no argument it describes every table."
+            "Column names and types of the tables you can read. Call it before writing SQL. "
+            "With no argument it describes every table."
         ),
         "input_schema": {
             "type": "object",

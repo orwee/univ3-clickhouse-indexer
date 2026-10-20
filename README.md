@@ -212,6 +212,14 @@ beforehand, was right on 110 of 110: 8 fixed, none broken, and refusals of the 6
 questions with no answer stayed at 56 of 60
 ([`evals/results/2026-10-20_zero-day_golden_v2_spread.md`](evals/results/2026-10-20_zero-day_golden_v2_spread.md),
 [`evals/results/2026-10-20_baseline_vs_zero-day.md`](evals/results/2026-10-20_baseline_vs_zero-day.md)).
+That paragraph writes the dates of this fixture, so it was rewritten to read them from the
+data and made the default, under a fifth entry written before its three runs (at least 109
+of the 110 right, 55 of the 60 refused, at most 2 refused with an answer). **It is not the default.** The
+runs (39415287455, 39415291174 and 39415294685) hit the model account's usage limit after spending
+0.64 USD together, with 135 to 142 of 240 questions ending in an error each; by the rule, an
+incomplete set decides nothing and the default stays as it was
+([docs/EVALS.md](docs/EVALS.md#the-zero-day-rule-as-the-default-not-adopted-because-its-runs-were-incomplete)).
+The regression check on v1 passed, 30 of 30.
 
 **Cost.** What a question costs and how long it takes, from
 [`evals/results/2026-10-13_cost.md`](evals/results/2026-10-13_cost.md), which names the
@@ -285,7 +293,7 @@ ClickHouse.
   one run of `claude-sonnet-5-5` on the `dev` questions, which is one run and not a comparison.
   A second provider was tried for that same model and its one run did not complete.
 
-**Questions about the documentation.** A variant can give the agent `search_docs`, a BM25 search over this README, DECISIONS and `docs/`; on 44 model-labelled questions the right section is in the first five results for 93.1% of the `test` cases (27 of 29), and in one run of the agent with it 19 of 29 `test` answers had every key fact and 24 of 27 were judged supported by what they cite ([docs/EVALS.md](docs/EVALS.md#retrieval-over-the-documentation), [decision 27](DECISIONS.md#27-questions-about-what-the-data-means-are-answered-from-the-documentation-by-search-and-with-citations)). The labels were written by a model and the judge is not calibrated against a person.
+**Questions about the documentation.** A variant can give the agent `search_docs`, a BM25 search over this README, DECISIONS and `docs/`; on 44 model-labelled questions the right section is in the first five results for 93.1% of the `test` cases (27 of 29), and in one run of the agent with it 19 of 29 `test` answers had every key fact and 24 of 27 were judged supported by what they cite ([docs/EVALS.md](docs/EVALS.md#retrieval-over-the-documentation), [decision 27](DECISIONS.md#27-questions-about-what-the-data-means-are-answered-from-the-documentation-by-search-and-with-citations)). The labels were written by a model and the judge is not calibrated against a person. The dbt column descriptions are now indexed too: they answer 12 new model-labelled questions in the first result, and they cost the old ones, whose `test` recall@1 went from 20 to 18 of 29 on the same documents ([`evals/results/2026-10-20_retrieval_dbt.md`](evals/results/2026-10-20_retrieval_dbt.md)).
 
 ## How to run it
 
