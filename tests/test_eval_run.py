@@ -958,20 +958,17 @@ def test_the_variant_zero_day_is_one_paragraph_and_the_text_that_was_frozen():
         assert sha in entry
 
 
-def test_the_default_prompt_is_the_one_the_fifth_entry_froze():
-    """The SHA-256 of the prompt and of the files it is made from, as written in the fifth
-    entry of docs/EVAL_PREREGISTRATION.md before any run of it. A change to any of them is a
-    new default that the entry does not cover."""
-    entry = (config.REPO_ROOT / "docs" / "EVAL_PREREGISTRATION.md").read_text()
-    fifth = entry.split("# Fifth entry", 1)[1]
+def test_the_default_prompt_is_still_the_one_of_the_v2_baseline():
+    """The fifth entry of docs/EVAL_PREREGISTRATION.md froze a new default and its runs were
+    incomplete, so by its rule the default did not change: the prompt sent is the one the
+    three complete v2 baseline runs recorded."""
+    recorded = {
+        json.loads(path.read_text())["system_prompt_sha256"]
+        for path in (config.REPO_ROOT / "evals" / "results").glob("2026-10-20_baseline_*.json")
+    }
+    assert len(recorded) == 1
     prompt = loop.system_prompt(6, 200)
-    assert hashlib.sha256(prompt.encode()).hexdigest() in fifth
-    for name in (
-        "src/agent/prompts/system.md",
-        "evals/warehouse.yml",
-        "evals/variants/baseline.yml",
-        "src/agent/tools.py",
-        "src/agent/loop.py",
-    ):
-        digest = hashlib.sha256((config.REPO_ROOT / name).read_bytes()).hexdigest()
-        assert f"| `{name}`" in fifth and digest in fifth, name
+    assert {hashlib.sha256(prompt.encode()).hexdigest()} == recorded
+    assert loop.TOOL_DEFINITIONS[0]["description"].startswith(
+        "Column names and types of the tables you can read. Call it"
+    )

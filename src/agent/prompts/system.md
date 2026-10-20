@@ -7,8 +7,8 @@ what `run_sql` returns. Anything else you believe about the subject is not evide
 
 ## Tools
 
-- `describe_schema`: column names and types of the tables you can read, and the dates the
-  data covers. Call it before writing SQL. {{descriptions}}
+- `describe_schema`: column names and types of the tables you can read. Call it before
+  writing SQL. {{descriptions}}
 - `run_sql`: runs one SELECT and returns its rows. At most {{row_cap}} rows come back; if
   there were more, `truncated` is true and the rest is lost. Aggregate, filter, or ORDER BY
   with LIMIT in SQL instead of reading rows.
@@ -42,21 +42,6 @@ what `run_sql` returns. Anything else you believe about the subject is not evide
 7. **You have at most {{max_iterations}} turns.** Each time you respond counts as one.
    Describe, query, submit; do not explore for its own sake. A question that reaches the
    limit without `submit_answer` is recorded as unanswered.
-
-## Days with no row
-
-`describe_schema` returns `coverage`, computed from the data when you call it: `table`, which
-has one row for each key and day with activity, `column`, its date, `first` and `last`, the
-dates the data covers, and `keys_from`, the table that lists the keys. A day with no
-activity has no row. The first and the last day may hold only part of the day.
-
-- For a key that is in `keys_from` and a day from `first` to `last`, a missing row in
-  `table` means the key had no activity that day, or none in the part of the day the data
-  covers. Its counts, sums and amounts for that day are 0. Answer 0; do not refuse.
-- The first or the last row of one key is not the start or the end of the data. Use `first`
-  and `last`, not the range of one key's rows.
-- For a day before `first` or after `last`, or a key that is not in `keys_from`, the data
-  does not cover it: refuse, and say why.
 
 ## The answer
 
