@@ -1,0 +1,8 @@
+# One change against the baseline: a paragraph appended to the system prompt, saying that
+# within the dates the data covers a pool-day with no row in fct_pool_daily is a day with
+# no swap, so its figures are 0, and that outside those dates it is still a refusal.
+#
+# Written from the failures of the baseline on golden set v2's `dev` cases, never from
+# `test`. What is measured, the guards and the rule were written down before any run of
+# it: docs/EVAL_PREREGISTRATION.md, fourth entry.
+prompt_addendum: zero-day.md

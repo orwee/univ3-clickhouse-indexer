@@ -383,3 +383,121 @@ this entry changes after the first request.
 - Anything about Haiku 5.5, the model the agent runs on by default. It is not on the
   gateway, so the cost of the agent as it is configured does not change with this.
 - What happens to a prompt after it reaches the gateway. Decision 23 says what is sent.
+
+---
+
+# Fourth entry: on golden set v2, a pool-day with no row is zero
+
+Added on 2026-10-20, before any run of the variant `zero-day`. Nothing above this line was
+changed.
+
+## The baseline, complete
+
+Three runs of `baseline` on golden set v2 (`evals/golden_v2.jsonl`, SHA-256
+`9f920d576c88de70e8d920ab59be2e11d26f5b9e9d1573873d7f16fe83f27cf7`), split `all`,
+repetitions 1, `max_usd` 1.00 each, on `feat/golden-v2` at `e08905b`: eval runs
+39403472270, 39403483384 and 39403493610. Each asked 240 of 240 questions, none ended in an
+error. Files: `evals/results/2026-10-20_baseline_<RUN_ID>.json`; the spread and the guards
+are `evals/results/2026-10-20_baseline_golden_v2_spread.md`, written by `evalkit.spread`.
+
+The three partial runs of 2026-10-19 (39343348798, 39343368406, 39343371673) are not used
+for anything here.
+
+## What `dev` showed, and nothing else
+
+The change was designed on the 70 `dev` cases only. No `test` case, question, answer or
+transcript was read to design it.
+
+- 7 `dev` cases are wrong by majority of the three runs: the 3 `absent-poolday` cases, each
+  refused in all three runs; 3 cases with no answer that were given a number (a forecast,
+  another chain, another source); and 1 `multi-step` case that ran out of model calls.
+- Of the 12 wrong answers to `dev` cases that have an answer, over the three runs, 9 are
+  those `absent-poolday` refusals.
+- The refusals give one reason: the agent reads the range of one pool's own rows as the
+  range of the data ("its coverage runs from 2026-08-10 to 2026-09-24 only, so the data does
+  not cover the requested day").
+
+## The change
+
+One variant, `zero-day`: a paragraph appended to the system prompt. It says that within
+the dates the data covers (2026-08-09 to 2026-09-25) and for a pool in `dim_pools`, a
+missing day in `fct_pool_daily` means no swap that day, so counts, volumes and fees are 0;
+that one pool's first or last row is not the edge of the data; and that outside those
+dates, or for a pool not in `dim_pools`, it is still a refusal. Nothing else differs: the
+model, the tools, the six calls, the ceilings.
+
+| File | SHA-256 |
+|---|---|
+| `evals/variants/zero-day.yml` | `4fa515d7bcea8d3857420f51f926cd476fba72d6cb12677fd1224a889804980a` |
+| `evals/variants/zero-day.md` | `09f31ee929e61db02d4103d872c82f6d9b126f63fc1a61c8a6c7f3e5f205e2f8` |
+
+The system prompt it gives has the SHA-256
+`040507b25fa16ed7a755207090330eb3b8a16053f5d92bc54d1758fa675e3873`; each results file
+records it.
+
+## The metric
+
+**Correct on the 110 `test` cases that have an answer, per case by majority of the three
+runs.** A case counts as right when at least two of its three runs got it right.
+
+| | Baseline |
+|---|---|
+| Right by majority, of 110 | 102 = 92.7%, 95% Wilson interval [86.3%, 96.3%] |
+| Right in each run | 103, 102, 102 |
+| Spread between runs (highest minus lowest) | 1 |
+
+The comparison is paired: for each of the 110 cases, **fixed** (wrong by majority in the
+baseline, right by majority with `zero-day`), **broke** (the reverse), or unchanged. The
+baseline is wrong by majority on 8 of them, so at most 8 can be fixed.
+
+## The guards, from the spread
+
+On `test`, by majority of three runs, read from `evals/results/2026-10-20_baseline_golden_v2_spread.md`:
+
+| Guard | Baseline | Spread between runs | Allowed with `zero-day` |
+|---|---|---|---|
+| Refusal recall on the 60 cases with no answer | 56 of 60 | 1 (55, 54, 54) | at least 55 of 60, a drop of max(1, 1) = 1 |
+| Cases with an answer broken (right by majority before, wrong after) | 0 | 1 (103, 102, 102 right) | at most max(1, 1) = 1 |
+| Cases with an answer refused by majority | 7 | 2 (5, 6, 7) | at most 7 + max(1, 2) = 9 |
+
+The first is what the change could cost: an agent told that a missing day is 0 may start
+answering 0 where a refusal is due. The second and third say that nothing else may break by
+more than identical runs differ.
+
+## The rule, decided now
+
+The threshold for "measurable" is the baseline's own spread on the metric. Its runs differ
+by 1 case right, so a difference of 1 is what identical runs already show.
+
+| Fixed minus broke, on the 110 | Guards | What is said |
+|---|---|---|
+| 2 or more | all hold | **Improved, by that many cases.** Both Wilson intervals are given |
+| 2 or more | any fails | Improved on the metric, at a cost the guards do not allow: not adopted, and said so |
+| -1, 0 or 1 | | **No measurable difference** |
+| -2 or less | | **Worse** |
+
+Also stated, whatever the outcome: how many of the 8 cases wrong in the baseline were
+fixed, and how many broke.
+
+## Also reported, and deciding nothing
+
+Per run, on `test` and on `dev`: correct, execution accuracy, refusal recall and
+precision, hallucination rate, cost and seconds per question. On `dev`, the three
+`absent-poolday` cases, labelled as the cases the change was designed on.
+
+## The runs
+
+Three runs of `zero-day` with the inputs of the baseline (golden `evals/golden_v2.jsonl`,
+split `all`, repetitions 1, `max_usd` 1.00), dispatched together, approved by the owner.
+Every run dispatched is listed; none is left out for its result. A run that does not ask
+all 240 questions, or that has an error, is reported and not repeated without the owner's
+word, and the rule is not applied to an incomplete set. Nothing in this entry changes
+after the first run.
+
+## What this cannot show
+
+- `test` has 110 cases with an answer and the baseline is wrong on 8. A change that fixes
+  every one of them moves the metric by 7.3 points; one that fixes two is the smallest
+  difference this rule will call measurable.
+- The change was aimed at one known weakness of this model on this fixture. A gain says
+  the paragraph fixes that weakness, not that the agent is better in general.

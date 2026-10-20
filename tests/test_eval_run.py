@@ -927,3 +927,27 @@ def test_without_its_key_a_gateway_run_stops_and_never_turns_to_the_other_provid
         "is cheaperinference's and the provider asked for is anthropic" in capsys.readouterr().err
     )
     assert asked_for == ["CHEAPERINFERENCE_API_KEY"]
+
+
+def test_the_variant_zero_day_is_one_paragraph_and_the_text_that_was_frozen():
+    """The two hashes are the ones written in the fourth entry of
+    docs/EVAL_PREREGISTRATION.md before any run of the variant."""
+    variant = variants.load("zero-day", run.DEFAULT_VARIANTS, config.REPO_ROOT)
+    assert variant.files == {
+        "evals/variants/zero-day.yml": (
+            "4fa515d7bcea8d3857420f51f926cd476fba72d6cb12677fd1224a889804980a"
+        ),
+        "evals/variants/zero-day.md": (
+            "09f31ee929e61db02d4103d872c82f6d9b126f63fc1a61c8a6c7f3e5f205e2f8"
+        ),
+    }
+    assert (variant.model, variant.descriptions, variant.max_usd_per_question) == (None, None, None)
+    assert not variant.prompt_cache and variant.provider == "anthropic" and not variant.docs_tool
+    prompt = loop.system_prompt(6, 200, variant.prompt_addendum)
+    assert hashlib.sha256(prompt.encode()).hexdigest() == (
+        "040507b25fa16ed7a755207090330eb3b8a16053f5d92bc54d1758fa675e3873"
+    )
+    entry = (config.REPO_ROOT / "docs" / "EVAL_PREREGISTRATION.md").read_text()
+    assert "# Fourth entry" in entry
+    for sha in variant.files.values():
+        assert sha in entry
