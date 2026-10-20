@@ -169,11 +169,15 @@ def tolerance_of(spec: Spec) -> dict | None:
     return {key: plain_number(Decimal(str(chosen[key]))) for key in ("abs", "rel")}
 
 
-def assign_splits(specs: list[Spec], seed: int = DEFAULT_SEED) -> dict[str, str]:
-    """dev or test for every case: stratified by family, one third dev, a fixed seed.
+def assign_splits(
+    specs: list[Spec], seed: int = DEFAULT_SEED, dev_fraction: float | None = None
+) -> dict[str, str]:
+    """dev or test for every case: stratified by family, a fixed seed.
 
-    Within a family, ``round(n / 3)`` cases go to dev. The draw depends on the seed and on
-    the ids of that family only, so adding a family does not move the others.
+    By default one third goes to dev: within a family, ``round(n / 3)`` cases. With
+    ``dev_fraction`` (golden set v2 uses 0.3) it is ``round(n * dev_fraction)``. The draw
+    depends on the seed and on the ids of that family only, so adding a family does not move
+    the others.
     """
     by_family: dict[str, list[str]] = {}
     for spec in specs:
@@ -181,17 +185,20 @@ def assign_splits(specs: list[Spec], seed: int = DEFAULT_SEED) -> dict[str, str]
     splits = {}
     for family, ids in by_family.items():
         ids = sorted(ids)
-        dev = set(random.Random(f"{seed}:{family}").sample(ids, round(len(ids) / DEV_SHARE)))  # noqa: S311
+        count = round(len(ids) / DEV_SHARE if dev_fraction is None else len(ids) * dev_fraction)
+        dev = set(random.Random(f"{seed}:{family}").sample(ids, count))  # noqa: S311
         splits.update({case_id: "dev" if case_id in dev else "test" for case_id in ids})
     return splits
 
 
-def build(specs: list[Spec], client, seed: int = DEFAULT_SEED) -> list[dict]:
+def build(
+    specs: list[Spec], client, seed: int = DEFAULT_SEED, dev_fraction: float | None = None
+) -> list[dict]:
     """Compute every answer with ``client``, whose default database holds the fixture."""
     ids = [spec.id for spec in specs]
     if len(set(ids)) != len(ids):
         raise GoldenError("two cases have the same id")
-    splits = assign_splits(specs, seed)
+    splits = assign_splits(specs, seed, dev_fraction)
     cases = []
     for spec in specs:
         try:
@@ -333,7 +340,13 @@ def collect(templates: Path, hand: Path | None, seed: int) -> list[Spec]:
     return specs
 
 
-def generate(admin, templates: Path, hand: Path | None = None, seed: int = DEFAULT_SEED) -> str:
+def generate(
+    admin,
+    templates: Path,
+    hand: Path | None = None,
+    seed: int = DEFAULT_SEED,
+    dev_fraction: float | None = None,
+) -> str:
     """The whole file as text. ``admin`` may create and drop a ``test_*`` database.
 
     The fixture is loaded into a database that exists only for this call; the answers are
@@ -344,7 +357,7 @@ def generate(admin, templates: Path, hand: Path | None = None, seed: int = DEFAU
     admin.command(f"CREATE DATABASE {database}")
     try:
         fixture.load(admin, database)
-        return dumps(build(specs, ch.connect(database=database), seed))
+        return dumps(build(specs, ch.connect(database=database), seed, dev_fraction))
     finally:
         admin.command(f"DROP DATABASE IF EXISTS {database}")
 
@@ -357,8 +370,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hand", type=Path, default=None)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument(
+        "--dev-fraction",
+        type=float,
+        default=None,
+        help="share of each family that goes to dev; default: one third (golden set v1)",
+    )
     args = parser.parse_args(argv)
-    text = generate(ch.connect(database="default"), args.templates, args.hand, args.seed)
+    text = generate(
+        ch.connect(database="default"), args.templates, args.hand, args.seed, args.dev_fraction
+    )
     args.out.write_text(text, encoding="utf-8")
     cases = load(args.out)
     counts: dict[tuple[str, str], int] = {}

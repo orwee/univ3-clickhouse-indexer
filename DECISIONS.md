@@ -1030,6 +1030,50 @@ each task opaque: Airflow sees an exit code, not rows or blocks.
 **Revisit when.** A step needs to pass data to the next one (TaskFlow), a second DAG appears,
 or the checks should be assets with their own freshness (Dagster, roadmap item 7).
 
+## 26. Golden set v2 is a second, harder file, and v1 stays as it is
+
+Written by the agent at the owner's request on 2026-10-19. The owner asked for this entry to
+be written for him, for this run only; the decision is his.
+
+- Date: 2026-10-19
+- Status: Accepted
+
+**Context.** On golden set v1 (180 cases) the baseline is right in about 97% of its answers
+(523 of 540 over three runs, `evals/results/2026-10-12_baseline.md`), so no change to the
+agent can be measured: the refusal paragraph fixed 1 case and broke 1 of the 21 held-out
+questions with no answer. Rewriting v1 would change the baseline, the regression check
+(`evals/ci_cases.json`, `evals/results/ci_baseline.json`) and every earlier result.
+
+**Decision.**
+
+- **A second file, `evals/golden_v2.jsonl`, 240 cases, and v1 untouched.** Same fields, same
+  scoring, same tolerance rules, answers computed by SQL on `evals/fixture/` in a throw-away
+  `test_*` database (`make golden-v2`). `tests/test_golden_v2.py` pins the SHA-256 of v1.
+  100 template cases (ten families), 60 written by hand, 80 with no answer; ids start with
+  `v2-`. Hard in the ways the data allows: partial days, pool-days with no row (the answer
+  is 0), the units of the fee, token0 being USDC in one pool family and wstETH in the other,
+  gross against net volume, joins and two-query questions; and near misses for the questions
+  with no answer (intraday, outside the window, pools and chains the data lacks, smart money,
+  prices the marts do not hold, forecasts).
+- **The split is 30/70, stratified by kind and family** (`evalkit.golden --dev-fraction
+  0.3`; the default stays one third, so v1 regenerates byte for byte): 70 `dev`, 170 `test`,
+  of which 60 `test` cases have no answer, where v1 has 21.
+- **The `eval` workflow takes the golden file as an input** (`golden`, default
+  `evals/golden.jsonl`), checked to be a `.jsonl` under `evals/`. The regression check on
+  pull requests still asks v1.
+
+**Why.** The first runs on v2 (`evals/results/2026-10-19_baseline_*.json`) answer right in
+92.7% of the answerable cases, 148, 149 and 148 of 160, against 445 of 450 = 98.9% on v1's
+answerable cases (`evals/results/2026-10-12_baseline-regrounded.md`), and the misses are concentrated: the agent refuses a pool-day without a row 25 times of
+30 where the answer is 0. A set the agent can fail is the condition for measuring a change.
+
+**Tradeoff.** v2 was designed after seeing v1's results and after reading the failure
+analysis of v1, so it is aimed at known weak spots (refusal, absent rows), not at a random
+sample of questions. Its numbers are for this model and this fixture only. Two of the ten
+families of hand cases have six cases each, so a per-family figure is a count, not a rate.
+
+**Revisit when.** The agent scores above 97% on v2 as well, or the fixture changes.
+
 ## 27. Questions about what the data means are answered from the documentation, by search and with citations
 
 Written by the agent at the owner's request on 2026-10-19. The owner asked for this entry to
@@ -1096,6 +1140,7 @@ a better ranker would matter (then try embeddings, and measure them the same way
 questions people really ask are not in the documents (then write the documents, not the
 search); or the dbt descriptions should be searchable.
 
+
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.
@@ -1152,6 +1197,15 @@ The list is kept because the mistakes are part of the record, not in spite of it
 - 2026-10-10: The docs and the AGENTS.md row of PR #45 said the checks ran "as
   the agent user" with "no Docker", while the session ran as root with Docker
   available. Corrected in the same pull request before it was merged.
+- 2026-10-20: The three baseline runs on golden set v2 were dispatched with `max_usd` 0.66, to
+  keep six runs inside the 4.00 USD of the night. The runner asks, before every question,
+  whether that question's whole ceiling (0.25) still fits in what is left, so a run stops when
+  it has spent more than the budget minus 0.25: all three stopped at about 0.41 USD with 29,
+  30 and 35 cases not asked, all of them questions with no answer at the end of the file.
+  The report says "complete" for such a run; the cases are `not_run` records. The estimate
+  that led to 0.66 (0.44 to 0.58 USD per run) was right, and the reserve of 0.25 was left out
+  of it. The runs are kept and labelled partial; they were not repeated, because the rules
+  of the night allowed no more than six runs.
 
 ## Owner mistakes
 

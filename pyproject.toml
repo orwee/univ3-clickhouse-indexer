@@ -67,6 +67,8 @@ select = ["E", "F", "I", "B", "UP", "S"]
 # The golden set: long lines are questions and queries, kept whole to be readable; the SQL is
 # built from names read out of the fixture files and passed through lit().
 "evals/golden_templates.py" = ["S608", "E501"]
+# Same for golden set v2.
+"evals/golden_v2_templates.py" = ["S608", "E501"]
 # Long lines are rows of tables: one case per line, kept whole to be read across.
 "tests/test_eval_score.py" = ["E501"]
 "tests/test_eval_run.py" = ["E501"]

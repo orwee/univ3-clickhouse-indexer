@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 DEMO = docker compose -f docker-compose.demo.yml
 
-.PHONY: help demo up up-reader down airflow-up airflow-down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis eval-fixture eval-ci eval-ci-cases golden dbt-seed dbt-build dbt-test dbt-prove dashboard
+.PHONY: help demo up up-reader down airflow-up airflow-down logs ch-client test lint load load-full load-verify sanity reconcile fetch-external fetch-external-hourly mv-setup mv-check analysis eval-fixture eval-ci eval-ci-cases golden golden-v2 dbt-seed dbt-build dbt-test dbt-prove dashboard
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -108,6 +108,9 @@ eval-ci-cases: ## pick the 30 cases again from the three baseline runs, and writ
 
 golden: ## compute evals/golden.jsonl: every answer by SQL on the fixture, in a throw-away test_* database
 	PYTHONPATH=src uv run python -m evalkit.golden --templates evals/golden_templates.py --hand evals/hand_cases.yml --out evals/golden.jsonl
+
+golden-v2: ## compute evals/golden_v2.jsonl (golden set v2, harder; v1 is not touched) the same way
+	PYTHONPATH=src uv run python -m evalkit.golden --templates evals/golden_v2_templates.py --hand evals/hand_cases_v2.yml --seed 20261019 --dev-fraction 0.3 --out evals/golden_v2.jsonl
 
 fetch-external: ## daily volume per pool from the public GeckoTerminal API (no key) into ClickHouse
 	PYTHONPATH=src uv run python -m univ3_indexer.external --fetch

@@ -171,7 +171,8 @@ def test_the_eval_workflow_is_started_by_hand_only_in_the_agent_eval_environment
     assert list(workflow["on"]) == ["workflow_dispatch"]
     inputs = workflow["on"]["workflow_dispatch"]["inputs"]
     assert list(inputs) == [
-        "variant", "split", "model", "repetitions", "max_usd", "limit", "only_errors", "suite",
+        "variant", "split", "model", "repetitions", "max_usd", "limit", "only_errors", "golden",
+        "suite",
     ]  # fmt: skip
     assert inputs["variant"]["required"] is True
     assert "evals/variants/" in inputs["variant"]["description"]
@@ -205,6 +206,7 @@ def test_the_model_key_is_given_to_the_step_that_runs_the_evaluation_and_to_no_o
         "MAX_USD": "${{ inputs.max_usd }}",
         "LIMIT": "${{ inputs.limit }}",
         "ONLY_ERRORS": "${{ inputs.only_errors }}",
+        "GOLDEN": "${{ inputs.golden }}",
         "SUITE": "${{ inputs.suite }}",
         "UNIV3_DATA_DIR": "${{ runner.temp }}/eval-data",
         "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
@@ -215,7 +217,8 @@ def test_the_model_key_is_given_to_the_step_that_runs_the_evaluation_and_to_no_o
     }
     assert config.DATA_DIR_POINTER == "UNIV3_DATA_DIR"  # where the transcripts are written
     run = evaluate["run"]
-    assert "python -m evalkit.run evals/golden.jsonl" in run and "--group agent" in run
+    assert 'python -m evalkit.run "$GOLDEN"' in run and "--group agent" in run
+    assert "evals/golden" not in run  # the file is the input, not written in the script
     for flag, variable in [("--variant", "$VARIANT"), ("--split", "$SPLIT"), ("--limit", "$LIMIT"),
                            ("--repetitions", "$REPETITIONS"), ("--max-usd", "$MAX_USD"),
                            ("--model", "$MODEL"), ("--only-errors", "$ONLY_ERRORS")]:  # fmt: skip
@@ -227,12 +230,28 @@ def test_the_model_key_is_given_to_the_step_that_runs_the_evaluation_and_to_no_o
     assert "--split" in normal and "--repetitions" in normal
 
 
+def test_the_golden_file_is_an_input_that_defaults_to_v1_and_must_be_a_jsonl_under_evals():
+    workflow = load(EVAL)
+    golden = workflow["on"]["workflow_dispatch"]["inputs"]["golden"]
+    assert golden["default"] == "evals/golden.jsonl" and golden["required"] is False
+    assert golden["type"] == "string" and "evals/golden_v2.jsonl" in golden["description"]
+    evaluate = next(s for s in workflow["jobs"]["evaluate"]["steps"] if s.get("name") == "Evaluate")
+    run = evaluate["run"]
+    # Reaches the shell through env: only, and is checked before the runner starts.
+    assert evaluate["env"]["GOLDEN"] == "${{ inputs.golden }}" and "inputs.golden" not in run
+    check = run.index('case "$GOLDEN" in')
+    assert "evals/*.jsonl) ;;" in run[check:] and "exit 2" in run[check:]
+    assert check < run.index("python -m evalkit.run")
+    # The regression check on pull requests keeps asking golden set v1.
+    assert "inputs.golden" not in EVAL_PR.read_text()
+
+
 def test_the_docs_suite_runs_in_the_same_step_with_the_same_key_and_the_sql_suite_is_untouched():
     run = next(s for s in steps(load(EVAL)) if s.get("name") == "Evaluate")["run"]
     branch, other = run.split('if [ "$SUITE" = "docs" ]; then', 1)[1].split("else", 1)
     docs, sql = branch.split("fi", 1)[0], other.split("fi", 1)[0]
     assert "python -m evalkit.rag_run evals/rag_cases.jsonl" in docs and "evalkit.run" not in docs
-    assert "python -m evalkit.run evals/golden.jsonl" in sql and "rag_run" not in sql
+    assert 'python -m evalkit.run "$GOLDEN"' in sql and "rag_run" not in sql
     assert '"${arguments[@]}"' in sql and '"${docs_arguments[@]}"' in docs
     docs_arguments = run.split("docs_arguments=(")[1].split("set +e")[0]
     for flag in ('--variant "$VARIANT"', '--split "$SPLIT"', '--max-usd "$MAX_USD"',
