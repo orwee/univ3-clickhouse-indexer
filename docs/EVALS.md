@@ -957,3 +957,71 @@ Both things that were expected were checked against the key, and both held:
   three rows it called unfaithful are the three the judge no longer does. That is the
   correction showing, not a regression. It is still not a human calibration, and no figure
   here says how the judge agrees with a person.
+
+## Retrieval over the documentation
+
+The agent answers questions about the data with SQL. Questions about what the data means
+are answered in `README.md`, `DECISIONS.md` and `docs/*.md`, so there is a search over those
+files and a measurement of it ([decision 27](../DECISIONS.md#27-questions-about-what-the-data-means-are-answered-from-the-documentation-by-search-and-with-citations)).
+
+- [`agent.docs_index`](../src/agent/docs_index.py) splits the files at their headings (id
+  `file#heading`) and ranks with BM25 in plain Python. 459 chunks.
+- [`evals/rag_cases.jsonl`](../evals/rag_cases.jsonl): 44 questions, 15 `dev` and 29 `test`
+  (fixed seed), each with the sections that answer it and 2 to 4 key facts.
+  **The labels were written by a model, not by a person**, and nobody has checked them.
+- [`evalkit.retrieval`](../src/evalkit/retrieval.py) computes recall@k (the share of cases
+  with a relevant section among the first k different sections) and MRR. No model, no cost;
+  `tests/test_docs_retrieval.py` runs it in `make test` on `dev` only.
+
+Settings were chosen on `dev` only: 25 combinations of chunk size and heading weight,
+ordered by MRR (`python -m evalkit.retrieval evals/rag_cases.jsonl --tune`). The best,
+1,000 characters and weight 8, led the next by one case of 15, so it is a choice and not a
+finding. `test` was read once, after that, with those settings:
+
+| Split | Cases | recall@1 | recall@3 | recall@5 | MRR |
+|---|---|---|---|---|---|
+| `dev` (tuned on) | 15 | 12 (80.0%) | 12 (80.0%) | 14 (93.3%) | 0.838 |
+| `test` (read once) | 29 | 20 (69.0%) | 25 (86.2%) | 27 (93.1%) | 0.783 |
+
+From `python -m evalkit.retrieval evals/rag_cases.jsonl --split dev|test` in a checkout of
+`d2f3f44`, the documents the run below also used (`evals/results/2026-10-20_retrieval.md`).
+The search is over the live documents, so later edits move these numbers slightly. With 29 cases one case is 3.4 points; read these as "most questions find
+their section in the first five", not as a ranking of rankers.
+
+**A gap the cases do not show.** Two questions the owner suggested, "why is fee 500 for a
+0.05% pool?" and why 2026-08-09 is partial, are answered in different places. The first
+only in the dbt column descriptions, which are not indexed, so there is no case for it. The
+second is in this file and in decision 15.
+
+### The agent with the docs tool: one run
+
+`search_docs` is offered only by a variant with `docs_tool: true`
+([`evals/variants/docs.yml`](../evals/variants/docs.yml)); the baseline is unchanged. An
+answer in words must cite chunk ids that the search returned in that question, or it is
+`ungrounded`. [`evalkit.rag_run`](../src/evalkit/rag_run.py) asks each case once.
+**Correct** means every key fact is in the answer, by a substring test, which cannot tell a
+stated fact from a denied one. **Grounded** means the judge, with
+[`evals/judge_rubric_docs.md`](../evals/judge_rubric_docs.md), finds every key statement
+supported by a cited chunk; that rubric has not been calibrated against a person. The `eval`
+workflow runs it with the new input `suite: docs` (default `sql`, which is the workflow as it
+was).
+
+**This is one run, not a measurement of the agent.** Eval run
+[39355169194](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39355169194)
+on the branch `feat/rag-docs` at `d2f3f44`, variant `docs`, split `test` (29 cases),
+`claude-haiku-5-5`, judge `claude-opus-5-5`, max_usd 1.00. File
+`evals/results/2026-10-20_docs_39355169194.json`, report beside it. No error, none not run.
+
+| | Value |
+|---|---|
+| Correct (every key fact present) | 19 of 29 = 65.5% [47.3%, 80.1%] |
+| Key facts present | 54 of 67 |
+| Grounded, over the 27 answers in words | 24 of 27 = 88.9% [71.9%, 96.1%] |
+| A section that answers was among the chunks the agent was given | 26 of 29 |
+| A section that answers was cited | 26 of 29 |
+| Ended answered / refused | 27 / 2 |
+| Spent: agent, judge | 0.0426 + 0.3924 = 0.4350 USD |
+
+What it does not say: the labels were written by a model; the intervals are wide; the key-fact
+test misses facts stated in other words, so 65.5% is a floor on what the answers contain,
+by an unknown amount. The failures were not read case by case in this run.

@@ -1030,6 +1030,72 @@ each task opaque: Airflow sees an exit code, not rows or blocks.
 **Revisit when.** A step needs to pass data to the next one (TaskFlow), a second DAG appears,
 or the checks should be assets with their own freshness (Dagster, roadmap item 7).
 
+## 27. Questions about what the data means are answered from the documentation, by search and with citations
+
+Written by the agent at the owner's request on 2026-10-19. The owner asked for this entry to
+be written for him, for this run only; the decision is his.
+
+- Date: 2026-10-20
+- Status: Accepted
+
+**Context.** The agent answers questions about the data with SQL. Questions about what the
+data means ("what is net volume?", "why are 2026-08-09 and 2026-09-25 partial?") are not in
+any table: they are in `README.md`, `DECISIONS.md` and `docs/`. The agent had no way to read
+them, and nothing measured whether a search over them finds the right passage.
+
+**Decision.**
+
+- **Retrieval, no model.** `src/agent/docs_index.py` splits the three kinds of file at their
+  headings (id `file#heading`; a section over 1,000 characters is cut at paragraph breaks and
+  the pieces share the section) and ranks with BM25 in plain Python. No dependency, no
+  embeddings, no service. The words of a heading count 8 times. 1,000 and 8 were the best of
+  25 settings by MRR on `dev`; the margin over the next was one case of 15, so they are a
+  choice and not a finding (`python -m evalkit.retrieval evals/rag_cases.jsonl --tune`).
+- **The cases.** `evals/rag_cases.jsonl`: 44 questions, each with the sections that answer it
+  and 2 to 4 key facts. **A model wrote the labels, not a person**, and the file says so in
+  its first line. `dev` and `test` are drawn with a fixed seed (a third to `dev`). Tuning
+  reads `dev` only; `test` is read once, at the end. recall@1, recall@3, recall@5 and MRR
+  run in `make test` (`tests/test_docs_retrieval.py`) at no cost, and are in
+  [docs/EVALS.md](docs/EVALS.md).
+- **A tool behind a variant.** `search_docs(query, k)` returns the best chunks with their ids
+  and text. It is offered only when a variant sets `docs_tool: true`; the baseline is exactly
+  what it was (a test compares the tool list and the result). With it, `submit_answer` takes
+  the type `text` and `citations`. An answer in words whose citations are not all chunks
+  that `search_docs` returned in that question is `ungrounded`, as an answer that is not a
+  cell of the last result is.
+- **Measured by a second suite.** `python -m evalkit.rag_run` asks each case once. Correct
+  means every key fact is in the answer, by a plain substring test on lower-cased text.
+  Grounded means the judge, with `evals/judge_rubric_docs.md`, finds every key statement
+  supported by a cited chunk. One budget: 40% to the agent, 60% to the judge.
+- **A change to a workflow.** `eval.yml` gets an input `suite` (`sql`, the default, or
+  `docs`) and a branch in the step that already holds the model key. Nothing else in the
+  file changed, and the default run is the one it was. `evalkit.report` renders the docs
+  results, so the Report step is word for word the one `eval-pr.yml` copies.
+
+**Why.** Retrieval can be measured without a model, so it is measured first and for free;
+only then is a model paid to use it. Citing chunk ids makes "where did that come from"
+checkable by code before any judge is paid, the same idea as the grounding check of
+decision 21. BM25 over headings is the smallest thing that can work on 5,600 lines of
+Markdown, and if it is not enough the numbers will say so.
+
+**Tradeoff.**
+
+- The labels are one model's reading of the documents. A score against them is agreement with
+  that reading. They are small: 15 `dev` cases move recall by 6.7 points per case.
+- The key-fact test cannot tell a fact that is stated from one that is denied, and misses a
+  fact stated in other words. The judge's rubric for documents has not been calibrated
+  against a person, as the first one has not.
+- The index covers `README.md`, `DECISIONS.md` and `docs/*.md` and nothing else. Some things a
+  reader would ask about are written only elsewhere: that fee 500 means 0.05% is in the dbt
+  column descriptions (`dbt/models/*/schema.yml`), not in a document, so the agent cannot
+  find it by this tool.
+- A run of the suite is one draw of a model. One run does not measure the tool.
+
+**Revisit when.** The labels are checked by a person; `test` recall@5 is low enough that
+a better ranker would matter (then try embeddings, and measure them the same way); the
+questions people really ask are not in the documents (then write the documents, not the
+search); or the dbt descriptions should be searchable.
+
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.

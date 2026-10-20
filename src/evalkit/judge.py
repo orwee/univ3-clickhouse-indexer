@@ -92,6 +92,9 @@ class Item:
     explanation: str
     # The queries that ran before the final one, in order: [{"sql": ..., "result": {...}}].
     earlier: tuple = ()
+    # A message built by the caller, for what is not a query and its rows (cited passages of
+    # documents). When set it is sent as it is and the fields above are not read.
+    text: str = ""
 
 
 def earlier_of(queries: object) -> tuple:
@@ -197,7 +200,10 @@ def message(item: Item) -> str:
 
     Every query that ran is there, in order: the ones before the last as numbered
     ``earlier_query`` and ``earlier_result`` blocks, then the final one as it always was.
+    An item with its own ``text`` is sent as that text.
     """
+    if item.text:
+        return item.text
     before: list[str] = []
     for number, query in enumerate(item.earlier, start=1):
         attributes, body = _shown(query["result"])

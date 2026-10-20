@@ -531,6 +531,7 @@ def test_a_variant_is_a_file_that_exists_and_its_files_are_pinned_by_content(tmp
         "max_usd_per_question",
         "prompt_cache",
         "provider",
+        "docs_tool",
     )
 
 

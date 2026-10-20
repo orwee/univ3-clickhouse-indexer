@@ -52,7 +52,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from agent import __main__ as agent_cli
-from agent import budget, loop, tools, warehouse
+from agent import budget, docs_index, loop, tools, warehouse
 from agent import llm as llm_module
 from evalkit import fixture, golden, score, variants
 from univ3_indexer import config
@@ -168,6 +168,7 @@ def execute(
     descriptions: dict | None = None,
     prompt_addendum: str = "",
     prompt_cache: bool = False,
+    docs: docs_index.Index | None = None,
     after_each: Callable[[list[dict]], None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[list[dict], Decimal]:
@@ -205,6 +206,7 @@ def execute(
             prompt_addendum=prompt_addendum,
             sleep=sleep,
             prompt_cache=prompt_cache,
+            docs=docs,
         ).to_json()
         run_budget.record(Decimal(result["usd"]), scope)
         if result["status"] == "error" and WALLET_EMPTY in result["reason"]:
@@ -454,6 +456,9 @@ def main(
         descriptions=variant.descriptions,
         prompt_addendum=variant.prompt_addendum,
         prompt_cache=variant.prompt_cache,
+        docs=docs_index.Index(docs_index.load_chunks(config.REPO_ROOT))
+        if variant.docs_tool
+        else None,
         after_each=lambda so_far: put(so_far, finished=False),
         sleep=sleep,
     )
