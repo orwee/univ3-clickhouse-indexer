@@ -18,6 +18,7 @@ from univ3_indexer import agent_reader, config
 from univ3_indexer import clickhouse as ch
 
 AGENT_DIR = config.REPO_ROOT / "src" / "agent"
+LIMITS = "database: d\ntables: [a]\nlimits: {row_cap: 1, max_iterations: 1, max_usd: 1}\n"
 WAREHOUSE_YML = config.REPO_ROOT / "evals" / "warehouse.yml"
 DOMAIN_WORDS = ("uniswap", "swap", "pool", "usdc", "weth")
 
@@ -46,6 +47,19 @@ def test_the_prompt_names_no_table_and_no_limit_of_this_warehouse():
     assert re.findall(r"\{\{(\w+)\}\}", prompt) == ["descriptions", "row_cap", "max_iterations"]
 
 
+def test_the_prompt_says_what_a_missing_day_is_from_the_coverage_and_writes_no_date():
+    """The rule on days with no row reads the dates from describe_schema, not from the text:
+    the data grows by a day every day and a date written here would go stale."""
+    prompt = (AGENT_DIR / "prompts" / "system.md").read_text()
+    assert "## Days with no row" in prompt
+    for field in ("`coverage`", "`first`", "`last`", "`keys_from`", "`table`"):
+        assert field in prompt, field
+    assert "Answer 0; do not refuse." in prompt
+    assert "refuse, and say why" in prompt
+    assert not re.search(r"\b(19|20)\d\d-\d\d-\d\d\b", prompt)
+    assert not re.search(r"\b(19|20)\d\d\b", prompt)
+
+
 def test_src_agent_imports_nothing_of_the_indexer_but_its_config():
     for path in AGENT_DIR.rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -65,6 +79,8 @@ def test_the_warehouse_file_names_the_tables_the_reader_is_granted():
     assert w.tables == granted.tables == fixture.TABLES
     assert (w.row_cap, w.max_iterations, w.max_usd) == (200, 6, Decimal("0.25"))
     assert w.row_cap <= int(granted.settings["max_result_rows"])
+    assert w.coverage == warehouse.Coverage("fct_pool_daily", "block_date", "dim_pools")
+    assert w.coverage.column in fixture.read_table(w.coverage.table).columns
 
 
 @pytest.mark.parametrize(
@@ -95,6 +111,12 @@ def test_the_warehouse_file_names_the_tables_the_reader_is_granted():
             "max_usd",
         ),
         ("- just\n- a list", "mapping"),
+        (LIMITS + "coverage: {table: a, column: d}", "keys_from"),
+        (LIMITS + "coverage: {table: a, column: d, keys_from: a, more: 1}", "keys_from"),
+        (LIMITS + "coverage: {table: b, column: d, keys_from: a}", "names b"),
+        (LIMITS + "coverage: {table: a, column: d, keys_from: b}", "names b"),
+        (LIMITS + "coverage: {table: a, column: 'd; DROP', keys_from: a}", "coverage.column"),
+        (LIMITS + "coverage: [a]", "'coverage'"),
     ],
 )
 def test_a_warehouse_file_that_is_not_names_and_limits_is_refused(tmp_path, text, says):
@@ -192,6 +214,56 @@ def test_describe_schema_returns_the_descriptions_it_was_given_next_to_names_and
     assert {t: strip(c) for t, c in out["tables"].items()} == bare["tables"]
     assert "descriptions" not in kit.describe_schema(["fct_pool_daily"])
     json.dumps(out)
+
+
+def covered(loaded, table="fct_pool_daily"):
+    database, client = loaded
+    real = warehouse.load(WAREHOUSE_YML)
+    cover = warehouse.Coverage(table, real.coverage.column, real.coverage.keys_from)
+    house = warehouse.Warehouse(database, real.tables, 5, 6, Decimal("1"), cover)
+    return tools.Tools(client, house)
+
+
+def test_describe_schema_reports_the_coverage_of_the_data_whatever_tables_were_asked(loaded):
+    table = fixture.read_table("fct_pool_daily")
+    dates = [row[table.columns.index("block_date")] for row in table.rows]
+    kit = covered(loaded)
+    for asked in (None, ["dim_pools"]):
+        out = kit.describe_schema(asked)
+        assert out["coverage"] == {
+            "table": "fct_pool_daily",
+            "column": "block_date",
+            "first": min(dates),
+            "last": max(dates),
+            "keys_from": "dim_pools",
+            "partial_days": tools.PARTIAL_DAYS,
+        }
+        json.dumps(out)
+    # Without a coverage in the warehouse there is none in the output.
+    database, client = loaded
+    plain = tools.Tools(client, warehouse.Warehouse(database, fixture.TABLES, 5, 6, Decimal("1")))
+    assert "coverage" not in plain.describe_schema()
+
+
+def test_the_coverage_is_computed_when_describe_schema_is_called(loaded):
+    """A day loaded after the first call is in the second: nothing holds a date."""
+    database, client = loaded
+    kit = covered(loaded)
+    before = kit.describe_schema()["coverage"]
+    later = datetime.date.fromisoformat(before["last"]) + datetime.timedelta(days=3)
+    client.command(
+        f"INSERT INTO {database}.fct_pool_daily (pool_address, block_date, pool_label, fee, swaps, "
+        f"volume_token0, volume_token1) VALUES ('0xabab', '{later.isoformat()}', 'x', 1, 1, 0, 0)"
+    )
+    after = kit.describe_schema()["coverage"]
+    assert (after["first"], after["last"]) == (before["first"], later.isoformat())
+
+
+def test_the_coverage_of_a_table_with_no_rows_has_no_dates(loaded):
+    """min() of no rows is 1970-01-01 in ClickHouse; it must not come back as a date."""
+    out = covered(loaded, "fct_pool_daily_smart_money").describe_schema()
+    assert out["coverage"]["first"] is None and out["coverage"]["last"] is None
+    assert out["coverage"]["partial_days"] == "The table has no rows."
 
 
 def test_describe_schema_of_some_tables_and_of_one_that_is_not_listed(kit):

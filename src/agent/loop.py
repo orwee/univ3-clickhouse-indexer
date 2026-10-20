@@ -64,8 +64,8 @@ TOOL_DEFINITIONS = [
     {
         "name": "describe_schema",
         "description": (
-            "Column names and types of the tables you can read. Call it before writing SQL. "
-            "With no argument it describes every table."
+            "Column names and types of the tables you can read, and the dates the data "
+            "covers. Call it before writing SQL. With no argument it describes every table."
         ),
         "input_schema": {
             "type": "object",
@@ -338,7 +338,10 @@ def _summary(name: str, output: dict) -> dict:
     if name == "search_docs":
         return {"ok": True, "ids": [chunk["id"] for chunk in output["chunks"]]}
     if name == "describe_schema":
-        return {"ok": True, "tables": {t: len(c) for t, c in output["tables"].items()}}
+        summary = {"ok": True, "tables": {t: len(c) for t, c in output["tables"].items()}}
+        if "coverage" in output:
+            summary["coverage"] = [output["coverage"]["first"], output["coverage"]["last"]]
+        return summary
     return {
         "ok": True,
         "columns": [c["name"] for c in output["columns"]],
