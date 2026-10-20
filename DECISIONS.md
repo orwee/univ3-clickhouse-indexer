@@ -1218,8 +1218,8 @@ rule is not applied to an incomplete set, and then the default does not change. 
 merged at 11:53Z, two minutes after the runs ended and before their results were read, so
 the new default reached `main`; a follow-up pull request from `main` takes the section out
 of the prompt, the sentence out of the tool's description and the `coverage` block out of
-`evals/warehouse.yml` (`e8b8139`), and the default prompt is again `9df22d15…`. The code
-that computes the coverage stays, unused. The regression check of #87 passed (30 of 30). Reverting `e8b8139` restores the default the fifth entry
+`evals/warehouse.yml` (`5296cfe`), and the default prompt is again `9df22d15…`. The code
+that computes the coverage stays, unused. The regression check of #87 passed (30 of 30). Reverting `5296cfe` restores the default the fifth entry
 froze; its runs can be repeated only with the owner's word and after the API limit allows it.
 
 ## Agent corrections

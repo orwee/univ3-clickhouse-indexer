@@ -984,7 +984,7 @@ then the default does not change. No score is drawn from these runs, and none is
 Pull request #87 had been merged two minutes after the runs ended, before their results
 were read, so the new default reached `main`. A follow-up pull request from `main` took the
 rule back out of the prompt, the sentence out of the tool's description and the coverage out
-of `evals/warehouse.yml` (`e8b8139`): the default prompt is
+of `evals/warehouse.yml` (`5296cfe`): the default prompt is
 again `9df22d15…`, the one of the v2 baseline. The runs were not repeated: that needs the
 owner's word, and the API refuses calls until 2026-11-01.
 
