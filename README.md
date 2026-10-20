@@ -212,6 +212,14 @@ beforehand, was right on 110 of 110: 8 fixed, none broken, and refusals of the 6
 questions with no answer stayed at 56 of 60
 ([`evals/results/2026-10-20_zero-day_golden_v2_spread.md`](evals/results/2026-10-20_zero-day_golden_v2_spread.md),
 [`evals/results/2026-10-20_baseline_vs_zero-day.md`](evals/results/2026-10-20_baseline_vs_zero-day.md)).
+That paragraph writes the dates of this fixture, so it was rewritten to read them from the
+data and made the default, under a fifth entry written before its three runs (at least 109
+of the 110 right, 55 of the 60 refused, at most 2 refused with an answer). **It is not the default.** The
+runs (39415287455, 39415291174 and 39415294685) hit the model account's usage limit after spending
+0.64 USD together, with 135 to 142 of 240 questions ending in an error each; by the rule, an
+incomplete set decides nothing and the default stays as it was
+([docs/EVALS.md](docs/EVALS.md#the-zero-day-rule-as-the-default-not-adopted-because-its-runs-were-incomplete)).
+The regression check on v1 passed, 30 of 30.
 
 **Cost.** What a question costs and how long it takes, from
 [`evals/results/2026-10-13_cost.md`](evals/results/2026-10-13_cost.md), which names the

@@ -949,6 +949,50 @@ nothing measured got worse by more than identical runs differ. It does not say t
 better in general. The set was built around known weak spots, and the paragraph names the
 dates of this fixture, so it is a fix for this data, not a lesson the agent learnt.
 
+### The zero-day rule as the default: not adopted, because its runs were incomplete
+
+The `zero-day` paragraph writes the dates of this fixture, and the daily DAG adds a day every
+day. So the rule was rewritten to read the dates from the data: `describe_schema` can return
+a `coverage` (the first and last `block_date` of `fct_pool_daily`, computed at each call) and
+the default prompt referred to it, with no table name and no date
+([decision 28](../DECISIONS.md#28-a-pool-day-with-no-row-is-zero-by-default-and-the-dates-come-from-the-data)).
+That text is not the one the fourth entry froze, so the
+[fifth entry](EVAL_PREREGISTRATION.md#fifth-entry-the-zero-day-rule-as-the-default-checked-for-not-being-worse)
+was pushed in `3a9c978`, before any run: by majority of three runs on `test`, at least 109 of
+110 with an answer right, at least 55 of 60 with no answer refused, at most 2 with an answer
+refused, margins taken from the spread of the `zero-day` and v2 baseline runs.
+
+Three runs of `baseline` with that default, golden v2, split `all`, repetitions 1, `max_usd`
+1.00, on `3a9c978`:
+[39415287455](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39415287455),
+[39415291174](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39415291174) and
+[39415294685](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39415294685).
+Files: `evals/results/2026-10-20_baseline-coverage_<RUN_ID>.json`.
+
+| Run | Questions asked | Ended in an error | Spent, USD |
+|---|---|---|---|
+| 39415287455 | 240 | 142 | 0.2121334 |
+| 39415291174 | 240 | 139 | 0.2119917 |
+| 39415294685 | 240 | 135 | 0.2165488 |
+
+Every error is the same: HTTP 400 from the model API, "You have reached your specified API
+usage limits. You will regain access on 2026-11-01 at 00:00 UTC". The limit is the account's,
+not the run's: each run spent less than a quarter of its `max_usd`.
+
+**The rule, applied.** The fifth entry does not apply its rule to an incomplete set, and
+then the default does not change. No score is drawn from these runs, and none is given here.
+The same pull request took the rule back out of the prompt, the sentence out of the tool's
+description and the coverage out of `evals/warehouse.yml` (`67c9d48`): the default prompt is
+again `9df22d15…`, the one of the v2 baseline. The runs were not repeated: that needs the
+owner's word, and the API refuses calls until 2026-11-01.
+
+The regression check of the same pull request, at `3a9c978` with the new default, ran before
+the limit was reached and passed: 30 of 30 asked and right, no error, 0.00176 USD a question
+against a limit of 0.00268 (`eval-pr` run
+[39415282729](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39415282729)).
+It catches an agent that broke, not one that got slightly worse, so it does not stand in for
+the fifth entry.
+
 ## The regression check on pull requests
 
 A pull request that changes the agent, the evaluation code, the evaluation's files or the
