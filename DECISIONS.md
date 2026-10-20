@@ -1147,7 +1147,7 @@ Written by the agent at the owner's request on 2026-10-20. The owner asked for t
 be written for him; the decision is his.
 
 - Date: 2026-10-20
-- Status: Accepted, **not in force**: the fifth entry's runs were incomplete, so by its rule
+- Status: Accepted, **not in force**: the fifth entry's rule failed on refusal recall, so
   the default did not change (see "Outcome" at the end of this entry)
 
 **Context.** On golden set v2 the variant `zero-day` fixed all 8 `test` cases with an answer
@@ -1221,6 +1221,16 @@ of the prompt, the sentence out of the tool's description and the `coverage` blo
 `evals/warehouse.yml` (`5296cfe`), and the default prompt is again `9df22d15…`. The code
 that computes the coverage stays, unused. The regression check of #87 passed (30 of 30). Reverting `5296cfe` restores the default the fifth entry
 froze; its runs can be repeated only with the owner's word and after the API limit allows it.
+
+**Outcome, completed (#90).** The owner raised the limit, and a dated note on the fifth entry,
+pushed first, replaced the three runs by three with the same inputs: 39422763149,
+39422770533 and 39422777052, at `5ce46f1` with the prompt `89acfeae…`, each 240 of 240 with
+no error. By majority on `test`: 110 of 110 with an answer right (at least 109 needed), 0
+with an answer refused (at most 2), and 54 of 60 with no answer refused, where at least 55
+were needed. The rule fails on refusal recall, so the default does not change: #90 reverts
+its own revert, and the prompt stays `9df22d15…`. Per run the two prompts refused the same
+on average (91.1%); only the per-case majority differs, by two cases, which is within the
+spread of identical runs. The rule was written before the runs and is applied as written.
 
 ## Agent corrections
 

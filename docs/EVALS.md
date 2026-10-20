@@ -949,7 +949,7 @@ nothing measured got worse by more than identical runs differ. It does not say t
 better in general. The set was built around known weak spots, and the paragraph names the
 dates of this fixture, so it is a fix for this data, not a lesson the agent learnt.
 
-### The zero-day rule as the default: not adopted, because its runs were incomplete
+### The zero-day rule as the default: not adopted, its refusals fell short
 
 The `zero-day` paragraph writes the dates of this fixture, and the daily DAG adds a day every
 day. So the rule was rewritten to read the dates from the data: `describe_schema` can return
@@ -994,6 +994,36 @@ against a limit of 0.00268 (`eval-pr` run
 [39415282729](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39415282729)).
 It catches an agent that broke, not one that got slightly worse, so it does not stand in for
 the fifth entry.
+
+**Completed, 2026-10-20 (#90).** With the account's limit raised, a dated note on the fifth
+entry (pushed in `5ce46f1`, before any run) replaced the incomplete runs by three with the
+same inputs, at `5ce46f1` with the prompt `89acfeae…`:
+[39422763149](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39422763149),
+[39422770533](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39422770533) and
+[39422777052](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39422777052).
+Each asked 240 of 240 with no error, and spent 0.4778301, 0.4813956 and 0.4788343 USD.
+Files: `evals/results/2026-10-20_baseline-coverage_<RUN_ID>.json` for those three ids, the
+spread `evals/results/2026-10-20_baseline-coverage_golden_v2_spread.md`, the report over the
+three `evals/results/2026-10-20_baseline-coverage-complete.md` and the comparison
+`evals/results/2026-10-20_zero-day_vs_baseline-coverage.md`.
+
+| On `test`, by majority of three runs | `zero-day` | New default | Allowed | Holds |
+|---|---|---|---|---|
+| Cases with an answer right, of 110 | 110 | 110 | at least 109 | yes |
+| Cases with no answer refused, of 60 | 56 | 54 | at least 55 | **no** |
+| Cases with an answer refused | 0 | 0 | at most 2 | yes |
+
+**The rule, applied: worse than `zero-day` on refusal recall, by 2 cases, one below the
+threshold.** The default does not change: #90 reverts its own revert, and the prompt is
+`9df22d15…`, the one before #87.
+
+What else the comparison shows, deciding nothing: on the 60 cases with no answer, 1 fixed
+and 3 broke; per run, both prompts refused 55, 55, 55 and 55, 54, 55, a mean recall of 91.1%
+each; execution accuracy 98.8% and 99.1%; 0.00192 and 0.00196 USD and 6.42 and 6.47 seconds a
+question. The drop is the size of the noise between identical runs, so "worse" is what the
+rule says, not a finding that the rewrite harms refusals. A rule fixed before the runs is
+kept even when it is close. The regression check of #90 (`eval-pr` run
+[39422766938](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39422766938)) passed.
 
 ## The regression check on pull requests
 

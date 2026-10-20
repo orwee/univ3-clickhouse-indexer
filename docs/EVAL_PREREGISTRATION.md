@@ -600,3 +600,21 @@ so that a glob for the v2 baseline's files cannot pick them up. The variant insi
 - Non-inferiority within one case of `zero-day` on 110 cases is not equivalence: a
   difference smaller than identical runs show cannot be seen here.
 - The coverage is read from one table. Nothing here measures a question about another one.
+
+## Note added on 2026-10-20, before the replacement runs: how the incomplete runs are replaced
+
+The three runs of 2026-10-20 (39415287455, 39415291174, 39415294685) each asked 240 of 240
+and ended 142, 139 and 135 questions in an error, all of one kind: HTTP 400 from the model
+API, the account's usage limit. The entry above says what an incomplete set means (the rule
+is not applied) but not how it is replaced. The owner has raised the account's limit and
+given his word: the three runs are replaced by three new runs with the same inputs (variant
+`baseline` with the default pinned above, `evals/golden_v2.jsonl`, split `all`, repetitions
+1, `max_usd` 1.00 each, the model left empty), dispatched together on the branch
+`feat/default-coverage`, approved by the owner. Each must ask 240 of 240 with no error; if
+one does not, nothing is applied and nothing is run again without the owner's word.
+
+Nothing else changes: the default and its SHA-256, the three measures, their margins and
+thresholds, and the rule are those written above. The files of the incomplete runs stay in
+`evals/results/` and decide nothing; the replacement runs' files are named, as above,
+`evals/results/<date>_baseline-coverage_<RUN_ID>.json`, and are told apart from them by
+their run ids, which the report lists.
