@@ -983,11 +983,45 @@ finding. `test` was read once, after that, with those settings:
 | `dev` (tuned on) | 15 | 12 (80.0%) | 12 (80.0%) | 14 (93.3%) | 0.838 |
 | `test` (read once) | 29 | 20 (69.0%) | 25 (86.2%) | 27 (93.1%) | 0.783 |
 
-From `python -m evalkit.retrieval evals/rag_cases.jsonl --split dev|test` at the commit of
-this section. With 29 cases one case is 3.4 points; read these as "most questions find
+From `python -m evalkit.retrieval evals/rag_cases.jsonl --split dev|test` in a checkout of
+`d2f3f44`, the documents the run below also used (`evals/results/2026-10-20_retrieval.md`).
+The search is over the live documents, so later edits move these numbers slightly. With 29 cases one case is 3.4 points; read these as "most questions find
 their section in the first five", not as a ranking of rankers.
 
 **A gap the cases do not show.** Two questions the owner suggested, "why is fee 500 for a
 0.05% pool?" and why 2026-08-09 is partial, are answered in different places. The first
 only in the dbt column descriptions, which are not indexed, so there is no case for it. The
 second is in this file and in decision 15.
+
+### The agent with the docs tool: one run
+
+`search_docs` is offered only by a variant with `docs_tool: true`
+([`evals/variants/docs.yml`](../evals/variants/docs.yml)); the baseline is unchanged. An
+answer in words must cite chunk ids that the search returned in that question, or it is
+`ungrounded`. [`evalkit.rag_run`](../src/evalkit/rag_run.py) asks each case once.
+**Correct** means every key fact is in the answer, by a substring test, which cannot tell a
+stated fact from a denied one. **Grounded** means the judge, with
+[`evals/judge_rubric_docs.md`](../evals/judge_rubric_docs.md), finds every key statement
+supported by a cited chunk; that rubric has not been calibrated against a person. The `eval`
+workflow runs it with the new input `suite: docs` (default `sql`, which is the workflow as it
+was).
+
+**This is one run, not a measurement of the agent.** Eval run
+[39355169194](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39355169194)
+on the branch `feat/rag-docs` at `d2f3f44`, variant `docs`, split `test` (29 cases),
+`claude-haiku-5-5`, judge `claude-opus-5-5`, max_usd 1.00. File
+`evals/results/2026-10-20_docs_39355169194.json`, report beside it. No error, none not run.
+
+| | Value |
+|---|---|
+| Correct (every key fact present) | 19 of 29 = 65.5% [47.3%, 80.1%] |
+| Key facts present | 54 of 67 |
+| Grounded, over the 27 answers in words | 24 of 27 = 88.9% [71.9%, 96.1%] |
+| A section that answers was among the chunks the agent was given | 26 of 29 |
+| A section that answers was cited | 26 of 29 |
+| Ended answered / refused | 27 / 2 |
+| Spent: agent, judge | 0.0426 + 0.3924 = 0.4350 USD |
+
+What it does not say: the labels were written by a model; the intervals are wide; the key-fact
+test misses facts stated in other words, so 65.5% is a floor on what the answers contain,
+by an unknown amount. The failures were not read case by case in this run.
