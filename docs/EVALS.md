@@ -1162,6 +1162,29 @@ their section in the first five", not as a ranking of rankers.
 only in the dbt column descriptions, which are not indexed, so there is no case for it. The
 second is in this file and in decision 15.
 
+**The dbt column descriptions, indexed since `feat/zero-day-default`.** The index also reads
+every `schema.yml` under `dbt/` (not dbt's `target/` or `dbt_packages/`): one chunk per model
+and per seed, with its description and each column with its own, id
+`dbt/models/<layer>/schema.yml#<name>`, never cut. That adds 7 chunks. Twelve new cases whose
+answer is only there, the fee question among them, are a second file,
+[`evals/rag_cases_dbt.jsonl`](../evals/rag_cases_dbt.jsonl), so that the seeded split of the
+first does not move; **a model wrote their labels too**. Both sets were scored with and
+without the new chunks on the same documents (`--without-dbt`;
+`evals/results/2026-10-20_retrieval_dbt.md`):
+
+| Set | Split | Documents only: recall@1 / @3 / @5, MRR | With dbt: recall@1 / @3 / @5, MRR |
+|---|---|---|---|
+| Old, 44 cases | `dev` (15) | 12 / 12 / 15, 0.840 | 12 / 12 / 13, 0.836 |
+| Old, 44 cases | `test` (29) | 20 / 25 / 27, 0.788 | 18 / 24 / 27, 0.749 |
+| New, 12 cases | `dev` (4) | cannot be scored | 4 / 4 / 4, 1.000 |
+| New, 12 cases | `test` (8) | cannot be scored | 8 / 8 / 8, 1.000 |
+
+The dbt chunks cost the old questions: six moved down and none up, because a short chunk
+whose model and column names share the question's words now ranks above the section that
+answers it. `dev` recall@5 is at the floor the tests hold. The new set's 12 of 12 says only
+that the chunks can be found: most of its questions name a column, whose words are in one
+chunk only. The ranker's settings were not tuned again.
+
 ### The agent with the docs tool: one run
 
 `search_docs` is offered only by a variant with `docs_tool: true`
