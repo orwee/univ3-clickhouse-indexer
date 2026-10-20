@@ -956,3 +956,22 @@ def test_the_variant_zero_day_is_one_paragraph_and_the_text_that_was_frozen():
     assert "# Fourth entry" in entry
     for sha in variant.files.values():
         assert sha in entry
+
+
+def test_the_default_prompt_is_the_one_the_fifth_entry_froze():
+    """The SHA-256 of the prompt and of the files it is made from, as written in the fifth
+    entry of docs/EVAL_PREREGISTRATION.md before any run of it. A change to any of them is a
+    new default that the entry does not cover."""
+    entry = (config.REPO_ROOT / "docs" / "EVAL_PREREGISTRATION.md").read_text()
+    fifth = entry.split("# Fifth entry", 1)[1]
+    prompt = loop.system_prompt(6, 200)
+    assert hashlib.sha256(prompt.encode()).hexdigest() in fifth
+    for name in (
+        "src/agent/prompts/system.md",
+        "evals/warehouse.yml",
+        "evals/variants/baseline.yml",
+        "src/agent/tools.py",
+        "src/agent/loop.py",
+    ):
+        digest = hashlib.sha256((config.REPO_ROOT / name).read_bytes()).hexdigest()
+        assert f"| `{name}`" in fifth and digest in fifth, name

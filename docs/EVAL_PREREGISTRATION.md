@@ -501,3 +501,102 @@ after the first run.
   difference this rule will call measurable.
 - The change was aimed at one known weakness of this model on this fixture. A gain says
   the paragraph fixes that weakness, not that the agent is better in general.
+
+---
+
+# Fifth entry: the zero-day rule as the default, checked for not being worse
+
+Added on 2026-10-20, before any run of the new default. Nothing above this line was
+changed.
+
+## What changed, and why it needs its own check
+
+The fourth entry measured `zero-day`: the default prompt of its day plus a paragraph that
+writes the dates the data covers. That paragraph is now part of the default prompt,
+rewritten so that it names no table and no date: it refers to the `coverage` that
+`describe_schema` computes from the data at each call (decision 28). The meaning is meant to
+be the same, but the text the model reads is not the text the fourth entry froze, and
+`describe_schema` returns more than it did. So the fourth entry does not cover this prompt,
+and this entry checks one thing: **that the new default is not worse than `zero-day`** on
+golden set v2. It does not try to show that it is better.
+
+| What the new default is | SHA-256 |
+|---|---|
+| System prompt as sent (`loop.system_prompt(6, 200)`, no descriptions) | `89acfeae828e400166a35423d9682b34a275e57886f2b61ea5f7ac825ca9bca4` |
+| `src/agent/prompts/system.md` | `1dab52b7c0fba2ca867edcfcbf316e1ddcce332f0dd743a51a8216b2c9e4e31d` |
+| `evals/warehouse.yml` (where the coverage is read) | `f901b186b5dd18818f437696ad1a4026491bc7c5a0c96f2e85decb2e9dd218ce` |
+| `evals/variants/baseline.yml` (sets nothing) | `124a43d52cc09f6bed2942509446c64732c7c1ff0996f92c5856fef9b2b0ea44` |
+| `src/agent/tools.py` (computes the coverage) | `01a7b2a4e226a2df873cc3987cbe7ee5989366e59c155ec54739e0c10a479ba6` |
+| `src/agent/loop.py` (the tool's description) | `9b9309cbfab0abb19cc476120fe50a018d7136e7ab16ab879c0910323d4371b7` |
+
+The model, the tools, the six calls and the ceilings are those of `zero-day`.
+
+## What it is compared with
+
+The three runs of `zero-day` of the fourth entry (39407607316, 39407618600, 39407628909) and,
+for the size of the margins only, the three complete runs of the v2 baseline (39403472270,
+39403483384, 39403493610). Both sets: golden `evals/golden_v2.jsonl` (SHA-256
+`9f920d576c88de70e8d920ab59be2e11d26f5b9e9d1573873d7f16fe83f27cf7`), split `all`, repetitions
+1, `max_usd` 1.00, `claude-haiku-5-5`. Numbers read from
+`evals/results/2026-10-20_zero-day_golden_v2_spread.md` and
+`evals/results/2026-10-20_baseline_golden_v2_spread.md`.
+
+## The three measures, and the margin of each
+
+All on `test`, per case by majority of three runs (a case counts when at least two of its
+three runs agree). The margin of a measure is the larger of 1 and the spread between runs
+(highest minus lowest) of that measure in either set: what identical runs already differ by.
+
+| Measure | `zero-day` by majority | Spread, `zero-day` runs | Spread, baseline runs | Margin | Non-inferior when the new default has |
+|---|---|---|---|---|---|
+| Cases with an answer right, of 110 | 110 | 1 (109, 109, 108) | 1 (103, 102, 102) | max(1, 1, 1) = 1 | **at least 109** |
+| Refusal recall, of the 60 with no answer | 56 | 1 (55, 54, 55) | 1 (55, 54, 54) | max(1, 1, 1) = 1 | **at least 55** |
+| Cases with an answer refused | 0 | 1 (0, 1, 0) | 2 (5, 6, 7) | max(1, 1, 2) = 2 | **at most 2** |
+
+## The rule, decided now
+
+| The three measures | What is said | What happens to the default |
+|---|---|---|
+| All three hold | **Not worse than `zero-day`**, within margins of 1, 1 and 2 cases | It stays the default, if the regression check of the pull request also passes |
+| Any one fails | **Worse than `zero-day`** on that measure, by how many cases | It does not change: the section "Days with no row", the sentence added to the tool's description and the `coverage` block of `evals/warehouse.yml` are taken out on this pull request, so the default is again the prompt `9df22d15…` and `describe_schema` returns what it returned |
+
+The regression check of decision 24 (`eval-pr`, 30 cases of v1) runs on this pull request
+by itself. If it fails its own rule, the default does not change either, whatever the three
+runs say, and the same three things are taken out.
+
+Nothing is said about being better: a gain on these measures over `zero-day` is reported,
+not claimed.
+
+## Also reported, and deciding nothing
+
+Per run, on `test` and on `dev`: correct, execution accuracy, refusal recall and
+precision, hallucination rate, cost and seconds per question. Case by case against
+`zero-day` (`evalkit.compare`): fixed and broke, on the cases with an answer and on those
+without. The coverage each run's `describe_schema` returned, from the tool-call summaries in the
+results files.
+
+## The runs
+
+Three runs of the variant `baseline`, which is now the new default, dispatched together on
+the branch `feat/zero-day-default` at the commit that adds this entry, approved by the
+owner: golden `evals/golden_v2.jsonl`, split `all`, repetitions 1, `max_usd` 1.00 each, model
+left empty (the default in the code, `claude-haiku-5-5`). Every run dispatched is listed;
+none is left out for its result. A run that does not ask all 240 questions, or that has an
+error, is reported and not repeated without the owner's word, and the rule is not applied
+to an incomplete set; the default then does not change on this pull request. Nothing in
+this entry changes after the first run.
+
+The files are renamed on fetching to `evals/results/<date>_baseline-coverage_<RUN_ID>.json`,
+so that a glob for the v2 baseline's files cannot pick them up. The variant inside them is
+`baseline`.
+
+## What this cannot show
+
+- The runs ask the committed fixture, whose data covers 2026-08-09 to 2026-09-25, the dates
+  the `zero-day` paragraph wrote. So they check that the rewrite means the same to the
+  model, not that the rule stays right as days are added. That the dates follow the data
+  is checked by a test that loads a later day and calls `describe_schema` again
+  (`tests/test_agent_tools.py`), not by a model.
+- Non-inferiority within one case of `zero-day` on 110 cases is not equivalence: a
+  difference smaller than identical runs show cannot be seen here.
+- The coverage is read from one table. Nothing here measures a question about another one.
