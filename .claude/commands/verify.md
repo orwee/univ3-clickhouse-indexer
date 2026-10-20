@@ -26,8 +26,10 @@ write their reports into `reports/`, which git ignores.
 
 `make test`
 
-Copy the counts from pytest's last line: passed, failed, skipped. Tests that need ClickHouse
-skip with a reason when the server is not reachable: say how many skipped and why.
+Copy the counts from pytest's last line: passed, failed, skipped. `make test` prints how many
+skipped but not why. If any did, run the same suite again with the reasons, `uv run pytest -q -rs`,
+and copy the `SKIPPED` lines: tests that need ClickHouse skip when the server is not
+reachable, and others skip when an optional file or package is absent.
 
 ## 3. The load: counts, duplicates, coverage
 
@@ -44,9 +46,10 @@ data directory (the backfill ran as another user), the command is
 
 Runs `sql/sanity/*.sql` and writes `reports/sanity.md`. It exits non-zero when a query marked
 `expect: empty` (duplicates, same-sign amounts) returns rows. A query printed as `REFUSED`
-did not run at all: report it as not checked, even though the exit code may be 0. From
-`reports/sanity.md`, give the rows per pool and day and the days without swaps (coverage) as
-they are; they are informational, not failures.
+did not run at all: report it as not checked, even though the exit code may be 0. For
+coverage, give from `reports/sanity.md` the rows of query 03 (days without swaps) as they
+are, and only the row count of query 01 (one row per pool and day: too many to copy, and
+the report itself shows only the first ones). Both are informational, not failures.
 
 ## 4. Internal reconciliation
 
@@ -63,5 +66,8 @@ the run.
    why. If none, say "nothing".
 3. **Not checked:** skipped tests and their reason, `REFUSED` sanity queries, any step that
    could not reach ClickHouse.
-4. The run is green only if all five exit codes are 0 and nothing is under "Not checked".
-   Otherwise say which step stops it from being green.
+4. The verdict, one of three:
+   - **red** if any of the five exit codes is not 0: name the step or steps;
+   - **green** if all five are 0 and nothing is under "Not checked";
+   - **green, with N not checked** if all five are 0 and something is under "Not checked":
+     name what. Never shorten this one to "green".
