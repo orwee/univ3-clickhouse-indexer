@@ -323,6 +323,7 @@ uv downloads Python 3.12 by itself.
 | Smart-money trades, 1 credit per page, cached outside the repo (optional) | `PYTHONPATH=src uv run python -m univ3_indexer.nansen --fetch-tgm USDC --from … --to …` | **Nansen** |
 | Cross them with `raw_swaps`, store the aggregate (optional) | `PYTHONPATH=src uv run python -m univ3_indexer.nansen --daily USDC --from … --to …` | no |
 | Tests and lint | `make test`, `make lint` | no |
+| The checks run after every pull request (lint, tests, `make load-verify`, `make sanity`, `make reconcile`), each judged by its own exit code, then a summary | `/verify` in Claude Code ([.claude/commands/verify.md](.claude/commands/verify.md)) | no |
 
 `make reconcile` compares only days that are complete on our side and closed on the
 source's, and flags a pool-day beyond 1% **and** 1,000 USD; both thresholds and the day rule
