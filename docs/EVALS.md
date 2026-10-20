@@ -816,7 +816,7 @@ the same 240 ids, splits, answers and SQL. The file's SHA-256 went from
 `9f920d576c88de70e8d920ab59be2e11d26f5b9e9d1573873d7f16fe83f27cf7`. The partial runs below
 were asked the old wording.
 
-### Baseline on v2: partial runs, and what they show
+### Baseline on v2: the partial runs of 2026-10-19, not used for any rule
 
 Three runs of `baseline` (`claude-haiku-5-5`), split `all`, repetitions 1, `max_usd` 0.66 each,
 on `feat/golden-v2` at `a628239`, dispatched together on 2026-10-19:
@@ -862,13 +862,92 @@ six runs and the second part needs three.
 - **The refusal recall of the baseline cannot be stated.** 36 of 38 asked cases on `test` is
   94.7% [82.7%, 98.5%] but it excludes the 22 that were not asked, which differ between runs.
 
-### The change on v2, `refuse-early`: not run
+### Baseline on v2: three complete runs
 
-The pre-registration, the three runs of `refuse-early` and the rule were not carried out. The
-three baseline runs above are partial in the cases that metric is about, and the allowance of
-the night (6 runs, 4.00 USD of `max_usd`) cannot repeat them and also run the variant at a
-budget that completes a run (about 0.72 USD or more per run, 0.41 spent plus the 0.25
-reserve and the margin). There is no second row. The proposed plan is in the pull request.
+Three runs of `baseline` (`claude-haiku-5-5`), golden `evals/golden_v2.jsonl` (SHA-256
+`9f920d57...`, the corrected file), split `all`, repetitions 1, `max_usd` 1.00 each, on
+`feat/golden-v2` at `e08905b` (the branch with `main` merged in), approved by the owner on
+2026-10-20:
+[39403472270](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39403472270),
+[39403483384](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39403483384) and
+[39403493610](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39403493610).
+Each asked 240 of 240 questions; none ended in an error. Spent 0.4616194, 0.4685382 and
+0.4676213 USD. Files: `evals/results/2026-10-20_baseline_<RUN_ID>.json`, the report over the
+three `evals/results/2026-10-20_baseline.md`, the spread and guards
+`evals/results/2026-10-20_baseline_golden_v2_spread.md`, one row per case
+`evals/results/2026-10-20_baseline_golden_v2_per_case.csv`. Three earlier dispatches, on the
+commit before the merge, were cancelled before they started and cost nothing.
+
+| `test`, baseline | Per run | By majority of the three runs |
+|---|---|---|
+| Correct, all 170 cases | 158, 156, 156 | |
+| The 110 with an answer, right | 103, 102, 102 | 102 = 92.7% [86.3%, 96.3%] |
+| The 60 with no answer, refused | 55, 54, 54 | 56 = 93.3% [84.1%, 97.4%] |
+
+Intervals are 95% Wilson. Over the three runs together, 470 of 510 answers on `test` are
+right, 92.2%, 95% interval [88.2%, 95.7%] resampling cases (`evals/results/2026-10-20_baseline.md`).
+
+**The failures, by category**, cases wrong by majority:
+
+| Category | `dev` (70) | `test` (170) |
+|---|---|---|
+| A pool-day with no row, refused where the answer is 0 (`absent-poolday`, and one `missing-pool-day`) | 3 | 7 |
+| A question with no answer given a value (forecast, another chain, another source) | 3 | 3 |
+| Ran out of model calls (one `multi-step`; one question about another pool) | 1 | 1 |
+| A question with two readings answered with neither (`ambiguous`) | 0 | 1 |
+| Total | 7 | 12 |
+
+The `dev` column was read first and is what the change was designed from: of the 12 wrong
+answers to `dev` cases that have an answer, over the three runs, 9 were `absent-poolday`
+refusals, and the agent's reason was that one pool's own rows stop on 2026-09-24. The `test`
+column was counted after the `zero-day` runs had finished.
+
+### The change on v2, `zero-day`: improved, by the rule written first
+
+The fourth entry of [EVAL_PREREGISTRATION.md](EVAL_PREREGISTRATION.md) was pushed in
+`812fc7f`, before any run of the variant: one paragraph appended to the prompt
+(`evals/variants/zero-day.md`) saying that within 2026-08-09 to 2026-09-25 and for a pool in
+`dim_pools` a pool-day with no row means no swap, so its figures are 0, and that outside
+those dates it is still a refusal. Three runs with the inputs of the baseline, on `812fc7f`:
+[39407607316](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39407607316),
+[39407618600](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39407618600) and
+[39407628909](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/39407628909).
+Each asked 240 of 240, no errors, and records the two variant files with the SHA-256 of the
+entry. Spent 0.4675909, 0.4715761 and 0.4688095 USD. Files:
+`evals/results/2026-10-20_zero-day_<RUN_ID>.json`, `evals/results/2026-10-20_zero-day.md`,
+`evals/results/2026-10-20_zero-day_golden_v2_spread.md` and the comparison
+`evals/results/2026-10-20_baseline_vs_zero-day.md`.
+
+**The rule, applied.** On the 110 `test` cases with an answer, by majority of three runs:
+
+| | Baseline | `zero-day` | Rule | Holds |
+|---|---|---|---|---|
+| Right | 102 = 92.7% [86.3%, 96.3%] | 110 = 100.0% [96.6%, 100.0%] | | |
+| Fixed / broke | | 8 / 0 | fixed minus broke 2 or more | yes, 8 |
+| Refusal recall, the 60 with no answer | 56 of 60 | 56 of 60 | at least 55 | yes |
+| Cases with an answer broken | | 0 | at most 1 | yes |
+| Cases with an answer refused | 7 | 0 | at most 9 | yes |
+
+Fixed minus broke is 8 and every guard holds: **improved, by 8 cases**. Every one of the 8
+cases the baseline got wrong was fixed. Right in each run: 109, 109 and 108 of 110.
+
+What else moved, deciding nothing:
+
+- Among the 60 `test` cases with no answer, one was fixed and one broke: a question about
+  another chain, refused by the baseline, was given a value in all three `zero-day` runs.
+  Recall by majority is 56 of 60 in both.
+- On `dev`, the cases the change was designed on: 4 of 50 with an answer fixed, none broke;
+  the three `absent-poolday` cases are among them.
+- Cost and time per question on `test`: 0.00189 against 0.00192 USD, 6.66 against 6.42
+  seconds (`evals/results/2026-10-20_baseline_vs_zero-day.md`).
+- Left wrong by majority on `test`: 4 cases, all with no answer: 2 forecasts and 1 other
+  source given a value, and the other-chain case above.
+
+**What this does and does not say.** The paragraph fixes the weakness it was written for,
+on this fixture and this model: every pool-day with no row in `test` is now answered 0, and
+nothing measured got worse by more than identical runs differ. It does not say the agent is
+better in general. The set was built around known weak spots, and the paragraph names the
+dates of this fixture, so it is a fix for this data, not a lesson the agent learnt.
 
 ## The regression check on pull requests
 

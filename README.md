@@ -200,13 +200,18 @@ from chance. The figures are in
 [`evals/results/2026-10-12_baseline_vs_refuse-early.md`](evals/results/2026-10-12_baseline_vs_refuse-early.md),
 and what each run cost is in [docs/EVALS.md](docs/EVALS.md#what-a-run-costs-measured).
 
-**A harder set.** Golden set v1 is too easy to measure a change: 98.9% of the answerable cases
-are right. [Golden set v2](docs/EVALS.md#golden-set-v2-a-harder-test-the-agent-can-fail) has 240
-cases (v1 is untouched); three partial baseline runs on it, 205 to 211 of the 240 cases
-asked because of a budget set too low, are right in 445 of 480 answers with an answer, 92.7%
-([`evals/results/2026-10-19_baseline.md`](evals/results/2026-10-19_baseline.md)), and the
-agent refuses 25 of 30 times a pool-day with no row, where the answer is 0. The change measured
-on v1 has not been run on v2.
+**A harder set, and a change it could measure.** Golden set v1 is too easy to measure a
+change: 98.9% of its answerable cases are right. On
+[golden set v2](docs/EVALS.md#golden-set-v2-a-harder-test-the-agent-can-fail), 240 cases
+with v1 untouched, the baseline was right on 102 of the 110 held-out questions that have an
+answer, by majority of three complete runs
+([`evals/results/2026-10-20_baseline_golden_v2_spread.md`](evals/results/2026-10-20_baseline_golden_v2_spread.md)).
+Its main failure, found on the design split only, was refusing a pool-day with no row,
+where the answer is 0. One paragraph telling it so, measured under a rule written
+beforehand, was right on 110 of 110: 8 fixed, none broken, and refusals of the 60 held-out
+questions with no answer stayed at 56 of 60
+([`evals/results/2026-10-20_zero-day_golden_v2_spread.md`](evals/results/2026-10-20_zero-day_golden_v2_spread.md),
+[`evals/results/2026-10-20_baseline_vs_zero-day.md`](evals/results/2026-10-20_baseline_vs_zero-day.md)).
 
 **Cost.** What a question costs and how long it takes, from
 [`evals/results/2026-10-13_cost.md`](evals/results/2026-10-13_cost.md), which names the
