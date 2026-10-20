@@ -1,6 +1,6 @@
 """A variant: one file that says what a run changes, and nothing else.
 
-``<directory>/<name>.yml`` may set six things, all optional:
+``<directory>/<name>.yml`` may set seven things, all optional:
 
 ``model``
     a model id, in place of the default in the code.
@@ -19,6 +19,10 @@
 ``provider``
     where the requests go, in place of the default. A provider is used only when a variant
     names it, and a run talks to that one and to no other.
+
+``docs_tool``
+    ``true`` to offer the agent ``search_docs``, a search over the documentation, and to let
+    it answer in words with citations. Off unless set.
 
 A file that sets none of them is the baseline. Any other key is refused, so a typo cannot
 pass for a setting. The two paths are relative to the variant file's own directory.
@@ -47,6 +51,7 @@ FIELDS = (
     "max_usd_per_question",
     "prompt_cache",
     "provider",
+    "docs_tool",
 )
 PROVIDERS = ("anthropic", "cheaperinference")
 DEFAULT_PROVIDER = PROVIDERS[0]
@@ -55,7 +60,7 @@ TABLE_FIELDS = ("description", "columns")
 
 
 class VariantError(ValueError):
-    """The variant file is missing, or holds something that is not one of the six settings."""
+    """The variant file is missing, or holds something that is not one of the seven settings."""
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,7 @@ class Variant:
     max_usd_per_question: Decimal | None = None
     provider: str = DEFAULT_PROVIDER
     prompt_cache: bool = False
+    docs_tool: bool = False
     files: dict[str, str] = field(default_factory=dict)  # path -> SHA-256 of its bytes
 
 
@@ -172,6 +178,8 @@ def load(name: str, directory: Path, root: Path | None = None) -> Variant:
             raise VariantError(f"{path}: max_usd_per_question must be a positive number")
     if not isinstance(raw.get("prompt_cache", False), bool):
         raise VariantError(f"{path}: prompt_cache must be true or false")
+    if not isinstance(raw.get("docs_tool", False), bool):
+        raise VariantError(f"{path}: docs_tool must be true or false")
     provider = raw.get("provider", DEFAULT_PROVIDER)
     if provider not in PROVIDERS:
         raise VariantError(f"{path}: provider must be one of {', '.join(PROVIDERS)}")
@@ -179,6 +187,7 @@ def load(name: str, directory: Path, root: Path | None = None) -> Variant:
         name=name,
         provider=provider,
         prompt_cache=raw.get("prompt_cache", False),
+        docs_tool=raw.get("docs_tool", False),
         model=model,
         descriptions=load_descriptions(notes) if notes is not None else None,
         prompt_addendum=text,

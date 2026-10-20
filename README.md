@@ -280,6 +280,8 @@ ClickHouse.
   one run of `claude-sonnet-5-5` on the `dev` questions, which is one run and not a comparison.
   A second provider was tried for that same model and its one run did not complete.
 
+**Questions about the documentation.** A variant can give the agent `search_docs`, a BM25 search over this README, DECISIONS and `docs/`; on 44 model-labelled questions the right section is in the first five results for 93.1% of the `test` cases (27 of 29), and in one run of the agent with it 19 of 29 `test` answers had every key fact and 24 of 27 were judged supported by what they cite ([docs/EVALS.md](docs/EVALS.md#retrieval-over-the-documentation), [decision 27](DECISIONS.md#27-questions-about-what-the-data-means-are-answered-from-the-documentation-by-search-and-with-citations)). The labels were written by a model and the judge is not calibrated against a person.
+
 ## How to run it
 
 ### The demo: Docker only, no API key

@@ -172,6 +172,7 @@ def test_the_eval_workflow_is_started_by_hand_only_in_the_agent_eval_environment
     inputs = workflow["on"]["workflow_dispatch"]["inputs"]
     assert list(inputs) == [
         "variant", "split", "model", "repetitions", "max_usd", "limit", "only_errors", "golden",
+        "suite",
     ]  # fmt: skip
     assert inputs["variant"]["required"] is True
     assert "evals/variants/" in inputs["variant"]["description"]
@@ -182,6 +183,9 @@ def test_the_eval_workflow_is_started_by_hand_only_in_the_agent_eval_environment
     assert inputs["model"]["default"] == "" and inputs["limit"]["default"] == ""
     assert inputs["repetitions"]["default"] == "1" and inputs["max_usd"]["default"] == "5"
     assert all(not inputs[name]["required"] for name in inputs if name != "variant")
+    # The suite is additive: left alone, the workflow is the one it always was.
+    assert inputs["suite"]["default"] == "sql" and inputs["suite"]["type"] == "choice"
+    assert inputs["suite"]["options"] == ["sql", "docs"]
     assert list(workflow["jobs"]) == ["evaluate"]
     assert workflow["jobs"]["evaluate"]["environment"] == "agent-eval"
 
@@ -203,6 +207,7 @@ def test_the_model_key_is_given_to_the_step_that_runs_the_evaluation_and_to_no_o
         "LIMIT": "${{ inputs.limit }}",
         "ONLY_ERRORS": "${{ inputs.only_errors }}",
         "GOLDEN": "${{ inputs.golden }}",
+        "SUITE": "${{ inputs.suite }}",
         "UNIV3_DATA_DIR": "${{ runner.temp }}/eval-data",
         "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}",
         "CHEAPERINFERENCE_API_KEY": (
@@ -239,6 +244,27 @@ def test_the_golden_file_is_an_input_that_defaults_to_v1_and_must_be_a_jsonl_und
     assert check < run.index("python -m evalkit.run")
     # The regression check on pull requests keeps asking golden set v1.
     assert "inputs.golden" not in EVAL_PR.read_text()
+
+
+def test_the_docs_suite_runs_in_the_same_step_with_the_same_key_and_the_sql_suite_is_untouched():
+    run = next(s for s in steps(load(EVAL)) if s.get("name") == "Evaluate")["run"]
+    branch, other = run.split('if [ "$SUITE" = "docs" ]; then', 1)[1].split("else", 1)
+    docs, sql = branch.split("fi", 1)[0], other.split("fi", 1)[0]
+    assert "python -m evalkit.rag_run evals/rag_cases.jsonl" in docs and "evalkit.run" not in docs
+    assert 'python -m evalkit.run "$GOLDEN"' in sql and "rag_run" not in sql
+    assert '"${arguments[@]}"' in sql and '"${docs_arguments[@]}"' in docs
+    docs_arguments = run.split("docs_arguments=(")[1].split("set +e")[0]
+    for flag in ('--variant "$VARIANT"', '--split "$SPLIT"', '--max-usd "$MAX_USD"',
+                 "--out eval-results.json", '--model "$MODEL"', '--limit "$LIMIT"'):  # fmt: skip
+        assert flag in docs_arguments, flag
+    # The exit code of whichever ran is the one written down, and nothing else can fail it.
+    assert run.index('"$SUITE" = "docs"') < run.index("code=$?") < run.index("eval-exit-code.txt")
+    assert "exit 1" not in run
+    # The Report step is the one it was, word for word the same as the pull-request check's:
+    # the results of the docs suite are rendered by the same command.
+    by_name = {s.get("name"): s for s in steps(load(EVAL))}
+    assert "env" not in by_name["Report"]
+    assert "python -m evalkit.report eval-results.json --top" in by_name["Report"]["run"]
 
 
 def test_the_eval_workflow_fails_only_when_the_run_could_not_execute():
