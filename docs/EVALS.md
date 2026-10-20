@@ -1261,6 +1261,23 @@ answers it. `dev` recall@5 is at the floor the tests hold. The new set's 12 of 1
 that the chunks can be found: most of its questions name a column, whose words are in one
 chunk only. The ranker's settings were not tuned again.
 
+**Then made a source of their own.** Because they cost the old questions, the dbt chunks
+left the documents' index: `search_docs` takes `source`, `docs` by default or `dbt`, and
+each source has its own index, so the documents rank exactly as they would without the dbt
+files. The tool's description tells the model to ask for `dbt` only for a question about a
+column or a model. Scored again on `main`'s documents
+(`evals/results/2026-10-20_retrieval_sources.md`):
+
+| Set | Split | Source | recall@1 / @3 / @5, MRR |
+|---|---|---|---|
+| Old, 44 cases | `dev` (15) | `docs` | 12 / 12 / 14, 0.838 |
+| Old, 44 cases | `test` (29) | `docs` | 20 / 25 / 27, 0.788 |
+| New, 12 cases | `dev` (4) | `dbt` | 4 / 4 / 4, 1.000 |
+| New, 12 cases | `test` (8) | `dbt` | 8 / 8 / 8, 1.000 |
+
+The old set is back where #86 had it. Whether the agent asks for `dbt` when it should has not
+been measured: the run below was made before the parameter existed.
+
 ### The agent with the docs tool: one run
 
 `search_docs` is offered only by a variant with `docs_tool: true`

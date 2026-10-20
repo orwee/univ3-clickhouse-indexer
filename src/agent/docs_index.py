@@ -12,9 +12,11 @@ The ranker is Okapi BM25 in plain Python: no dependency, no embeddings, no servi
 network. The words of a heading are counted ``heading_weight`` times in the chunk they
 head, because a heading names what the section is about.
 
-The column descriptions of dbt are indexed too: every ``schema.yml`` under ``dbt/``, outside
-dbt's own output directories, gives one chunk per model and per seed, with its description
-and each column with its own. Its id is ``<file>#<name>``, and it is never cut.
+The column descriptions of dbt are a second source, ``dbt``, with an index of its own, so
+that they never change the ranking of the documents: every ``schema.yml`` under ``dbt/``,
+outside dbt's own output directories, gives one chunk per model and per seed, with its
+description and each column with its own. Its id is ``<file>#<name>``, and it is never cut.
+``search_docs`` searches the documents unless it is asked for ``dbt``.
 
 Nothing here knows what the documents say.
 """
@@ -37,6 +39,10 @@ DBT_SCHEMA_FILE = "schema.yml"
 DBT_OUTPUT_DIRECTORIES = frozenset({"target", "dbt_packages", "logs"})
 # The entries of a schema.yml that describe something with columns, and what each is called.
 DBT_RESOURCES = (("models", "model"), ("seeds", "seed"))
+# What search_docs can search. The first is the default.
+DOCS_SOURCE = "docs"
+DBT_SOURCE = "dbt"
+SOURCES = (DOCS_SOURCE, DBT_SOURCE)
 # Tuned on the dev split only (docs/EVALS.md, "Retrieval over the documentation").
 DEFAULT_MAX_CHARS = 1000
 DEFAULT_HEADING_WEIGHT = 8
@@ -144,15 +150,21 @@ def dbt_chunks(path: str, text: str) -> list[Chunk]:
     return chunks
 
 
-def load_chunks(root: Path, max_chars: int = DEFAULT_MAX_CHARS, dbt: bool = True) -> list[Chunk]:
-    """The chunks of the documents and, unless ``dbt`` is false, of the dbt schema files."""
+def load_chunks(
+    root: Path, max_chars: int = DEFAULT_MAX_CHARS, source: str = DOCS_SOURCE
+) -> list[Chunk]:
+    """The chunks of one source: the documents, or the dbt schema files."""
+    if source not in SOURCES:
+        raise ValueError(f"unknown source {source!r}; the sources are {', '.join(SOURCES)}")
     chunks = []
-    for path in document_files(root):
-        relative = path.relative_to(root).as_posix()
-        chunks.extend(chunk_text(relative, path.read_text(encoding="utf-8"), max_chars))
-    for path in dbt_schema_files(root) if dbt else []:
-        relative = path.relative_to(root).as_posix()
-        chunks.extend(dbt_chunks(relative, path.read_text(encoding="utf-8")))
+    if source == DOCS_SOURCE:
+        for path in document_files(root):
+            relative = path.relative_to(root).as_posix()
+            chunks.extend(chunk_text(relative, path.read_text(encoding="utf-8"), max_chars))
+    else:
+        for path in dbt_schema_files(root):
+            relative = path.relative_to(root).as_posix()
+            chunks.extend(dbt_chunks(relative, path.read_text(encoding="utf-8")))
     return chunks
 
 
@@ -200,14 +212,26 @@ DEFAULT_K = 5
 MAX_K = 8
 
 
-def search_docs(index: Index, query: object, k: object = DEFAULT_K) -> dict:
-    """What the ``search_docs`` tool returns: the best chunks with their ids and their text.
+def load_library(root: Path) -> dict[str, Index]:
+    """One index per source, each with its own word statistics."""
+    return {source: Index(load_chunks(root, source=source)) for source in SOURCES}
+
+
+def search_docs(
+    library: dict[str, Index], query: object, k: object = DEFAULT_K, source: object = DOCS_SOURCE
+) -> dict:
+    """What the ``search_docs`` tool returns: the best chunks of one source, with their ids
+    and their text.
 
     Never raises: a bad argument comes back as a result with ``ok`` false, as the other tools
     do. ``k`` is clamped to 1 to ``MAX_K``.
     """
     if not isinstance(query, str) or not query.strip():
         return {"ok": False, "error": {"kind": "rejected", "message": "query must be text."}}
+    if source not in library:
+        message = f"source must be one of: {', '.join(library)}."
+        return {"ok": False, "error": {"kind": "rejected", "message": message}}
+    index = library[source]
     count = k if isinstance(k, int) and not isinstance(k, bool) else DEFAULT_K
     found = index.search(query, min(max(count, 1), MAX_K))
     return {
