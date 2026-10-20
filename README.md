@@ -332,6 +332,8 @@ uv downloads Python 3.12 by itself.
 | Cross them with `raw_swaps`, store the aggregate (optional) | `PYTHONPATH=src uv run python -m univ3_indexer.nansen --daily USDC --from … --to …` | no |
 | Tests and lint | `make test`, `make lint` | no |
 | The checks run after every pull request (lint, tests, `make load-verify`, `make sanity`, `make reconcile`), each judged by its own exit code, then a summary | `/verify` in Claude Code ([.claude/commands/verify.md](.claude/commands/verify.md)) | no |
+| The evaluation as [docs/EVALS.md](docs/EVALS.md) runs it: `make eval-ci`, then it stops for the owner to start the paid runs; with their ids, fetch, `evalkit.runs` and `evalkit.compare` against the latest baseline, and a summary citing `evals/results/` | `/eval` in Claude Code ([.claude/commands/eval.md](.claude/commands/eval.md)) | no (the runs it waits for: **Anthropic**, on GitHub) |
+| One entry in "Agent corrections" of [DECISIONS.md](DECISIONS.md#agent-corrections), in the format of the others, every fact in it checked | `/log-correction` in Claude Code ([.claude/commands/log-correction.md](.claude/commands/log-correction.md)) | no |
 
 `make reconcile` compares only days that are complete on our side and closed on the
 source's, and flags a pool-day beyond 1% **and** 1,000 USD; both thresholds and the day rule
@@ -346,6 +348,20 @@ explicit reason when the server is not reachable.
 
 ClickHouse listens on `127.0.0.1` only (8123 HTTP, 9000 native). `make ch-client` opens a
 SQL shell; `make down` stops the server and keeps the data in a named volume.
+
+### Claude Code: two agents and a commit hook
+
+- [`pr-reviewer`](.claude/agents/pr-reviewer.md) reviews a pull request against the rules of
+  [AGENTS.md](AGENTS.md) and every entry of "Agent corrections", and reports findings. It has
+  no Edit or Write tool; it does have Bash, so that it stays read-only there is its
+  instruction, not a barrier.
+- [`eval-analyst`](.claude/agents/eval-analyst.md) reads `evals/results/`, compares variants
+  with `evalkit` and drafts conclusions that name the file of every number. It starts no
+  paid run without the owner's approval; that too is its instruction, not a barrier.
+- [`.claude/settings.json`](.claude/settings.json) has a `PreToolUse` hook on Bash: a
+  `git commit` runs `make lint` and `make test` first, and is blocked unless both exit 0.
+  It holds only for Claude Code sessions in this repository, not for Codex, OpenCode or a
+  person at a terminal, and it checks the working tree, not only what is staged.
 
 ### Orchestration (Airflow)
 
