@@ -21,8 +21,13 @@ SMALL = llm.Usage(input_tokens=1000, output_tokens=100)
 
 
 @pytest.fixture(scope="module")
-def index():
-    return docs_index.Index(docs_index.load_chunks(ROOT))
+def library():
+    return docs_index.load_library(ROOT)
+
+
+@pytest.fixture(scope="module")
+def index(library):
+    return library[docs_index.DOCS_SOURCE]
 
 
 class NoTools:
@@ -73,7 +78,7 @@ def test_without_docs_the_tools_are_the_baselines_and_nothing_else_changes():
     )
 
 
-def test_with_docs_there_is_a_fourth_tool_and_a_text_answer_with_citations(index):
+def test_with_docs_there_is_a_fourth_tool_and_a_text_answer_with_citations(index, library):
     before = json.dumps(loop.TOOL_DEFINITIONS, sort_keys=True)
     definitions = loop.tool_definitions(True)
     assert [t["name"] for t in definitions] == [
@@ -85,37 +90,40 @@ def test_with_docs_there_is_a_fourth_tool_and_a_text_answer_with_citations(index
     properties = definitions[3]["input_schema"]["properties"]
     assert properties["type"]["enum"][-1] == "text" and "citations" in properties
     assert json.dumps(loop.TOOL_DEFINITIONS, sort_keys=True) == before  # the baseline is intact
-    result, model = ask([search("net volume"), submit(type="refusal", refusal_reason="x")], index)
+    source = definitions[2]["input_schema"]["properties"]["source"]
+    assert source["enum"] == ["docs", "dbt"] and "only for a question about a column" in str(source)
+    assert definitions[2]["input_schema"]["required"] == ["query"]
+    result, model = ask([search("net volume"), submit(type="refusal", refusal_reason="x")], library)
     assert model.calls[0]["tools"] == definitions
 
 
 # --- the search ---------------------------------------------------------------------------
 
 
-def test_search_docs_returns_ids_and_text_and_clamps_k(index):
-    out = docs_index.search_docs(index, "net volume round trips", k=100)
+def test_search_docs_returns_ids_and_text_and_clamps_k(index, library):
+    out = docs_index.search_docs(library, "net volume round trips", k=100)
     assert out["ok"] and 1 <= len(out["chunks"]) <= docs_index.MAX_K
     assert all(set(c) == {"id", "text"} for c in out["chunks"])
-    assert len(docs_index.search_docs(index, "net volume", k=2)["chunks"]) == 2
-    assert len(docs_index.search_docs(index, "net volume", k=0)["chunks"]) == 1
+    assert len(docs_index.search_docs(library, "net volume", k=2)["chunks"]) == 2
+    assert len(docs_index.search_docs(library, "net volume", k=0)["chunks"]) == 1
     assert (
-        len(docs_index.search_docs(index, "net volume", k=True)["chunks"]) == docs_index.DEFAULT_K
+        len(docs_index.search_docs(library, "net volume", k=True)["chunks"]) == docs_index.DEFAULT_K
     )
     for bad in (None, "", "   ", 3):
-        assert docs_index.search_docs(index, bad)["ok"] is False
+        assert docs_index.search_docs(library, bad)["ok"] is False
 
 
 # --- the grounding of an answer in words ---------------------------------------------------
 
 
-def test_an_answer_that_cites_a_chunk_the_search_returned_is_answered(index):
+def test_an_answer_that_cites_a_chunk_the_search_returned_is_answered(index, library):
     first = index.search("net volume round trips", 3)[0][1].id
     result, _ = ask(
         [
             search("net volume round trips", k=3),
             submit(type="text", value="Volume without round trips.", citations=[first]),
         ],
-        index,
+        library,
     )
     assert result.status == "answered" and result.answer["citations"] == [first]
     assert first in [d["id"] for d in result.documents]
@@ -126,29 +134,29 @@ def test_an_answer_that_cites_a_chunk_the_search_returned_is_answered(index):
 @pytest.mark.parametrize(
     "citations", [None, [], ["no.md#such"], "README.md#Limitations", [7]], ids=repr
 )
-def test_an_answer_with_no_valid_citation_is_ungrounded(index, citations):
+def test_an_answer_with_no_valid_citation_is_ungrounded(index, citations, library):
     result, _ = ask(
         [search("net volume"), submit(type="text", value="Some words.", citations=citations)],
-        index,
+        library,
     )
     assert result.status == "ungrounded"
     assert result.reason == "the answer cites no chunk that search_docs returned"
 
 
-def test_a_chunk_returned_in_another_question_does_not_count(index):
+def test_a_chunk_returned_in_another_question_does_not_count(index, library):
     first = index.search("net volume", 1)[0][1].id
-    ask([search("net volume"), submit(type="refusal", refusal_reason="x")], index)
-    result, _ = ask([submit(type="text", value="Words.", citations=[first])], index)
+    ask([search("net volume"), submit(type="refusal", refusal_reason="x")], library)
+    result, _ = ask([submit(type="text", value="Words.", citations=[first])], library)
     assert result.status == "ungrounded"
 
 
-def test_a_text_answer_needs_words_and_a_number_answer_still_needs_a_cell(index):
+def test_a_text_answer_needs_words_and_a_number_answer_still_needs_a_cell(index, library):
     result, _ = ask(
         [
             submit(type="text", value="", citations=["a"]),
             submit(type="number", value="5", citations=["a"]),
         ],
-        index,
+        library,
     )
     assert result.status == "ungrounded"  # the empty text was refused, the number had no rows
     assert "must be the answer, in words" in json.dumps(result.tool_calls[0].summary)
@@ -358,3 +366,12 @@ def test_the_report_command_renders_a_docs_results_file_without_the_agent_group(
     text = report.render(json.loads(out.read_text()))
     assert text.startswith("# Documentation suite: docs, split all")
     assert report.render(json.loads(out.read_text()), top_only=True) == text
+
+
+def test_the_loop_passes_the_source_the_model_asked_for(library):
+    result, _ = ask(
+        [search("fee tier", source="dbt"), submit(type="refusal", refusal_reason="x")], library
+    )
+    assert result.documents and all(c["id"].startswith("dbt/") for c in result.documents)
+    result, _ = ask([search("fee tier"), submit(type="refusal", refusal_reason="x")], library)
+    assert result.documents and not any(c["id"].startswith("dbt/") for c in result.documents)

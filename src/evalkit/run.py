@@ -168,7 +168,7 @@ def execute(
     descriptions: dict | None = None,
     prompt_addendum: str = "",
     prompt_cache: bool = False,
-    docs: docs_index.Index | None = None,
+    docs: dict[str, docs_index.Index] | None = None,
     after_each: Callable[[list[dict]], None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[list[dict], Decimal]:
@@ -456,9 +456,7 @@ def main(
         descriptions=variant.descriptions,
         prompt_addendum=variant.prompt_addendum,
         prompt_cache=variant.prompt_cache,
-        docs=docs_index.Index(docs_index.load_chunks(config.REPO_ROOT))
-        if variant.docs_tool
-        else None,
+        docs=docs_index.load_library(config.REPO_ROOT) if variant.docs_tool else None,
         after_each=lambda so_far: put(so_far, finished=False),
         sleep=sleep,
     )

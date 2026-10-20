@@ -136,6 +136,15 @@ SEARCH_DOCS_DEFINITION = {
                 "description": f"How many chunks, 1 to {docs_index.MAX_K}. Default "
                 f"{docs_index.DEFAULT_K}.",
             },
+            "source": {
+                "type": "string",
+                "enum": list(docs_index.SOURCES),
+                "description": (
+                    f"{docs_index.DOCS_SOURCE} (the default): the documentation. "
+                    f"{docs_index.DBT_SOURCE}: the descriptions of the dbt models and their "
+                    "columns; use it only for a question about a column or a model."
+                ),
+            },
         },
         "required": ["query"],
     },
@@ -397,7 +406,7 @@ def run(
     prompt_addendum: str = "",
     sleep: Callable[[float], None] = time.sleep,
     prompt_cache: bool = False,
-    docs: docs_index.Index | None = None,
+    docs: dict[str, docs_index.Index] | None = None,
 ) -> Result:
     """Run one question. With ``transcript``, every turn is appended to that list as plain
     data: the question, what the model said and called, and what each tool returned in
@@ -407,8 +416,9 @@ def run(
     ``prompt_addendum`` is text appended to the system prompt; where it comes from is the
     caller's business. With ``prompt_cache``, the tool definitions and the system prompt
     are sent as a cached prefix: the model is sent the same text, billed differently.
-    With ``docs`` (an index of the documentation) the model is also offered ``search_docs``
-    and may answer in words with citations; without it nothing about the tools changes."""
+    With ``docs`` (one index per source, ``docs_index.load_library``) the model is also
+    offered ``search_docs`` and may answer in words with citations; without it nothing about
+    the tools changes."""
     started = clock()
     result = Result(question=question, model=llm.model)
     system = system_prompt(
@@ -561,7 +571,10 @@ def run(
             elif name == "search_docs" and docs is not None:
                 asked = given if isinstance(given, dict) else {}
                 output = docs_index.search_docs(
-                    docs, asked.get("query"), asked.get("k", docs_index.DEFAULT_K)
+                    docs,
+                    asked.get("query"),
+                    asked.get("k", docs_index.DEFAULT_K),
+                    asked.get("source", docs_index.DOCS_SOURCE),
                 )
                 for chunk in output.get("chunks", []):
                     if chunk["id"] not in returned:

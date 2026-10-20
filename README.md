@@ -3,8 +3,8 @@
 1.24 million financial transactions from a public ledger, loaded into a database and
 verified against the ledger itself and against an independent provider. On top of that data
 sits an agent that answers questions about it by writing SQL, and an evaluation that measures
-how often the agent is right. That number is not in yet: the evaluation is built and has
-not run.
+how often the agent is right, how often it refuses when the data cannot answer, and what each
+answer costs.
 
 The ledger is Ethereum and the transactions are trades on Uniswap v3, an exchange that runs
 on it: 1,240,618 swaps in 4 pools over 48 days (2026-08-09 to 2026-09-25, up to the node's
@@ -17,9 +17,15 @@ finalized block). Three words are enough to follow the rest:
 - **Swap.** One trade against a pool: some of one token in, some of the other out. Every
   swap leaves a public record, and those records are the rows here.
 
-The pipeline reads `Swap` events from an Ethereum JSON-RPC node, lands them as raw JSONL,
-loads them into ClickHouse, models them with dbt and reconciles them against an independent
-source.
+**[Dashboard](https://orwee.github.io/univ3-clickhouse-indexer/)**: the whole result on one page, three minutes ·
+**Run it with `make demo`**: Docker only, no API key, no network data ·
+**[10-minute walkthrough](docs/WALKTHROUGH.md)**: what to open and in what order
+
+## What is here
+
+**The data.** The pipeline reads `Swap` events from an Ethereum JSON-RPC node, lands them as
+raw JSONL, loads them into ClickHouse, models them with dbt into five marts and reconciles
+them against an independent source.
 
 - **The pipeline agrees with itself exactly.** A recomputation from `raw_swaps` and the
   materialized view match on all 188 pool-days, in raw integer units: 0 differences.
@@ -31,15 +37,6 @@ source.
 - **Main limitation:** the external source publishes no methodology, so a difference can be
   located but not settled. Closing that needs a second source with per-swap rows.
 
-**[Dashboard](https://orwee.github.io/univ3-clickhouse-indexer/)**: the whole result on one page, three minutes ·
-**Run it with `make demo`**: Docker only, no API key, no network data ·
-**[10-minute walkthrough](docs/WALKTHROUGH.md)**: what to open and in what order
-
-> Built over one weekend (18–21 September 2026) as a hands-on way to learn
-> ClickHouse, and extended in the following week (see [CHANGELOG](CHANGELOG.md)).
-> It is tested and reconciled, but it has never run in production and it may
-> contain mistakes. Issues and corrections are welcome.
-
 A third source, the Nansen API, adds what a Swap log cannot carry: a classification of the
 account that signed the transaction. **Smart-money data: Powered by Nansen API.** The repository
 publishes only totals per pool over the days fetched, derived from their classification, and
@@ -48,15 +45,60 @@ address, a label or a transaction hash from their responses, following their
 [redistribution guidelines](https://docs.nansen.ai/mcp/redistribution-guidelines.md). See
 [docs/NANSEN.md](docs/NANSEN.md).
 
-Every design choice is in [DECISIONS.md](DECISIONS.md) with the number that was measured for
-it, and what went wrong is kept where it happened instead of being cleaned up: the double count
-in [docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md), the measurements spoiled by a cache
-in [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md), and a dated list of every
-correction in [Agent corrections](DECISIONS.md#agent-corrections). Figures above are of
-2026-09-25; some documents were measured on earlier states of the same table (863,587, 881,187,
-898,404 and 1,110,676 rows) and say which. What changed and when is in
-[CHANGELOG.md](CHANGELOG.md); the second week added [round trips](docs/ROUND_TRIPS.md), [the
-gap between two fee tiers](docs/CROSS_POOL.md) and the receipts of the largest open case.
+**The agent.** A loop around `claude-haiku-5-5` with three tools: describe the schema, run one
+read-only `SELECT`, submit an answer that must be a cell of its last result. It reads only
+the five marts, through a read-only database user with limits of its own; that user is
+defined and tested, and opt-in on the real server (section "The agent and its
+evaluation" below, and [docs/AGENT.md](docs/AGENT.md)).
+
+**How it is measured.** Two golden sets whose answers are computed by SQL on a committed
+copy of the marts, never typed, each split into `dev` (to design changes on) and `test` (to
+measure them). Every change is pre-registered before it runs
+([docs/EVAL_PREREGISTRATION.md](docs/EVAL_PREREGISTRATION.md)).
+
+- **Golden set v1, 180 cases: too easy to measure a change.** 445 of 450 answers to cases with
+  an answer are right, 98.9% over three runs
+  ([`evals/results/2026-10-12_baseline-regrounded.md`](evals/results/2026-10-12_baseline-regrounded.md)).
+- **Golden set v2, 240 harder cases.** On its 110 held-out cases with an answer the agent is
+  right on 102 by majority of three runs, and it refuses 56 of the 60 held-out questions the
+  data cannot answer
+  ([`evals/results/2026-10-20_baseline_golden_v2_spread.md`](evals/results/2026-10-20_baseline_golden_v2_spread.md)).
+  A question costs about 0.00189 USD and 6.66 seconds
+  ([`evals/results/2026-10-20_baseline_vs_zero-day.md`](evals/results/2026-10-20_baseline_vs_zero-day.md)).
+- **One change that worked, and why it is not the default.** One paragraph telling the agent
+  that a pool-day with no row is 0 got 110 of 110 right, with refusals unchanged
+  ([`evals/results/2026-10-20_zero-day_golden_v2_spread.md`](evals/results/2026-10-20_zero-day_golden_v2_spread.md)).
+  It wrote the dates of the data, so it was rewritten to read them from the data and tried as
+  the default; that version refused 54 of the 60, below the 55 its pre-registered rule asked
+  for, and the default stayed as it was
+  ([`evals/results/2026-10-20_baseline-coverage_golden_v2_spread.md`](evals/results/2026-10-20_baseline-coverage_golden_v2_spread.md),
+  [decision 28](DECISIONS.md#28-a-pool-day-with-no-row-is-zero-by-default-and-the-dates-come-from-the-data)).
+
+**The regression check.** A pull request that touches the agent or the evaluation asks it 30
+fixed questions once, after the owner's approval, and fails on any error, any question not
+asked, more than 3 wrong, or a cost half as much again as the baseline's
+([docs/EVALS.md](docs/EVALS.md#the-regression-check-on-pull-requests)).
+
+**The daily pipeline.** An Airflow DAG, `univ3_daily`, fetches, loads, models, tests and
+reconciles one UTC day at a time ("Orchestration (Airflow)" below). It is opt-in, and it
+has not added a day to this data: the tables still end on 2026-09-25.
+
+**Searching the documentation.** For questions about what the data means, a variant gives the
+agent a BM25 search over this README, `DECISIONS.md` and `docs/`, and, only when it asks for
+them, over the dbt column descriptions. The right section is in the first five results for 27
+of 29 held-out questions
+([`evals/results/2026-10-20_retrieval_sources.md`](evals/results/2026-10-20_retrieval_sources.md)).
+
+**Still open.**
+
+- No person has labelled anything: the judge of the agent's explanations and the retrieval
+  search are scored against labels a model wrote, which nobody has checked.
+- The read-only user is not in force on the real server, and Airflow has not added a day.
+- Refusals are the weak spot: a few questions the data cannot answer still get a number.
+- The figures are of one model, `claude-haiku-5-5`; one run of a larger model on the design
+  questions is not a comparison, and no other provider has completed a run.
+- The difference with the external source can be located but not settled: it publishes no
+  methodology.
 
 ## Architecture
 
@@ -296,7 +338,7 @@ ClickHouse.
   one run of `claude-sonnet-5-5` on the `dev` questions, which is one run and not a comparison.
   A second provider was tried for that same model and its one run did not complete.
 
-**Questions about the documentation.** A variant can give the agent `search_docs`, a BM25 search over this README, DECISIONS and `docs/`; on 44 model-labelled questions the right section is in the first five results for 93.1% of the `test` cases (27 of 29), and in one run of the agent with it 19 of 29 `test` answers had every key fact and 24 of 27 were judged supported by what they cite ([docs/EVALS.md](docs/EVALS.md#retrieval-over-the-documentation), [decision 27](DECISIONS.md#27-questions-about-what-the-data-means-are-answered-from-the-documentation-by-search-and-with-citations)). The labels were written by a model and the judge is not calibrated against a person. The dbt column descriptions are now indexed too: they answer 12 new model-labelled questions in the first result, and they cost the old ones, whose `test` recall@1 went from 20 to 18 of 29 on the same documents ([`evals/results/2026-10-20_retrieval_dbt.md`](evals/results/2026-10-20_retrieval_dbt.md)).
+**Questions about the documentation.** A variant can give the agent `search_docs`, a BM25 search over this README, DECISIONS and `docs/`, and over the dbt column descriptions only when it asks for the source `dbt`; on 44 model-labelled questions the right section is in the first five results for 27 of 29 `test` cases, and the 12 model-labelled questions answered only by the dbt descriptions find their chunk first ([`evals/results/2026-10-20_retrieval_sources.md`](evals/results/2026-10-20_retrieval_sources.md), [docs/EVALS.md](docs/EVALS.md#retrieval-over-the-documentation), [decision 27](DECISIONS.md#27-questions-about-what-the-data-means-are-answered-from-the-documentation-by-search-and-with-citations)). The dbt descriptions were first added to the same index and cost the old questions ([`evals/results/2026-10-20_retrieval_dbt.md`](evals/results/2026-10-20_retrieval_dbt.md)), so they have one of their own. In one run of the agent with the search, made before the dbt source existed, 19 of 29 `test` answers had every key fact and 24 of 27 were judged supported by what they cite. The labels were written by a model and the judge is not calibrated against a person.
 
 ## How to run it
 
@@ -423,6 +465,23 @@ existing rows had an empty target; 17,600 later rows reached it through the trig
 and [docs/QUERY_PERFORMANCE.md](docs/QUERY_PERFORMANCE.md) (the same 50,000 rows in one
 insert took 0.14 s and in a thousand inserts 74.6 s, with 491 merges rewriting the data 92
 times).
+
+## History
+
+> Built over one weekend (18–21 September 2026) as a hands-on way to learn
+> ClickHouse, and extended in the following week (see [CHANGELOG](CHANGELOG.md)).
+> It is tested and reconciled, but it has never run in production and it may
+> contain mistakes. Issues and corrections are welcome.
+
+Every design choice is in [DECISIONS.md](DECISIONS.md) with the number that was measured for
+it, and what went wrong is kept where it happened instead of being cleaned up: the double count
+in [docs/MATERIALIZED_VIEW.md](docs/MATERIALIZED_VIEW.md), the measurements spoiled by a cache
+in [docs/SCHEMA_EXPERIMENTS.md](docs/SCHEMA_EXPERIMENTS.md), and a dated list of every
+correction in [Agent corrections](DECISIONS.md#agent-corrections). Figures at the top are of
+2026-09-25; some documents were measured on earlier states of the same table (863,587, 881,187,
+898,404 and 1,110,676 rows) and say which. What changed and when is in
+[CHANGELOG.md](CHANGELOG.md); the second week added [round trips](docs/ROUND_TRIPS.md), [the
+gap between two fee tiers](docs/CROSS_POOL.md) and the receipts of the largest open case.
 
 ## How this was built
 

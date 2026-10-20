@@ -232,7 +232,7 @@ def execute(
     model,
     client,
     house: warehouse.Warehouse,
-    docs: docs_index.Index,
+    docs: dict[str, docs_index.Index],
     *,
     max_usd: Decimal,
     run_id: str,
@@ -371,7 +371,11 @@ def main(
         chosen = [c for c in cases if args.split == "all" or c["split"] == args.split]
         if args.limit is not None:
             chosen = chosen[: max(args.limit, 0)]
-        chunks = docs_index.load_chunks(config.REPO_ROOT)
+        chunks = [
+            chunk
+            for source in docs_index.SOURCES
+            for chunk in docs_index.load_chunks(config.REPO_ROOT, source=source)
+        ]
         missing = retrieval.unknown_sections(chunks, chosen)
         if missing:
             raise RagError(f"relevant sections that do not exist: {missing}")
@@ -419,7 +423,7 @@ def main(
     run_id = f"{started.replace(':', '').replace('+0000', 'Z')}_rag_{uuid.uuid4().hex[:6]}"
     directory = config.data_dir() / "evals" / run_id
     out = args.out or directory / "results.json"
-    docs = docs_index.Index(chunks)
+    docs = docs_index.load_library(config.REPO_ROOT)
     prompt = loop.system_prompt(house.max_iterations, house.row_cap, variant.prompt_addendum)
     results = {
         "format": FORMAT,
