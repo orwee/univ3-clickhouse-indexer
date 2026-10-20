@@ -344,3 +344,17 @@ def test_a_case_that_points_at_a_section_that_does_not_exist_stops_the_run(
     bad = dict(CASE, relevant=["README.md#No such heading"])
     code, *_ = run_main(tmp_path, monkeypatch, {HAIKU: [], OPUS: []}, cases=[bad])
     assert code == 2 and "do not exist" in capsys.readouterr().err
+
+
+def test_the_report_command_renders_a_docs_results_file_without_the_agent_group(
+    tmp_path, monkeypatch
+):
+    code, out, _, _ = run_main(
+        tmp_path, monkeypatch, {HAIKU: [submit(type="refusal", refusal_reason="x")], OPUS: []}
+    )
+    assert code == 0
+    from evalkit import report
+
+    text = report.render(json.loads(out.read_text()))
+    assert text.startswith("# Documentation suite: docs, split all")
+    assert report.render(json.loads(out.read_text()), top_only=True) == text

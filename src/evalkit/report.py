@@ -263,6 +263,10 @@ def _cases(r: dict) -> list[str]:
 
 
 def render(results: dict, top_only: bool = False) -> str:
+    if results.get("suite") == "docs":  # the documentation suite has its own figures
+        from evalkit import rag_run
+
+        return rag_run.render(results)
     summary = results["summary"]
     lines = [f"# Evaluation: {_cell(results['variant'])}", ""]
     lines += _warnings(results)

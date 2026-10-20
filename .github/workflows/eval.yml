@@ -66,6 +66,12 @@ on:
         required: false
         default: ""
         type: string
+      suite:
+        description: "sql: the cases of evals/golden.jsonl. docs: the questions about the documentation (evals/rag_cases.jsonl); repetitions and only_errors are then ignored"
+        required: false
+        default: "sql"
+        type: choice
+        options: ["sql", "docs"]
 
 permissions:
   contents: read
@@ -117,6 +123,7 @@ jobs:
           MAX_USD: ${{ inputs.max_usd }}
           LIMIT: ${{ inputs.limit }}
           ONLY_ERRORS: ${{ inputs.only_errors }}
+          SUITE: ${{ inputs.suite }}
           UNIV3_DATA_DIR: ${{ runner.temp }}/eval-data
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CHEAPERINFERENCE_API_KEY: ${{ steps.provider.outputs.provider == 'cheaperinference' && secrets.CHEAPERINFERENCE_API_KEY || '' }}
@@ -133,9 +140,22 @@ jobs:
               arguments+=(--limit "$LIMIT")
             fi
           fi
+          docs_arguments=(--variant "$VARIANT" --split "$SPLIT" --max-usd "$MAX_USD")
+          docs_arguments+=(--out eval-results.json)
+          if [ -n "$MODEL" ]; then
+            docs_arguments+=(--model "$MODEL")
+          fi
+          if [ -n "$LIMIT" ]; then
+            docs_arguments+=(--limit "$LIMIT")
+          fi
           set +e
-          PYTHONPATH=src uv run --frozen --group agent python -m evalkit.run evals/golden.jsonl \
-            "${arguments[@]}" 2> eval-stderr.txt
+          if [ "$SUITE" = "docs" ]; then
+            PYTHONPATH=src uv run --frozen --group agent python -m evalkit.rag_run evals/rag_cases.jsonl \
+              "${docs_arguments[@]}" 2> eval-stderr.txt
+          else
+            PYTHONPATH=src uv run --frozen --group agent python -m evalkit.run evals/golden.jsonl \
+              "${arguments[@]}" 2> eval-stderr.txt
+          fi
           code=$?
           set -e
           echo "$code" > eval-exit-code.txt
