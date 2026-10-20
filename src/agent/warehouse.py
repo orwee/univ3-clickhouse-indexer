@@ -1,8 +1,8 @@
 """The one file that tells the agent which warehouse it is looking at.
 
-A YAML with the database, the list of tables and the limits. It holds names and numbers
-only: what a table means is not written anywhere, the agent reads column names and types
-from the database.
+A YAML with the database, the list of tables, the limits and, optionally, where to read the
+dates the data covers. It holds names and numbers only: what a table means is not written
+anywhere, the agent reads column names and types from the database.
 """
 
 from __future__ import annotations
@@ -22,12 +22,23 @@ class WarehouseError(ValueError):
 
 
 @dataclass(frozen=True)
+class Coverage:
+    """Where the dates the data covers are read: the first and the last value of ``column``
+    in ``table``, which has one row per key of ``keys_from`` and day with activity."""
+
+    table: str
+    column: str
+    keys_from: str
+
+
+@dataclass(frozen=True)
 class Warehouse:
     database: str
     tables: tuple[str, ...]
     row_cap: int  # rows of one result handed to the model; more are cut, and flagged
     max_iterations: int  # model calls per question
     max_usd: Decimal  # dollars per question
+    coverage: Coverage | None = None  # None: describe_schema reports no coverage
 
 
 def _identifier(value: object, what: str) -> str:
@@ -41,6 +52,22 @@ def _positive_int(limits: dict, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise WarehouseError(f"limits.{name} must be a positive integer, got {value!r}")
     return value
+
+
+def _coverage(raw: object, tables: tuple[str, ...], path: Path) -> Coverage | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or set(raw) != {"table", "column", "keys_from"}:
+        raise WarehouseError(f"{path}: 'coverage' must have table, column and keys_from")
+    coverage = Coverage(
+        table=_identifier(raw["table"], "coverage.table"),
+        column=_identifier(raw["column"], "coverage.column"),
+        keys_from=_identifier(raw["keys_from"], "coverage.keys_from"),
+    )
+    for name in (coverage.table, coverage.keys_from):
+        if name not in tables:
+            raise WarehouseError(f"{path}: coverage names {name}, which is not in 'tables'")
+    return coverage
 
 
 def load(path: Path) -> Warehouse:
@@ -71,4 +98,5 @@ def load(path: Path) -> Warehouse:
         row_cap=_positive_int(limits, "row_cap"),
         max_iterations=_positive_int(limits, "max_iterations"),
         max_usd=max_usd,
+        coverage=_coverage(raw.get("coverage"), names, path),
     )

@@ -112,6 +112,18 @@ def test_the_direct_path_describe_query_submit():
     json.dumps(result.to_json())
 
 
+def test_the_summary_of_describe_schema_keeps_the_dates_of_the_coverage():
+    covered = {**SCHEMA, "coverage": {"first": "2001-01-01", "last": "2001-01-31"}}
+    fake = FakeTools()
+    fake.describe_schema = lambda tables=None: covered
+    result, _, _ = ask([describe(), submit(type="refusal", refusal_reason="No.")], fake)
+    assert result.tool_calls[0].summary == {
+        "ok": True,
+        "tables": {"t": 1},
+        "coverage": ["2001-01-01", "2001-01-31"],
+    }
+
+
 def test_what_the_model_is_sent():
     fake = FakeTools(rows(["1"]))
     script = [describe(), query("SELECT 1 AS v", id_="call_7"), submit(type="number", value="1")]

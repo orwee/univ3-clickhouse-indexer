@@ -1141,6 +1141,74 @@ questions people really ask are not in the documents (then write the documents, 
 search); or the dbt descriptions should be searchable.
 
 
+## 28. A pool-day with no row is zero by default, and the dates come from the data
+
+Written by the agent at the owner's request on 2026-10-20. The owner asked for this entry to
+be written for him; the decision is his.
+
+- Date: 2026-10-20
+- Status: Accepted
+
+**Context.** On golden set v2 the variant `zero-day` fixed all 8 `test` cases with an answer
+that the baseline got wrong, with every guard holding (fourth entry of
+[EVAL_PREREGISTRATION.md](docs/EVAL_PREREGISTRATION.md), runs 39407607316, 39407618600 and
+39407628909). Its paragraph (`evals/variants/zero-day.md`) writes the dates the data covers,
+2026-08-09 to 2026-09-25. The Airflow DAG (decision 25) loads one more day every day, so
+that text goes stale: once a day after 2026-09-25 is loaded, the agent would be told to
+refuse a day that is in the data.
+
+**Decision.**
+
+- **The coverage is computed, not written.** `evals/warehouse.yml` says where to read it:
+  the first and the last `block_date` of `fct_pool_daily`, whose keys are listed in
+  `dim_pools`. `describe_schema` asks the server for them each time it is called and returns
+  them as `coverage`, whatever tables were asked for. `src/agent/` still names no table: the
+  names come from the YAML.
+- **Partial days are not detected.** The marts hold dates, not times; the only one with the
+  time of a swap, `fct_round_trip_legs`, holds a subset of the swaps. So the code cannot
+  tell which day is whole.
+  `coverage` says that the first and the last day may hold only part of the day, which is
+  what the paragraph said, without saying which.
+- **The rule is in the default prompt.** `src/agent/prompts/system.md` gets a section
+  "Days with no row" with the meaning of the zero-day paragraph, written against `coverage`
+  (its `table`, `first`, `last` and `keys_from`) instead of table names and dates: within the
+  coverage and for a listed key, a missing row is 0; one key's first or last row is not the
+  edge of the data; outside the coverage or for an unlisted key, refuse. The description of
+  `describe_schema` in the tool list says it also returns the dates the data covers.
+- **The default prompt changed at this commit.** Its SHA-256 went from
+  `9df22d15d8e9ee4b8e6061646085ef7e917ad487e3ab7ca835ab92519ccbb39b` (the v2 baseline runs)
+  to `89acfeae828e400166a35423d9682b34a275e57886f2b61ea5f7ac825ca9bca4`. Every earlier
+  results file records the SHA-256 of the prompt it was asked with, so each stays valid for
+  what it measured: the prompt of its day, which is no longer the default. A variant named
+  `baseline` after this commit is not the `baseline` of the runs before it. `evalkit.runs`
+  refuses to pool runs whose prompts differ, and `evalkit.compare` lists the prompt's
+  SHA-256 among what differs between two variants.
+- **What measured the change, and what checks it.** The zero-day measurement is the fourth
+  pre-registration entry. The prompt text is not the one that entry froze, so the fifth
+  entry checks, before any run of it, that the new default is not worse than `zero-day` on
+  golden set v2, and the regression check of decision 24 runs on the pull request. If either
+  fails, the default does not change.
+
+**Why.** The paragraph fixed a real weakness, measured on cases that were not read to write
+it. A rule with dates in it is right for one fixture and wrong the day after the next load;
+reading the dates from the data at call time keeps the rule true as the table grows, and
+costs one aggregate per call to `describe_schema`.
+
+**Tradeoff.**
+
+- The prompt is longer for every question, including those that never touch a missing day.
+- The rule assumes that a day inside the coverage was loaded. A day the pipeline failed to
+  load, inside the coverage, would be answered 0. `landing.check_coverage` keeps the landing
+  zone one range without gaps, so this needs a failure that also defeats that check.
+- `evals/variants/zero-day.yml` is left as it was, because its SHA-256 is part of the fourth
+  entry. Run after this commit it would send the new default plus the old paragraph, which
+  is not what its runs were asked; to repeat them, check out `812fc7f`.
+- The coverage is one table's. The other daily mart, `fct_pool_daily_round_trips`, has its own
+  rows and the rule says nothing about it, as the paragraph did not.
+
+**Revisit when.** The data stops being one range without gaps; a mart with times makes
+partial days computable; or a second daily table needs the same rule.
+
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.

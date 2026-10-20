@@ -10,6 +10,10 @@ the list in the YAML only says which tables ``describe_schema`` shows.
 
 Descriptions of tables and columns are optional and come from the caller, as an argument.
 Nothing here knows where they were written or what they say.
+
+``describe_schema`` also reports the dates the data covers when the warehouse names where to
+read them: the first and the last value of one date column, asked of the server at each
+call, so a day loaded since the last call is in them and no date is written anywhere.
 """
 
 from __future__ import annotations
@@ -28,6 +32,11 @@ from agent.warehouse import Warehouse
 MAX_SAFE_INTEGER = 2**53 - 1
 _WIDE_INTEGER = re.compile(r"U?Int(128|256)")
 MESSAGE_CHARS = 600
+# The tables hold dates, not times: which day is whole cannot be read from them.
+PARTIAL_DAYS = (
+    "The first and the last day may hold only part of the day. These tables do not say "
+    "which days are whole."
+)
 
 
 def json_safe(value: object) -> object:
@@ -114,7 +123,8 @@ class Tools:
 
         Names and types as DESCRIBE TABLE gives them. When ``Tools`` was given descriptions,
         a column that has one carries it as ``description``, and the tables that have one
-        are listed under ``descriptions``.
+        are listed under ``descriptions``. When the warehouse has a coverage, it comes back as
+        ``coverage`` whatever tables were asked for.
         """
         wanted = list(tables) if tables else list(self._warehouse.tables)
         unknown = [t for t in wanted if t not in self._warehouse.tables]
@@ -151,7 +161,34 @@ class Tools:
         }
         if about:
             output["descriptions"] = about
+        if self._warehouse.coverage is not None:
+            try:
+                output["coverage"] = self._coverage()
+            except DatabaseError as exc:
+                return _failure("database", _first_line(str(exc)), exc.code)
+            except Exception as exc:  # noqa: BLE001 - nothing may escape into the loop
+                return _failure("client", f"{type(exc).__name__}: {_first_line(str(exc))}")
         return output
+
+    def _coverage(self) -> dict:
+        """The first and the last date in the coverage column, as the server has them now."""
+        cover = self._warehouse.coverage
+        # Names only, each checked to be a plain identifier when the warehouse file is read.
+        sql = (
+            f"SELECT count(), min({cover.column}), max({cover.column}) "  # noqa: S608
+            f"FROM {self._warehouse.database}.{cover.table}"
+        )
+        rows, first, last = self._client.query(sql).result_rows[0]
+        if not rows:
+            first = last = None  # min() of no rows is the type's default, not a date
+        return {
+            "table": cover.table,
+            "column": cover.column,
+            "first": json_safe(first),
+            "last": json_safe(last),
+            "keys_from": cover.keys_from,
+            "partial_days": PARTIAL_DAYS if rows else "The table has no rows.",
+        }
 
     def run_sql(self, sql: str) -> dict:
         """Run one SELECT and return its rows, at most ``row_cap`` of them.

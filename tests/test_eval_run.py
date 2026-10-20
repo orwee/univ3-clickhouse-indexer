@@ -943,11 +943,35 @@ def test_the_variant_zero_day_is_one_paragraph_and_the_text_that_was_frozen():
     }
     assert (variant.model, variant.descriptions, variant.max_usd_per_question) == (None, None, None)
     assert not variant.prompt_cache and variant.provider == "anthropic" and not variant.docs_tool
-    prompt = loop.system_prompt(6, 200, variant.prompt_addendum)
-    assert hashlib.sha256(prompt.encode()).hexdigest() == (
-        "040507b25fa16ed7a755207090330eb3b8a16053f5d92bc54d1758fa675e3873"
-    )
+    # The prompt the variant gave is the default of its day plus the paragraph. The default
+    # has changed since (decision 28), so the hash is read from the three results files,
+    # which recorded what was sent, and not recomputed from today's prompt.
+    frozen = "040507b25fa16ed7a755207090330eb3b8a16053f5d92bc54d1758fa675e3873"
+    recorded = {
+        json.loads(path.read_text())["system_prompt_sha256"]
+        for path in (config.REPO_ROOT / "evals" / "results").glob("2026-10-20_zero-day_*.json")
+    }
+    assert recorded == {frozen}
     entry = (config.REPO_ROOT / "docs" / "EVAL_PREREGISTRATION.md").read_text()
     assert "# Fourth entry" in entry
     for sha in variant.files.values():
         assert sha in entry
+
+
+def test_the_default_prompt_is_the_one_the_fifth_entry_froze():
+    """The SHA-256 of the prompt and of the files it is made from, as written in the fifth
+    entry of docs/EVAL_PREREGISTRATION.md before any run of it. A change to any of them is a
+    new default that the entry does not cover."""
+    entry = (config.REPO_ROOT / "docs" / "EVAL_PREREGISTRATION.md").read_text()
+    fifth = entry.split("# Fifth entry", 1)[1]
+    prompt = loop.system_prompt(6, 200)
+    assert hashlib.sha256(prompt.encode()).hexdigest() in fifth
+    for name in (
+        "src/agent/prompts/system.md",
+        "evals/warehouse.yml",
+        "evals/variants/baseline.yml",
+        "src/agent/tools.py",
+        "src/agent/loop.py",
+    ):
+        digest = hashlib.sha256((config.REPO_ROOT / name).read_bytes()).hexdigest()
+        assert f"| `{name}`" in fifth and digest in fifth, name
