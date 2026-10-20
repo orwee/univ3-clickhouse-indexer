@@ -12,6 +12,10 @@ The ranker is Okapi BM25 in plain Python: no dependency, no embeddings, no servi
 network. The words of a heading are counted ``heading_weight`` times in the chunk they
 head, because a heading names what the section is about.
 
+The column descriptions of dbt are indexed too: every ``schema.yml`` under ``dbt/``, outside
+dbt's own output directories, gives one chunk per model and per seed, with its description
+and each column with its own. Its id is ``<file>#<name>``, and it is never cut.
+
 Nothing here knows what the documents say.
 """
 
@@ -23,8 +27,16 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 ROOT_FILES = ("README.md", "DECISIONS.md")
 DOCS_DIRECTORY = "docs"
+DBT_DIRECTORY = "dbt"
+DBT_SCHEMA_FILE = "schema.yml"
+# Where dbt writes compiled copies and installed packages: copies, not sources.
+DBT_OUTPUT_DIRECTORIES = frozenset({"target", "dbt_packages", "logs"})
+# The entries of a schema.yml that describe something with columns, and what each is called.
+DBT_RESOURCES = (("models", "model"), ("seeds", "seed"))
 # Tuned on the dev split only (docs/EVALS.md, "Retrieval over the documentation").
 DEFAULT_MAX_CHARS = 1000
 DEFAULT_HEADING_WEIGHT = 8
@@ -107,11 +119,39 @@ def document_files(root: Path) -> list[Path]:
     return [root / name for name in ROOT_FILES] + sorted((root / DOCS_DIRECTORY).glob("*.md"))
 
 
+def dbt_schema_files(root: Path) -> list[Path]:
+    found = (root / DBT_DIRECTORY).rglob(DBT_SCHEMA_FILE)
+    return sorted(
+        p for p in found if not DBT_OUTPUT_DIRECTORIES & set(p.relative_to(root).parts[1:-1])
+    )
+
+
+def dbt_chunks(path: str, text: str) -> list[Chunk]:
+    """One chunk per model and per seed of one ``schema.yml``: its description, then one line
+    per column, ``name: description`` or the name alone."""
+    loaded = yaml.safe_load(text) or {}
+    chunks = []
+    for key, kind in DBT_RESOURCES:
+        for entry in loaded.get(key) or []:
+            name = entry["name"]
+            about = " ".join(str(entry.get("description", "")).split())
+            lines = [f"dbt {kind} {name}. {about}".rstrip(), "Columns:"]
+            for column in entry.get("columns") or []:
+                about = " ".join(str(column.get("description", "")).split())
+                lines.append(f"- {column['name']}: {about}" if about else f"- {column['name']}")
+            section = f"{path}#{name}"
+            chunks.append(Chunk(section, section, name, "\n".join(lines)))
+    return chunks
+
+
 def load_chunks(root: Path, max_chars: int = DEFAULT_MAX_CHARS) -> list[Chunk]:
     chunks = []
     for path in document_files(root):
         relative = path.relative_to(root).as_posix()
         chunks.extend(chunk_text(relative, path.read_text(encoding="utf-8"), max_chars))
+    for path in dbt_schema_files(root):
+        relative = path.relative_to(root).as_posix()
+        chunks.extend(dbt_chunks(relative, path.read_text(encoding="utf-8")))
     return chunks
 
 
