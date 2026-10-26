@@ -4,21 +4,27 @@ The tasks the night runs take, highest priority first. The rules for using this 
 [AGENTS.md, "Night runs"](AGENTS.md#9-night-runs); what the tasks are for is
 [GOAL.md](GOAL.md).
 
-- **The owner** orders the list, edits any task, and answers `needs-decision` tasks in the
-  Inbox issue.
-- **An agent** changes only the `Status` line of a task, in the pull request that works on
-  it, and adds tasks it discovers at the bottom, numbered after the last one, with
-  `Added by` saying which pull request found it. It never reorders, deletes or rewrites a
-  task, and never changes a tag.
+- **The owner** orders the list, edits any task, and answers `needs-decision` and
+  `proposed` tasks in the Inbox issue (#94).
+- **An agent** changes a task's tag, status and notes only as section 9 of AGENTS.md says
+  ("Keeping the roadmap alive"), always in a pull request, and adds tasks at the bottom,
+  numbered after the last one, with `Added by` linking the pull request that found them.
+  It never reorders, deletes or rewrites a task.
 
-**Tags.** `ready`: a night may take it. `needs-decision`: the owner must answer in the
-Inbox first; a night never takes it, and when the answer is in, the owner changes the tag.
-`needs-run`: it needs paid model runs; a night prepares it up to a pre-registration and a
-pull request, and never dispatches.
+**Tags.**
 
-**Status.** `todo`, `in progress: <pull request>`, `in review: <pull request>`,
-`done: <pull request>`, or `blocked: <why>`. A task is `done` when its pull request is
-merged, not when it is opened.
+- `ready`: a night may take it.
+- `needs-decision`: the owner must answer in the Inbox first; a night never takes it.
+- `needs-run`: it needs paid model runs; a night prepares it up to a pre-registration and a
+  pull request, and never dispatches.
+- `proposed`: proposed by a night when no `ready` task was left; a night never takes it
+  until the owner makes it `ready` in the Inbox.
+- `done`: finished. The night marks its task `done` in its own pull request, so the mark
+  reaches `main` with the merge; if the owner closes that pull request without merging,
+  the next night puts the task back to `ready` with a note.
+
+**Status.** `todo`, `done: <link to the pull request>`, or `blocked: <why>`, and any
+number of `Note:` lines under it.
 
 Each task is small enough for one night and for a review of 15 minutes. One that turns out
 bigger is split: the night does the first part and adds the rest at the bottom.
@@ -127,6 +133,23 @@ bigger is split: the night does the first part and adds the rest at the bottom.
   - The script that, once the CSV is filled and committed, computes the judge's kappa
     (reusing `evalkit.calibration agree`) and the retrieval agreement with the model's
     labels. Tested on a synthetic filled CSV. Nothing is labelled by the agent.
+  - The guide says that the "altered rows caught" figure is **computed by the owner on his
+    server**, because it needs the key, `<data dir>/calibration/key.json`, which never
+    leaves that machine; a night cannot compute it. Once the owner's labels are in
+    `evals/calibration/sheet.csv` and `sheet.labels.json` says `person`, as the user who
+    built the sheet (so that `config.data_dir()` resolves to the same directory), from the
+    working copy:
+
+    ```sh
+    PYTHONPATH=src uv run python -m evalkit.calibration agree \
+        evals/calibration/sheet.csv \
+        evals/calibration/2026-10-13_judge-verdicts_38434632537.json \
+        --key "$(PYTHONPATH=src uv run python -c 'from univ3_indexer import config; print(config.data_dir())')/calibration/key.json" \
+        > evals/calibration/YYYY-MM-DD_agree_person-labels.md
+    ```
+
+    `--key` has no default in `agree`, so it is given explicitly. The verdicts file is the
+    judge's latest run on this sheet, shown every query (decision 22).
 
 ## R07. Serve the agent over HTTP, with traces
 
@@ -161,12 +184,14 @@ bigger is split: the night does the first part and adds the rest at the bottom.
 
 ## R10. The barrier rows proposed in #92, in AGENTS.md
 
-- Tags: `ready`
+- Tags: `done`
 - Status: done: #96
 - **Why.** #92 checked the environments, the ruleset and the cloud sessions' account on
   2026-10-20 and proposed three rows; the barrier table still said the environment had no
   protection rule.
 - **Done when.** The rows are in the table, dated, and say what was not checked again.
+- Note: #96 also records that `main` now requires one approving review (the owner's
+  statement, and what #93 and #96 show), which #92 had found at 0.
 
 ---
 
@@ -186,8 +211,13 @@ bigger is split: the night does the first part and adds the rest at the bottom.
 
 ## R12. Stale branches, and the commit #48 still holds
 
-- Tags: `needs-decision`
-- Status: todo
+- Tags: `done`
+- Status: done: by the owner on 2026-10-20, outside a pull request
+- Note: the owner deleted the 53 branches and `feat/marts-fixture` on 2026-10-20, and the
+  cached ref of #48 is with GitHub Support (his statement; the request cannot be seen from
+  here). Checked on 2026-10-26 with `git ls-remote --heads origin`: `main`,
+  `chore/night-loop` (#96) and `docs/overview` (#93, merged on 2026-10-26); none of the 53
+  and no `feat/marts-fixture`.
 - Added by: #96, from the report of #92
 - **Why.** #92 listed 53 remote branches whose pull requests are merged or closed.
   `feat/marts-fixture` (#48) holds `98b204a`, the smart-money rows per pool-day that
