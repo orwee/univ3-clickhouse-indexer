@@ -26,6 +26,24 @@ ALLOWED_HOSTS = (
 
 RESULTS = "evals/results/"
 
+# A stated fact of the owner, exempt from the source check: it is how the owner describes
+# himself, given by him, and no file in the repository can be its source. The test only keeps
+# it verbatim, in the byline.
+OWNER_STATED = "data engineer and ML specialist in Madrid, statistician by training"
+
+# The pull requests whose descriptions begin with "Report of the night run": on 2026-10-26 a
+# GitHub search for that phrase in the bodies of this repository's pull requests returned
+# exactly these three. A test without network cannot search again, so it holds the links.
+NIGHT_RUNS = (84, 85, 86)
+
+# Who merged the pull requests, checked on 2026-10-26 and kept here because a test without
+# network cannot check it again. GitHub's `merged_by`, read for every pull request: 91 merged
+# (#48 was closed unmerged), 90 by orwee and #1 by robertofd31. `git log main --merges
+# --first-parent` agrees: 72 merge commits by Orwee and the one of #1 by robertofd31; the
+# other pull requests left no merge commit on main. So the page cannot say that every pull
+# request was merged by orwee, and says who merged what instead.
+CLOSED_PRS = f"{REPO}/pulls?q=is%3Apr+is%3Aclosed"
+
 # A figure on the page, the file it comes from, and the text that file gives for it.
 FIGURES = [
     ("1,240,618", "README.md", "1,240,618 swaps in 4 pools over 48 days"),
@@ -161,3 +179,24 @@ def test_every_drawing_is_hidden_from_screen_readers_or_described(page):
 
 def test_no_em_dash(page):
     assert "—" not in page and "&mdash;" not in page
+
+
+def test_the_byline_is_the_owners_own_words(page):
+    byline = re.search(r'<p class="by">(.*?)</p>', page, re.S)
+    assert byline, "the byline is missing"
+    assert page.count(OWNER_STATED) == 1 and OWNER_STATED in byline.group(1)
+
+
+def test_the_overnight_runs_link_to_their_reports(page):
+    sentence = re.search(r"<li>[^<]*unattended overnight runs \((.*?)\)</li>", page, re.S)
+    assert sentence, "the sentence on overnight runs is missing"
+    linked = [int(n) for n in re.findall(rf'href="{re.escape(REPO)}/pull/(\d+)"', sentence[1])]
+    assert tuple(linked) == NIGHT_RUNS
+
+
+def test_who_merged_the_pull_requests_is_stated_and_linked(page):
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))
+    assert "90 by orwee" in text and "by robertofd31, the account that opened it" in text
+    assert "every one by the owner" not in text and "never by an agent" not in text
+    assert page.count(f'href="{CLOSED_PRS}"') == 2
+    assert f'href="{REPO}/pull/1"' in page

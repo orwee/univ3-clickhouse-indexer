@@ -190,7 +190,7 @@ footer p{margin:0}
     <p class="eyebrow">Portfolio project · Data engineering · AI engineering</p>
     <h1>A data pipeline, an LLM agent on top of it, and <em>the evaluation that measures it</em></h1>
     <p class="lede">1.24 million trades from a public ledger, loaded into ClickHouse, modelled with dbt and checked against the ledger and an independent source. On top: an agent that answers questions about the data by writing SQL, and an evaluation that measures how often it is right, when it refuses, and what each answer costs.</p>
-    <p class="by">Built by <strong>Roberto Fajardo Duro</strong>, data engineer in Madrid and statistician by training · September to October 2026</p>
+    <p class="by">Built by <strong>Roberto Fajardo Duro</strong>, data engineer and ML specialist in Madrid, statistician by training · September to October 2026</p>
     <nav class="links" aria-label="Project links">
       <a class="btn primary" href="https://github.com/orwee/univ3-clickhouse-indexer">Code on GitHub</a>
       <a class="btn" href="https://orwee.github.io/univ3-clickhouse-indexer/">Data dashboard</a>
@@ -246,7 +246,7 @@ footer p{margin:0}
     <li class="num card hl"><b>102 → 110</b><span>of 110 held-out questions right after adding one paragraph to the prompt; not made the default (see Results)</span></li>
     <li class="num card"><b>~0.2¢</b><span>per question on the harder set (0.00189 USD), about 6.7 seconds each</span></li>
     <li class="num card"><b>15 of 15</b><span>errors planted by code that the LLM judge caught; the judge is not yet checked against a person</span></li>
-    <li class="num card"><b>91</b><span>pull requests merged, every one by the owner, none by an agent</span></li>
+    <li class="num card"><b>91</b><span><a href="https://github.com/orwee/univ3-clickhouse-indexer/pulls?q=is%3Apr+is%3Aclosed">pull requests merged</a>: 90 by the owner's account orwee, and the first by robertofd31, the account that opened it</span></li>
     <li class="num card"><b>1,100+</b><span>Python tests, run in CI on every pull request, plus 29 dbt tests</span></li>
   </ul>
 </section>
@@ -380,8 +380,8 @@ footer p{margin:0}
       <div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13.5 6l-3 12"/></svg></div>
       <h3>Working with AI coding agents</h3>
       <ul>
-        <li>Code written by Claude Code agents, unattended, under written rules</li>
-        <li>Every pull request merged by the owner, never by an agent</li>
+        <li>Code written by Claude Code agents under written rules, some of it in unattended overnight runs (<a href="https://github.com/orwee/univ3-clickhouse-indexer/pull/84">#84</a>, <a href="https://github.com/orwee/univ3-clickhouse-indexer/pull/85">#85</a>, <a href="https://github.com/orwee/univ3-clickhouse-indexer/pull/86">#86</a>)</li>
+        <li>91 pull requests merged: 90 by orwee, the owner's account, and <a href="https://github.com/orwee/univ3-clickhouse-indexer/pull/1">#1</a> by robertofd31, the account that opened it (<a href="https://github.com/orwee/univ3-clickhouse-indexer/pulls?q=is%3Apr+is%3Aclosed">closed pull requests</a>)</li>
         <li>28 recorded decisions, and the agents' mistakes kept in a dated log</li>
       </ul>
       <p class="proof"><a href="https://github.com/orwee/univ3-clickhouse-indexer/blob/main/AGENTS.md">AGENTS.md</a> · <a href="https://github.com/orwee/univ3-clickhouse-indexer/blob/main/DECISIONS.md">DECISIONS.md</a></p>
@@ -395,7 +395,7 @@ footer p{margin:0}
   <p class="sub">One branch and one pull request per block of work, in the open.</p>
   <ol class="how">
     <li class="card"><span class="n">01</span><h3>Plan and rules</h3><p>I wrote the brief, with its goals and non-goals, and the rules the agents follow.</p></li>
-    <li class="card"><span class="n">02</span><h3>Agents do the work</h3><p>Claude Code agents wrote the code and opened the pull requests, unattended.</p></li>
+    <li class="card"><span class="n">02</span><h3>Agents do the work</h3><p>Claude Code agents wrote the code and opened the pull requests, some of them in unattended overnight runs.</p></li>
     <li class="card"><span class="n">03</span><h3>I review and decide</h3><p>I merge every pull request, approve every paid model run, and record decisions and mistakes.</p></li>
   </ol>
   <h3 class="time-h">Timeline, about five weeks</h3>
