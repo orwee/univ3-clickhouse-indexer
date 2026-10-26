@@ -40,8 +40,9 @@ NIGHT_RUNS = (84, 85, 86)
 # network cannot check it again. GitHub's `merged_by`, read for every pull request: 91 merged
 # (#48 was closed unmerged), 90 by orwee and #1 by robertofd31. `git log main --merges
 # --first-parent` agrees: 72 merge commits by Orwee and the one of #1 by robertofd31; the
-# other pull requests left no merge commit on main. So the page cannot say that every pull
-# request was merged by orwee, and says who merged what instead.
+# other pull requests left no merge commit on main. Both accounts are the owner's: orwee, and
+# robertofd31, his personal account (the owner's statement, 2026-10-26). So every merge is the
+# owner's, and the page names the account each one came from.
 CLOSED_PRS = f"{REPO}/pulls?q=is%3Apr+is%3Aclosed"
 
 # A figure on the page, the file it comes from, and the text that file gives for it.
@@ -196,7 +197,11 @@ def test_the_overnight_runs_link_to_their_reports(page):
 
 def test_who_merged_the_pull_requests_is_stated_and_linked(page):
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))
-    assert "90 by orwee" in text and "by robertofd31, the account that opened it" in text
+    assert (
+        "pull requests merged, all by the owner: 90 from orwee and #1 from his personal "
+        "account robertofd31" in text
+    )
+    assert "the account that opened it" not in text
     assert "every one by the owner" not in text and "never by an agent" not in text
     assert page.count(f'href="{CLOSED_PRS}"') == 2
     assert f'href="{REPO}/pull/1"' in page
