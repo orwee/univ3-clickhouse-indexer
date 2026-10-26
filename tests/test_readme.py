@@ -307,3 +307,29 @@ def test_how_it_was_built_says_which_user_what_the_credential_can_do_and_where_t
     assert "gh pr list --state merged" in body
     assert "ran as root" in body and "could merge its own pull request" in body
     assert "could approve its own run" in body and "Not on the server." in body
+
+
+PAGES = "https://orwee.github.io/univ3-clickhouse-indexer/"
+
+
+def test_every_link_to_the_pages_site_is_a_file_under_docs():
+    """GitHub Pages serves docs/, so a link to the site is a link to a file there. The
+    relative-link test above skips absolute URLs, so a typo here would 404 unnoticed."""
+    targets = re.findall(r"\]\((" + re.escape(PAGES) + r"[^)#]*)", VISIBLE)
+    assert targets, "the README should link to the published pages"
+    missing = []
+    for url in targets:
+        name = url[len(PAGES) :] or "index.html"
+        if not (REPO_ROOT / "docs" / name).is_file():
+            missing.append(url)
+    assert not missing, f"links to pages that docs/ does not hold: {missing}"
+
+
+def test_the_top_links_name_the_dashboard_the_overview_and_the_walkthrough():
+    top = VISIBLE.split("\n## ", 1)[0]
+    for link in (
+        f"[Dashboard]({PAGES})",
+        f"[Project overview]({PAGES}overview.html)",
+        "[10-minute walkthrough](docs/WALKTHROUGH.md)",
+    ):
+        assert link in top, link

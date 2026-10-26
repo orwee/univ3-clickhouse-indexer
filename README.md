@@ -18,6 +18,7 @@ finalized block). Three words are enough to follow the rest:
   swap leaves a public record, and those records are the rows here.
 
 **[Dashboard](https://orwee.github.io/univ3-clickhouse-indexer/)**: the whole result on one page, three minutes ·
+**[Project overview](https://orwee.github.io/univ3-clickhouse-indexer/overview.html)**: what the project is and what it shows, for readers who do not read code ·
 **Run it with `make demo`**: Docker only, no API key, no network data ·
 **[10-minute walkthrough](docs/WALKTHROUGH.md)**: what to open and in what order
 
