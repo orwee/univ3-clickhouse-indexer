@@ -162,7 +162,7 @@ bigger is split: the night does the first part and adds the rest at the bottom.
 ## R10. The barrier rows proposed in #92, in AGENTS.md
 
 - Tags: `ready`
-- Status: done: the `chore/night-loop` pull request
+- Status: done: #96
 - **Why.** #92 checked the environments, the ruleset and the cloud sessions' account on
   2026-10-20 and proposed three rows; the barrier table still said the environment had no
   protection rule.
@@ -176,7 +176,7 @@ bigger is split: the night does the first part and adds the rest at the bottom.
 
 - Tags: `ready`
 - Status: todo
-- Added by: the `chore/night-loop` pull request, from the report of #92
+- Added by: #96, from the report of #92
 - **Why.** #92 reports that `tests/test_golden*.py::test_regenerating_gives_the_same_bytes`
   failed twice while another session ran `make test` on the same server: the test counts
   every `test_*` database, so another run's databases change the count.
@@ -188,7 +188,7 @@ bigger is split: the night does the first part and adds the rest at the bottom.
 
 - Tags: `needs-decision`
 - Status: todo
-- Added by: the `chore/night-loop` pull request, from the report of #92
+- Added by: #96, from the report of #92
 - **Why.** #92 listed 53 remote branches whose pull requests are merged or closed.
   `feat/marts-fixture` (#48) holds `98b204a`, the smart-money rows per pool-day that
   decision 20 keeps unpublished, and the pull request's ref keeps it even if the branch is
