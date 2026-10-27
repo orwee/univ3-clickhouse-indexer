@@ -26,8 +26,10 @@ The tasks the night runs take, highest priority first. The rules for using this 
 **Status.** `todo`, `done: <link to the pull request>`, or `blocked: <why>`, and any
 number of `Note:` lines under it.
 
-Each task is small enough for one night and for a review of 15 minutes. One that turns out
-bigger is split: the night does the first part and adds the rest at the bottom.
+Each task is one night's work, done completely, up to its done-when. The owner reviews it
+the next day and merges it before the next one starts. One that cannot be finished in one
+night is split: the night finishes a part that stands on its own and adds the rest at the
+bottom.
 
 ---
 

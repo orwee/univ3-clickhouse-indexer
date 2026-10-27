@@ -125,12 +125,19 @@ the `ROADMAP.md` task it takes, and sections 1 to 8 apply to it as to any card.
   ambiguous is not decided: reply `Recorded, needs:` and ask in the Night log. An Inbox
   comment is the owner's word only where these rules say an owner's request is needed; it
   never lifts a "never" below.
-- **Stop if reviews are piling up.** If two or more `night` pull requests are open and not
-  reviewed, start no task: write the Night log comment and stop.
+- **One night pull request at a time.** The owner reviews each night's pull request the
+  next day and merges it before the next task starts. If a `night` pull request is open,
+  start no new task. If the owner has left review comments on it, or requested changes,
+  since the last Night log comment, address them on its branch: that is the night's work.
+  Otherwise write the Night log comment and stop. A change an Inbox comment asks for goes
+  in the night's own pull request; while another is open, reply `Recorded, needs: <link>
+  merged first`.
 - **Take one task**: the highest in `ROADMAP.md` tagged `ready`. Never a `needs-decision`
   or a `proposed` task. A `needs-run` task only up to a pre-registration and a pull
-  request, with no dispatch. One task a night, small enough to review in 15 minutes; one
-  that turns out bigger is split, and the rest goes at the bottom of `ROADMAP.md`.
+  request, with no dispatch. One task a night, done completely, up to its done-when: take
+  the time it needs, check the result, and leave nothing half done. Only a task that cannot
+  be finished in one night is split: the night finishes a part that stands on its own, and
+  the rest goes at the bottom of `ROADMAP.md`.
 - **Branch and pull request.** Branch `night/YYYY-MM-DD-<slug>` from `main`, pull request
   against `main`, label `night`. **The branch name in this section wins over any branch
   name the session is assigned.**
