@@ -85,8 +85,11 @@ bottom.
 
 ## R03. Re-test the coverage-based default with the new guards
 
-- Tags: `needs-run`
-- Status: todo (after R01 is merged)
+- Tags: `done`
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/100
+- Note: prepared on 2026-10-27 at the owner's request (Inbox #94): the sixth entry and the
+  prompt change are in https://github.com/orwee/univ3-clickhouse-indexer/pull/100; nothing dispatched. The three runs are the owner's, and the
+  rule is applied on that pull request once they are fetched.
 - **Why.** GOAL.md, criterion 1. The coverage default fixed every pool-day with no row and
   failed only on a one-case margin that R01 replaces.
 - **Done when.**
@@ -120,6 +123,8 @@ bottom.
   `retry_delay`. (b) Where an alert goes (e-mail, a GitHub issue comment, a webhook) and
   whether it needs a secret. Then the task becomes `ready`: the DAG change, a test in
   `tests/test_airflow_dag.py`, and a proposed text for a DECISIONS entry.
+- Note: (a) answered on 2026-10-27 in the Inbox (#94): 00:30 UTC. (b) is still open, so the
+  tag stays `needs-decision`.
 
 ## R06. A labelling kit for the owner
 
@@ -234,8 +239,10 @@ bottom.
 
 ## R13. Adopt the per-run-means guards: the DECISIONS entry and the pre-registration rule
 
-- Tags: `needs-decision`
-- Status: todo
+- Tags: `done`
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/100
+- Note: the owner adopted the rule on 2026-10-27 in the Inbox (#94) and asked the agent to
+  write the entry; it is decision 29, from now on only.
 - Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/97
 - **Why.** R01 adds `evalkit.means` but adopts nothing: rules already applied stay applied
   (decisions 28 and the caching result). Whether the next pre-registration uses its rule, and
@@ -245,8 +252,10 @@ bottom.
 
 ## R14. Pre-register a refusal paragraph for other sources and other protocol versions
 
-- Tags: `needs-decision`
+- Tags: `needs-run`
 - Status: todo
+- Note: the owner said yes on 2026-10-27 in the Inbox (#94): the paragraph drafted in #98's
+  description, with the guards of decision 29. Tag changed to `needs-run` in https://github.com/orwee/univ3-clickhouse-indexer/pull/100.
 - Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/98
 - **Why.** On `dev`, `v2-u-other-sources-004` (what Dune showed) is answered with the
   warehouse's figure in all runs of all three variants, and `v2-u-other-chain-005` (Uniswap v4)
@@ -255,3 +264,21 @@ bottom.
   means of R01 (#97, R13). Then the task becomes `needs-run`: the entry in
   `docs/EVAL_PREREGISTRATION.md` and the prompt paragraph, in one pull request, nothing
   dispatched.
+
+## R15. The coverage default leaves `other-pool` questions without an answer at the 6-call cap
+
+- Tags: `needs-decision`
+- Status: todo
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/100, at the owner's request in the Inbox (#94)
+- **Why.** In R02 (#98), on `dev`, the coverage default (fifth entry's runs) ended
+  `v2-u-other-pool-005` without an answer in 2 of 3 runs and `v2-u-other-pool-003` in 1 of 3,
+  each after 6 model calls (`iteration_cap`), spending them on SQL that lists the pools
+  (`evals/failures/2026-10-27_coverage-default_v2_dev.csv`, `..._dev_unstable.csv`). Under
+  the baseline both were refused in all 3 runs; under `zero-day`, 005 ended once without an
+  answer (`..._dev_refusals.csv` of each variant). On `test`, counts only: `other-pool` runs
+  not refused were 4 of 18 under the baseline, 0 under `zero-day` and 2 under the coverage
+  default (`*_test_family_counts.csv`).
+- **The owner decides.** Raise the cap of model calls for that variant (a change to the
+  agent, measured by its own pre-registration, which costs runs), or accept it as it is.
+  Also whether to wait for the sixth entry's runs (R03), which will show whether it happens
+  again.
