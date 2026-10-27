@@ -203,8 +203,8 @@ section 9).
 
 ## R09. The walkthrough covers the agent, the evaluation, Airflow and the overview
 
-- Tags: `ready`
-- Status: todo
+- Tags: `done`
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/103
 - **Why.** `docs/WALKTHROUGH.md` was written for the pipeline. A reviewer with ten minutes
   does not find the agent, the evaluation, the Airflow DAG or `docs/overview.html` from it.
 - **Done when.** Sections for those four, each with the file to open and the question it
