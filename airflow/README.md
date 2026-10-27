@@ -46,7 +46,7 @@ and your data directory.
 - **By hand:** in the UI, DAGs → `univ3_daily` → Trigger. Or
   `docker compose -f docker-compose.yml -f docker-compose.airflow.yml exec airflow-scheduler airflow dags trigger univ3_daily --logical-date 2026-09-26T00:00:00+00:00`
 - **Unpause it** (the toggle, or `airflow dags unpause univ3_daily`) and it runs every day at
-  00:00 UTC for the day that has just ended.
+  00:30 UTC for the day that has just ended.
 - **A backfill for a date range** (runs `fetch_day` with `--date` for each day, one at a time):
   ```bash
   docker compose -f docker-compose.yml -f docker-compose.airflow.yml exec airflow-scheduler \
@@ -101,11 +101,11 @@ five tasks. `CeleryExecutor` or `KubernetesExecutor` spread tasks over machines 
 
 **Logical date and `ds`.** Every run is for a *data interval*, a period of time, and has a
 *logical date*: the start of that interval. The run for the day 2026-10-01 has
-`logical_date = 2026-10-01 00:00 UTC` and `{{ ds }}` = `2026-10-01`, **even though it starts at
-2026-10-02 00:00 UTC**, when the day is over. `ds` is the day the data is *about*, not the
+`logical_date = 2026-10-01 00:30 UTC` and `{{ ds }}` = `2026-10-01`, **even though it starts at
+2026-10-02 00:30 UTC**, when the day is over. `ds` is the day the data is *about*, not the
 day the code *runs*; that is why `fetch_day` passes `--date {{ ds }}` and why a rerun a month
-later fetches the same day. We use `CronDataIntervalTimetable("@daily")` so it works like this;
-the plain string `"@daily"` in Airflow 3 would run *at* 00:00 of the day it names.
+later fetches the same day. We use `CronDataIntervalTimetable("30 0 * * *")` so it works like
+this; a plain cron string in Airflow 3 would run *at* the start of the day it names.
 
 **Retries.** `retries=2, retry_delay=5 minutes` in `default_args`: a task that fails is tried
 again, up to two more times, five minutes apart, before it is marked failed. It helps with
@@ -130,12 +130,16 @@ single range without gaps (`landing.check_coverage`).
 
 ## Know before you run it
 
-- **Midnight.** The run for day D starts at D+1 00:00 UTC, when the last block of D is not
-  finalized yet (it takes about 13 to 19 minutes). `fetch_day` refuses a day beyond the
-  finalized block, and its retries are 5 minutes apart: on the first nights it may fail all
-  three tries. That is a schedule to adjust (a later start, or a longer `retry_delay`); it was
-  not changed because the brief fixed those values. A backfill of past days is not affected.
+- **Half past midnight.** The run for day D starts at D+1 00:30 UTC. The last block of D is
+  finalized about 13 to 19 minutes after midnight, and `fetch_day` refuses a day beyond the
+  finalized block, so at 00:00 it could fail all three tries; the owner chose 00:30 on
+  2026-10-27 (ROADMAP R05). A backfill of past days is not affected.
 - **Days in order.** `fetch_day` appends to the landing zone. The first day after what is
   landed is fine; a day further on is refused (it would leave a gap).
-- **Failure alerts** are not set up. A red task is visible in the UI only. See
-  `on_failure_callback` or `email_on_failure` in the Airflow docs for where to add them.
+- **Failure alerts.** A task that fails its last try posts one comment on the issue
+  "Pipeline alerts" (`dags/pipeline_alert.py`, its `on_failure_callback`): the task, the day,
+  the run, the try and the type of the error, no log line. It needs `GITHUB_ALERT_TOKEN`, a
+  fine-grained token with write access to this repository's issues only, and
+  `GITHUB_ALERT_ISSUE`, the issue's number, both in your `airflow.env`. Without them the
+  task's log says that no alert was sent, and nothing else changes: an alert never fails a
+  task. Retries send nothing.
