@@ -33,8 +33,12 @@ bigger is split: the night does the first part and adds the rest at the bottom.
 
 ## R01. Guards from per-run means in evalkit
 
-- Tags: `ready`
-- Status: todo
+- Tags: `done`
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/97
+- Note: the task says the coverage default refused 55, 54 and 55 of 60 "against `zero-day`'s
+  55, 55, 55". The committed `zero-day` files give 55, 54 and 55 as well
+  (`evals/results/2026-10-20_zero-day.md`; `DECISIONS.md` decision 28 says the same), so the
+  two sides are equal per run.
 - **Why.** Two rules failed on a one-case margin applied to per-case majorities, where the
   runs themselves did not differ. The `cache` runs sent the model the baseline's text and
   refused 15, 17 and 16 of 21 against the baseline's 16, 19 and 17, and failed a guard of
@@ -225,3 +229,14 @@ bigger is split: the night does the first part and adds the rest at the bottom.
   deleted.
 - **The owner decides.** Whether to delete the branches (deleting is his, not a night's) and
   whether to ask GitHub support to purge `98b204a`.
+
+## R13. Adopt the per-run-means guards: the DECISIONS entry and the pre-registration rule
+
+- Tags: `needs-decision`
+- Status: todo
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/97
+- **Why.** R01 adds `evalkit.means` but adopts nothing: rules already applied stay applied
+  (decisions 28 and the caching result). Whether the next pre-registration uses its rule, and
+  with which margin (`max(1, spread of the baseline's runs)`), is the owner's.
+- **The owner decides.** The text proposed in the description of https://github.com/orwee/univ3-clickhouse-indexer/pull/97, or another. Then
+  R03 can use it.
