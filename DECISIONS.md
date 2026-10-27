@@ -1232,54 +1232,6 @@ its own revert, and the prompt stays `9df22d15…`. Per run the two prompts refu
 on average (91.1%); only the per-case majority differs, by two cases, which is within the
 spread of identical runs. The rule was written before the runs and is applied as written.
 
-## 29. Guards on a change compare per-run means, with a margin from the baseline's spread
-
-Written by the agent at the owner's request on 2026-10-27 (Inbox #94, R13). The owner asked for
-this entry to be written for him; the decision is his.
-
-- Date: 2026-10-27
-- Status: Accepted
-
-**Context.** Two pre-registered rules failed on a one-case margin applied to counts by
-majority of three runs, where the runs themselves did not differ: the `cache` runs refused
-15, 17 and 16 of 21 against the baseline's 16, 19 and 17 (`docs/EVALS.md`, prompt caching),
-and the coverage default refused 55, 54 and 55 of 60 against `zero-day`'s 55, 54 and 55
-(decision 28, outcome). A majority turns a case that three runs split 2 to 1 into a whole
-case, so two sets of runs that differ by nothing can sit on either side of a threshold.
-
-**Decision.**
-
-- Guards on a change compare per-run means. For each measure (right on cases with an answer,
-  refusal recall, cases with an answer refused), the variant's mean over its runs may be
-  worse than the baseline's mean by at most `max(1, highest minus lowest of the baseline's
-  runs)` cases. Better never fails a guard.
-- The margin comes from the baseline's runs alone and is written in the pre-registration,
-  with its numbers, before the variant runs.
-- The computation is `evalkit.means.compare` (#97); its docstring states the rule.
-  `spread.guards` stays, and what it says may be reported, deciding nothing.
-- **From now on only.** Decision 28 and the caching result were reached under the earlier
-  rule and stay as they were decided. Applying this rule to their runs, as the tests of #97
-  do, is not a result and changes neither. A question already answered is asked again only
-  with new runs, under a new pre-registration (the sixth entry is the first).
-
-**Why.** The noise between identical runs is a property of the runs, and a per-run mean
-keeps it, where a majority hides it. A margin read from the baseline's spread fails on a
-drop larger than what identical runs already differ by, and not on less; reading it from the
-baseline alone lets it be written down before the variant exists.
-
-**Tradeoff.**
-
-- The spread of three runs is a rough estimate of the noise. A baseline whose three runs
-  happen to agree gives a margin of 1; one whose runs happen to scatter gives a wide margin
-  (3 cases of 21 for the cache's refusal recall), and a real drop smaller than that is not
-  seen.
-- Per case, a guard on means says nothing: a variant can break some cases and fix others
-  and keep its mean. The case-by-case comparison is still reported.
-
-**Revisit when.** A pre-registration has more than three runs a side, so the spread can be
-estimated better; or a guard on means passes a change that the case-by-case comparison shows
-breaking a family of cases.
-
 ## Agent corrections
 
 Things an agent got wrong and I had to redirect, one line each, with where it was fixed.

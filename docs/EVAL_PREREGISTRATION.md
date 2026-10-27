@@ -632,9 +632,11 @@ The fifth entry checked that the default with the section "Days with no row" (de
 is not worse than `zero-day`. Its complete runs (39422763149, 39422770533, 39422777052)
 refused 54 of the 60 `test` cases with no answer by majority, where 55 were needed, so the
 default did not change. That result stands: the rule was written before the runs and was
-applied as written, and applying a later rule to those runs is not a result (decision 29).
+applied as written, and applying a later rule to those runs is not a result: the owner
+adopted the per-run-means rule on 2026-10-27 for later comparisons only (Inbox #94, R13;
+its DECISIONS entry is proposed in #100 for the owner to write).
 
-Decision 29 adopts guards on per-run means. This entry asks the same question as the fifth,
+That rule puts the guards on per-run means. This entry asks the same question as the fifth,
 with **new runs** and those guards: **is the default with the section "Days with no row" not
 worse than `zero-day`** on golden set v2? It does not try to show that it is better.
 
@@ -668,7 +670,7 @@ not used, neither as reference nor to set a margin.
 ## The three measures, and the margin of each
 
 All on `test`, counted per run and averaged over the runs of each side, as
-`evalkit.means.compare` does (decision 29). The margin of a measure is
+`evalkit.means.compare` does (the rule adopted for R13). The margin of a measure is
 `max(1, spread of zero-day's runs)`, the spread being the highest count minus the lowest.
 The guard holds when the new runs' mean is worse than `zero-day`'s mean by at most the
 margin; better never fails it. Numbers read from the three `zero-day` results files.
@@ -724,5 +726,5 @@ variant inside them is `baseline`.
   means cannot see a difference smaller than that.
 - The fifth entry asked the same question of runs with the same inputs and its rule said
   worse; this one may say not worse. Both are reported, and the difference is the rule's,
-  which is why decision 29 applies it from now on only.
+  which is why the owner adopted it from now on only.
 - The coverage is read from one table. Nothing here measures a question about another one.

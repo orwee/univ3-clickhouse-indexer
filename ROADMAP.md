@@ -239,10 +239,12 @@ bottom.
 
 ## R13. Adopt the per-run-means guards: the DECISIONS entry and the pre-registration rule
 
-- Tags: `done`
-- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/100
-- Note: the owner adopted the rule on 2026-10-27 in the Inbox (#94) and asked the agent to
-  write the entry; it is decision 29, from now on only.
+- Tags: `needs-decision`
+- Status: blocked: the DECISIONS entry is the owner's to write (AGENTS.md, section 2)
+- Note: the owner adopted the rule on 2026-10-27 in the Inbox (#94), from now on only, and
+  asked the agent to write the entry. Section 2 does not let an agent add one, so the text is
+  proposed in the description of https://github.com/orwee/univ3-clickhouse-indexer/pull/100
+  for the owner to paste. The sixth pre-registration entry (R03) already uses the rule.
 - Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/97
 - **Why.** R01 adds `evalkit.means` but adopts nothing: rules already applied stay applied
   (decisions 28 and the caching result). Whether the next pre-registration uses its rule, and
@@ -255,7 +257,7 @@ bottom.
 - Tags: `needs-run`
 - Status: todo
 - Note: the owner said yes on 2026-10-27 in the Inbox (#94): the paragraph drafted in #98's
-  description, with the guards of decision 29. Tag changed to `needs-run` in https://github.com/orwee/univ3-clickhouse-indexer/pull/100.
+  description, with the per-run-means guards of R13. Tag changed to `needs-run` in https://github.com/orwee/univ3-clickhouse-indexer/pull/100.
 - Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/98
 - **Why.** On `dev`, `v2-u-other-sources-004` (what Dune showed) is answered with the
   warehouse's figure in all runs of all three variants, and `v2-u-other-chain-005` (Uniswap v4)
