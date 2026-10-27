@@ -618,3 +618,111 @@ thresholds, and the rule are those written above. The files of the incomplete ru
 `evals/results/` and decide nothing; the replacement runs' files are named, as above,
 `evals/results/<date>_baseline-coverage_<RUN_ID>.json`, and are told apart from them by
 their run ids, which the report lists.
+
+---
+
+# Sixth entry: the coverage default again, under the per-run-means guards
+
+Added on 2026-10-27, before any run of it, at the owner's request (Inbox #94, R03). Nothing
+above this line was changed.
+
+## What is measured, and why again
+
+The fifth entry checked that the default with the section "Days with no row" (decision 28)
+is not worse than `zero-day`. Its complete runs (39422763149, 39422770533, 39422777052)
+refused 54 of the 60 `test` cases with no answer by majority, where 55 were needed, so the
+default did not change. That result stands: the rule was written before the runs and was
+applied as written, and applying a later rule to those runs is not a result (decision 29).
+
+Decision 29 adopts guards on per-run means. This entry asks the same question as the fifth,
+with **new runs** and those guards: **is the default with the section "Days with no row" not
+worse than `zero-day`** on golden set v2? It does not try to show that it is better.
+
+The default is the one the fifth entry froze, byte for byte in the prompt sent:
+
+| What the default is | SHA-256 |
+|---|---|
+| System prompt as sent (`loop.system_prompt(6, 200)`, no descriptions) | `89acfeae828e400166a35423d9682b34a275e57886f2b61ea5f7ac825ca9bca4` |
+| `src/agent/prompts/system.md` | `1dab52b7c0fba2ca867edcfcbf316e1ddcce332f0dd743a51a8216b2c9e4e31d` |
+| `evals/warehouse.yml` (where the coverage is read) | `f901b186b5dd18818f437696ad1a4026491bc7c5a0c96f2e85decb2e9dd218ce` |
+| `evals/variants/baseline.yml` (sets nothing) | `124a43d52cc09f6bed2942509446c64732c7c1ff0996f92c5856fef9b2b0ea44` |
+| `src/agent/tools.py` (computes the coverage) | `01a7b2a4e226a2df873cc3987cbe7ee5989366e59c155ec54739e0c10a479ba6` |
+| `src/agent/loop.py` (the tool's description) | `f422de482b1deff397960f6d4d704f8bcb67fe6ca9ef80b762af550936bfd607` |
+
+The first five hashes are the fifth entry's. `src/agent/loop.py` differs from the fifth
+entry's file by `aafaa5e` only, which changed `search_docs`: that tool is offered only to a
+variant that sets `docs_tool`, and `baseline` sets nothing, so the tools sent are the same.
+The prompt is restored by reverting `bd409f3`, which had taken it out.
+
+The model, the tools, the six calls and the ceilings are those of `zero-day`.
+
+## What it is compared with
+
+The three runs of `zero-day` of the fourth entry (39407607316, 39407618600, 39407628909):
+golden `evals/golden_v2.jsonl` (SHA-256
+`9f920d576c88de70e8d920ab59be2e11d26f5b9e9d1573873d7f16fe83f27cf7`), split `all`,
+repetitions 1, `max_usd` 1.00, `claude-haiku-5-5`. They are the reference side of
+`evalkit.means.compare`; the new runs are the variant side. The runs of the fifth entry are
+not used, neither as reference nor to set a margin.
+
+## The three measures, and the margin of each
+
+All on `test`, counted per run and averaged over the runs of each side, as
+`evalkit.means.compare` does (decision 29). The margin of a measure is
+`max(1, spread of zero-day's runs)`, the spread being the highest count minus the lowest.
+The guard holds when the new runs' mean is worse than `zero-day`'s mean by at most the
+margin; better never fails it. Numbers read from the three `zero-day` results files.
+
+| Measure | `zero-day`, per run | Mean | Spread | Margin | Holds when the new runs' mean is |
+|---|---|---|---|---|---|
+| Right, cases with an answer, of 110 | 109, 109, 108 | 108.67 | 1 | 1 | **at least 107.67** |
+| Refused, cases with no answer, of 60 | 55, 54, 55 | 54.67 | 1 | 1 | **at least 53.67** |
+| Refused, cases with an answer, of 110 | 0, 1, 0 | 0.33 | 1 | 1 | **at most 1.33** |
+
+## The rule, decided now
+
+| The three measures | What is said | What happens to the default |
+|---|---|---|
+| All three hold | **Not worse than `zero-day`**, on per-run means within one case | It becomes the default when this pull request is merged, if the regression check of the pull request also passes |
+| Any one fails | **Worse than `zero-day`** on that measure, by the shortfall `evalkit.means.compare` prints | It does not change: `bd409f3` is applied again on this pull request (the section "Days with no row", the sentence added to the tool's description and the `coverage` block of `evals/warehouse.yml` come out), so the default is again the prompt `9df22d15…` |
+
+The regression check of decision 24 (`eval-pr`, 30 cases of v1) runs on this pull request
+by itself. If it fails its own rule, the default does not change either, whatever the three
+runs say.
+
+Nothing is said about being better: a gain on these measures over `zero-day` is reported,
+not claimed.
+
+## Also reported, and deciding nothing
+
+Per run, on `test` and on `dev`: correct, execution accuracy, refusal recall and
+precision, hallucination rate, cost and seconds per question. Case by case against
+`zero-day` (`evalkit.compare`). What `spread.guards` would have said by majority, as a line
+in the report and not as a verdict.
+
+## The runs
+
+Three runs of the variant `baseline`, with the default pinned above, dispatched together by
+the owner on the branch of this pull request at the commit that adds this entry: golden
+`evals/golden_v2.jsonl`, split `all`, repetitions 1, `max_usd` 1.00 each, model left empty
+(the default in the code, `claude-haiku-5-5`). Every run dispatched is listed; none is left
+out for its result. A run that does not ask all 240 questions, or that has an error, is
+reported and not repeated without the owner's word, and the rule is not applied to an
+incomplete set; the default then does not change on this pull request. Nothing in this
+entry changes after the first run.
+
+The files are renamed on fetching to `evals/results/<date>_coverage-default_<RUN_ID>.json`,
+so that a glob for the v2 baseline's or the fifth entry's files cannot pick them up. The
+variant inside them is `baseline`.
+
+## What this cannot show
+
+- The runs ask the committed fixture, whose data covers 2026-08-09 to 2026-09-25. They check
+  that the rule in the default means to the model what the `zero-day` paragraph meant, not
+  that it stays right as days are added; that is a test (`tests/test_agent_tools.py`).
+- Three runs a side give a rough estimate of the spread. A margin of one case per run on
+  means cannot see a difference smaller than that.
+- The fifth entry asked the same question of runs with the same inputs and its rule said
+  worse; this one may say not worse. Both are reported, and the difference is the rule's,
+  which is why decision 29 applies it from now on only.
+- The coverage is read from one table. Nothing here measures a question about another one.
