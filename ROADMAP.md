@@ -67,8 +67,8 @@ bottom.
 
 ## R02. Which questions with no answer still get a number, on golden set v2
 
-- Tags: `ready`
-- Status: todo
+- Tags: `done`
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/98
 - **Why.** The README's "Still open": refusals are the weak spot. On `test`, 4 cases with no
   answer were wrong by majority under `zero-day` (2 forecasts, 1 other source, 1 other
   chain), and the coverage default refused 54 of 60. Nobody has looked at them by family.
@@ -242,3 +242,16 @@ bottom.
   with which margin (`max(1, spread of the baseline's runs)`), is the owner's.
 - **The owner decides.** The text proposed in the description of https://github.com/orwee/univ3-clickhouse-indexer/pull/97, or another. Then
   R03 can use it.
+
+## R14. Pre-register a refusal paragraph for other sources and other protocol versions
+
+- Tags: `needs-decision`
+- Status: todo
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/98
+- **Why.** On `dev`, `v2-u-other-sources-004` (what Dune showed) is answered with the
+  warehouse's figure in all runs of all three variants, and `v2-u-other-chain-005` (Uniswap v4)
+  in most; the draft is in the description of #98 (R02).
+- **The owner decides.** Whether to pre-register it, and whether the guards use the per-run
+  means of R01 (#97, R13). Then the task becomes `needs-run`: the entry in
+  `docs/EVAL_PREREGISTRATION.md` and the prompt paragraph, in one pull request, nothing
+  dispatched.

@@ -1,0 +1,21 @@
+id,family,runs,not_refused_in,refused_by_majority,each_run
+v2-u-forecast-003,forecast,3,0,True,run 1: refused in 6 model calls; run 2: refused in 5 model calls; run 3: refused in 6 model calls
+v2-u-forecast-005,forecast,3,3,False,run 1: answered in 5 model calls; run 2: answered in 5 model calls; run 3: answered in 4 model calls
+v2-u-intraday-001,intraday,3,0,True,run 1: refused in 4 model calls; run 2: refused in 4 model calls; run 3: refused in 4 model calls
+v2-u-intraday-008,intraday,3,1,True,run 1: refused in 4 model calls; run 2: answered in 4 model calls; run 3: refused in 6 model calls
+v2-u-liquidity-004,liquidity,3,0,True,run 1: refused in 2 model calls; run 2: refused in 2 model calls; run 3: refused in 2 model calls
+v2-u-liquidity-008,liquidity,3,0,True,run 1: refused in 2 model calls; run 2: refused in 3 model calls; run 3: refused in 3 model calls
+v2-u-near-miss-006,near-miss,3,0,True,run 1: refused in 3 model calls; run 2: refused in 3 model calls; run 3: refused in 3 model calls
+v2-u-near-miss-007,near-miss,3,0,True,run 1: refused in 5 model calls; run 2: refused in 4 model calls; run 3: refused in 4 model calls
+v2-u-not-held-001,not-held,3,1,True,run 1: refused in 4 model calls; run 2: refused in 4 model calls; run 3: answered in 5 model calls
+v2-u-not-held-007,not-held,3,0,True,run 1: refused in 3 model calls; run 2: refused in 3 model calls; run 3: refused in 4 model calls
+v2-u-other-chain-003,other-chain,3,1,True,run 1: answered in 5 model calls; run 2: refused in 4 model calls; run 3: refused in 3 model calls
+v2-u-other-chain-005,other-chain,3,2,False,run 1: answered in 3 model calls; run 2: answered in 3 model calls; run 3: refused in 4 model calls
+v2-u-other-pool-003,other-pool,3,0,True,run 1: refused in 5 model calls; run 2: refused in 6 model calls; run 3: refused in 6 model calls
+v2-u-other-pool-005,other-pool,3,0,True,run 1: refused in 6 model calls; run 2: refused in 6 model calls; run 3: refused in 6 model calls
+v2-u-other-sources-002,other-sources,3,0,True,run 1: refused in 3 model calls; run 2: refused in 3 model calls; run 3: refused in 3 model calls
+v2-u-other-sources-004,other-sources,3,3,False,run 1: answered in 3 model calls; run 2: answered in 3 model calls; run 3: answered in 3 model calls
+v2-u-outside-window-001,outside-window,3,0,True,run 1: refused in 4 model calls; run 2: refused in 4 model calls; run 3: refused in 5 model calls
+v2-u-outside-window-006,outside-window,3,0,True,run 1: refused in 5 model calls; run 2: refused in 4 model calls; run 3: refused in 4 model calls
+v2-u-smart-money-004,smart-money,3,0,True,run 1: refused in 6 model calls; run 2: refused in 5 model calls; run 3: refused in 5 model calls
+v2-u-smart-money-005,smart-money,3,1,True,run 1: no_answer in 6 model calls; run 2: refused in 5 model calls; run 3: refused in 6 model calls
