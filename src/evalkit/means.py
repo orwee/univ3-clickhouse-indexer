@@ -4,8 +4,8 @@
 majority throws away what the runs say: a case that three runs split 2 to 1 counts as a full
 case, so two sets of runs that differ by nothing a person would call a difference can sit on
 either side of a one-case threshold (the ``cache`` runs refused 15, 17 and 16 of 21 against
-the baseline's 16, 19 and 17; the coverage default refused 55, 54 and 55 of 60 against
-``zero-day``'s 55, 55 and 55). This module compares what each side did per run.
+the baseline's 16, 19 and 17; the coverage default refused 55, 54 and 55 of 60, the same
+per run as ``zero-day``). This module compares what each side did per run.
 
 For each measure, on one split, over the cases that measure is about:
 
