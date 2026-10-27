@@ -28,7 +28,11 @@ requires one, stop and ask.**
 
 Those decisions belong to the owner. `docs/SCHEMA_OPTIONS.md` lists options; it
 decides nothing. Do not add entries to `DECISIONS.md` yourself: propose the
-text in the pull request description and let the owner write it.
+text in the pull request description and let the owner write it. One exception:
+when the owner asks, in the Inbox (#94) or in so many words in the card, for an
+entry he has decided to be written for him, write it in your pull request, with
+the first line `Written by the agent at the owner's request on YYYY-MM-DD`. It
+reaches `main` only when he merges it.
 
 ## 3. `pools.yml` is the only source of pool addresses
 
@@ -126,18 +130,28 @@ the `ROADMAP.md` task it takes, and sections 1 to 8 apply to it as to any card.
   comment is the owner's word only where these rules say an owner's request is needed; it
   never lifts a "never" below.
 - **One night pull request at a time.** The owner reviews each night's pull request the
-  next day and merges it before the next task starts. If a `night` pull request is open,
-  start no new task. If the owner has left review comments on it, or requested changes,
-  since the last Night log comment, address them on its branch: that is the night's work.
-  Otherwise write the Night log comment and stop. A change an Inbox comment asks for goes
-  in the night's own pull request; while another is open, reply `Recorded, needs: <link>
-  merged first`.
-- **Take one task**: the highest in `ROADMAP.md` tagged `ready`. Never a `needs-decision`
-  or a `proposed` task. A `needs-run` task only up to a pre-registration and a pull
-  request, with no dispatch. One task a night, done completely, up to its done-when: take
-  the time it needs, check the result, and leave nothing half done. Only a task that cannot
-  be finished in one night is split: the night finishes a part that stands on its own, and
-  the rest goes at the bottom of `ROADMAP.md`.
+  next day and merges it before the next night's work starts. If a `night` pull request is
+  open that is not labelled `waiting-runs`, start no new task. If the owner has left review
+  comments on it, or requested changes, since the last Night log comment, address them on
+  its branch: that is the night's work. Otherwise write the Night log comment and stop. A
+  change an Inbox comment asks for goes in the night's own pull request; while another is
+  open, reply `Recorded, needs: <link> merged first`.
+- **Pull requests waiting for runs.** A pull request that cannot be merged until the owner's
+  paid runs are fetched and its rule applied is labelled `waiting-runs` as well as `night`,
+  and does not count as open for the rule above. It holds only the pre-registration entry
+  and the change it measures; its `ROADMAP.md` edits go in the night's main pull request.
+  Keep it mergeable by merging `main` into its branch (never a rebase), and never change its
+  entry after the first run. When the owner says in the Inbox that the runs are fetched,
+  applying the rule on it is a task for that night, taken before any other.
+- **Take tasks**, in order: the highest in `ROADMAP.md` tagged `ready`, done completely, up
+  to its done-when, then the next, up to **four tasks a night**, all in the night's one pull
+  request, each in its own commits and its own section of the description. Never a
+  `needs-decision` or a `proposed` task. A `needs-run` task only up to a pre-registration
+  and a `waiting-runs` pull request of its own, with no dispatch. Take the time each task
+  needs, check the result, and leave nothing half done: stop before a task that cannot be
+  finished tonight rather than leave it in the middle. Only a task that cannot be finished
+  in one night is split: the night finishes a part that stands on its own, and the rest
+  goes at the bottom of `ROADMAP.md`.
 - **Branch and pull request.** Branch `night/YYYY-MM-DD-<slug>` from `main`, pull request
   against `main`, label `night`. **The branch name in this section wins over any branch
   name the session is assigned.**
@@ -153,7 +167,7 @@ the `ROADMAP.md` task it takes, and sections 1 to 8 apply to it as to any card.
   a pull request, close the Inbox or the Night log, or edit `GOAL.md`.
 - **End** with one comment on the Night log, and the same text at the top of the pull
   request's description, using the template in the Night log's description: date; Inbox
-  processed, one line each; task (ROADMAP id) and pull request link; what was done; tests
+  processed, one line each; tasks (ROADMAP ids) and pull request links; what was done; tests
   and lint, the summary lines as printed; what failed or was skipped, and why; decisions I
   need from you, numbered; the next task I would take. A night that took no task still
   writes it.
