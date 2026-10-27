@@ -34,7 +34,7 @@ bigger is split: the night does the first part and adds the rest at the bottom.
 ## R01. Guards from per-run means in evalkit
 
 - Tags: `done`
-- Status: done: PR_LINK
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/97
 - Note: the task says the coverage default refused 55, 54 and 55 of 60 "against `zero-day`'s
   55, 55, 55". The committed `zero-day` files give 55, 54 and 55 as well
   (`evals/results/2026-10-20_zero-day.md`; `DECISIONS.md` decision 28 says the same), so the
@@ -234,9 +234,9 @@ bigger is split: the night does the first part and adds the rest at the bottom.
 
 - Tags: `needs-decision`
 - Status: todo
-- Added by: PR_LINK
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/97
 - **Why.** R01 adds `evalkit.means` but adopts nothing: rules already applied stay applied
   (decisions 28 and the caching result). Whether the next pre-registration uses its rule, and
   with which margin (`max(1, spread of the baseline's runs)`), is the owner's.
-- **The owner decides.** The text proposed in the description of PR_LINK, or another. Then
+- **The owner decides.** The text proposed in the description of https://github.com/orwee/univ3-clickhouse-indexer/pull/97, or another. Then
   R03 can use it.
