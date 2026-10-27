@@ -123,3 +123,23 @@ def test_what_the_rule_says_about_the_coverage_default(capsys):
     assert counts(got, "refusal_recall") == ([55, 54, 55], [55, 54, 55], 1, True)
     assert got["refusal_recall"]["shortfall"] == 0
     assert all(row["holds"] for row in got.values())
+
+
+def test_the_sixth_entry_writes_the_thresholds_the_rule_computes_from_zero_day():
+    """The sixth pre-registration entry was written before its runs; its per-run counts,
+    means, margins and thresholds are the ones this module computes from the zero-day runs."""
+    zero_day = load("2026-10-20_zero-day_*.json")
+    got = means.compare(zero_day, zero_day, "test")
+    entry = (config.REPO_ROOT / "docs" / "EVAL_PREREGISTRATION.md").read_text()
+    sixth = entry.split("# Sixth entry", 1)[1]
+    for row in got.values():
+        b = row["baseline"]
+        sign = -1 if row["higher_is_better"] else 1
+        threshold = b["mean"] + sign * row["margin"]
+        bound = "at least" if row["higher_is_better"] else "at most"
+        line = (
+            f"| {row['label']}, of {b['over']} | {', '.join(map(str, b['per_run']))} "
+            f"| {b['mean']:.2f} | {b['spread']} | {row['margin']} "
+            f"| **{bound} {threshold:.2f}** |"
+        )
+        assert line in sixth, line
