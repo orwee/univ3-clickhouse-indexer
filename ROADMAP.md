@@ -26,10 +26,12 @@ The tasks the night runs take, highest priority first. The rules for using this 
 **Status.** `todo`, `done: <link to the pull request>`, or `blocked: <why>`, and any
 number of `Note:` lines under it.
 
-Each task is one night's work, done completely, up to its done-when. The owner reviews it
-the next day and merges it before the next one starts. One that cannot be finished in one
-night is split: the night finishes a part that stands on its own and adds the rest at the
-bottom.
+A night takes up to four `ready` tasks in order, each done completely, up to its
+done-when, in one pull request that the owner reviews the next day and merges before the
+next night's work. One that cannot be finished in one night is split: the night finishes a
+part that stands on its own and adds the rest at the bottom. A pull request waiting for the
+owner's paid runs is labelled `waiting-runs` and does not hold the nights back (AGENTS.md,
+section 9).
 
 ---
 
@@ -86,7 +88,12 @@ bottom.
 ## R03. Re-test the coverage-based default with the new guards
 
 - Tags: `needs-run`
-- Status: todo (after R01 is merged)
+- Status: blocked: waiting for the owner's three runs on https://github.com/orwee/univ3-clickhouse-indexer/pull/100 (`waiting-runs`)
+- Note: the owner decided on 2026-10-27: #100 is not merged before the runs are fetched and
+  the rule is applied on it; the reference stays `zero-day`, as the sixth entry says.
+- Note: prepared on 2026-10-27 at the owner's request (Inbox #94): the sixth entry and the
+  prompt change are in https://github.com/orwee/univ3-clickhouse-indexer/pull/100; nothing dispatched. The three runs are the owner's, and the
+  rule is applied on that pull request once they are fetched.
 - **Why.** GOAL.md, criterion 1. The coverage default fixed every pool-day with no row and
   failed only on a one-case margin that R01 replaces.
 - **Done when.**
@@ -111,7 +118,7 @@ bottom.
 
 ## R05. Airflow: the schedule after midnight finality, and an alert on failure
 
-- Tags: `needs-decision`
+- Tags: `ready`
 - Status: todo
 - **Why.** Decision 25: at 00:00 UTC the day's last block is not finalized yet (finality
   trails the tip by about 13 to 19 minutes), `cli` refuses it, and two retries 5 minutes
@@ -120,6 +127,14 @@ bottom.
   `retry_delay`. (b) Where an alert goes (e-mail, a GitHub issue comment, a webhook) and
   whether it needs a secret. Then the task becomes `ready`: the DAG change, a test in
   `tests/test_airflow_dag.py`, and a proposed text for a DECISIONS entry.
+- Note: (a) answered on 2026-10-27 in the Inbox (#94): 00:30 UTC.
+- Note: (b) decided by the owner on 2026-10-27: an `on_failure_callback` posts a comment on
+  the GitHub issue "Pipeline alerts" (#101) of this repository. The token is a
+  fine-grained token with write access to this repository's issues only, read from the
+  environment (`GITHUB_ALERT_TOKEN`, from the owner's env file passed to the Airflow
+  containers; never committed, never printed). Without it the callback logs that no alert
+  was sent and does not fail the task. The issue number comes from the environment too
+  (`GITHUB_ALERT_ISSUE`). The test uses a fake HTTP client: no network, no token.
 
 ## R06. A labelling kit for the owner
 
@@ -159,13 +174,21 @@ bottom.
 
 ## R07. Serve the agent over HTTP, with traces
 
-- Tags: `needs-decision`
+- Tags: `ready`
 - Status: todo
 - **Why.** GOAL.md, criterion 3.
 - **The owner decides.** New dependencies (FastAPI and an ASGI server; OpenTelemetry's SDK
   and an exporter) need his approval (AGENTS.md, section 7), and where the traces go. Also
   whether the service may run anywhere but a test: AGENTS.md forbids an agent to start a
   server.
+- Note: decided by the owner on 2026-10-27. Approved dependencies: `fastapi` and `uvicorn`
+  (main), `opentelemetry-api` and `opentelemetry-sdk` (main), `httpx` (dev, for FastAPI's
+  `TestClient`); no other. Traces go to a JSON Lines file under `config.data_dir()`, through
+  a small exporter in this repository: no collector, no external backend. The service runs
+  only inside tests (`TestClient`, scripted model, no key, no network); the owner starts it
+  himself, and `README.md` gives him the command. One endpoint, `POST /ask`, returns the
+  answer, the SQL, the explanation and the trace id. Split if it does not fit one night: the
+  service with its tests first, the traces second.
 
 ## R08. Dense retrieval against BM25
 
@@ -176,6 +199,7 @@ bottom.
 - **The owner decides.** A local embedding model (a dependency, and a download) or a
   provider (a key, and a cost), and whether this is worth doing before R06 gives labels a
   person has checked.
+- Note: the owner decided on 2026-10-27 to wait for R06's labels; it stays `needs-decision`.
 
 ## R09. The walkthrough covers the agent, the evaluation, Airflow and the overview
 
@@ -234,8 +258,13 @@ bottom.
 
 ## R13. Adopt the per-run-means guards: the DECISIONS entry and the pre-registration rule
 
-- Tags: `needs-decision`
-- Status: todo
+- Tags: `done`
+- Status: done: decision 29 in `DECISIONS.md`, written at the owner's request on 2026-10-27
+  from the text proposed in #100, under the exception added to AGENTS.md section 2 the same day
+- Note: the owner adopted the rule on 2026-10-27 in the Inbox (#94), from now on only, and
+  asked the agent to write the entry. Section 2 does not let an agent add one, so the text is
+  proposed in the description of https://github.com/orwee/univ3-clickhouse-indexer/pull/100
+  for the owner to paste. The sixth pre-registration entry (R03) already uses the rule.
 - Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/97
 - **Why.** R01 adds `evalkit.means` but adopts nothing: rules already applied stay applied
   (decisions 28 and the caching result). Whether the next pre-registration uses its rule, and
@@ -245,8 +274,10 @@ bottom.
 
 ## R14. Pre-register a refusal paragraph for other sources and other protocol versions
 
-- Tags: `needs-decision`
-- Status: todo
+- Tags: `needs-run`
+- Status: blocked: waits for R03's result (#100)
+- Note: the owner said yes on 2026-10-27 in the Inbox (#94): the paragraph drafted in #98's
+  description, with the per-run-means guards of R13. Tag changed to `needs-run` in https://github.com/orwee/univ3-clickhouse-indexer/pull/100.
 - Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/98
 - **Why.** On `dev`, `v2-u-other-sources-004` (what Dune showed) is answered with the
   warehouse's figure in all runs of all three variants, and `v2-u-other-chain-005` (Uniswap v4)
@@ -255,3 +286,23 @@ bottom.
   means of R01 (#97, R13). Then the task becomes `needs-run`: the entry in
   `docs/EVAL_PREREGISTRATION.md` and the prompt paragraph, in one pull request, nothing
   dispatched.
+- Note: the owner decided on 2026-10-27 that R14's entry waits for R03's result, so that its
+  baseline is whichever default wins. Status `blocked` until #100 is merged or closed.
+
+## R15. The coverage default leaves `other-pool` questions without an answer at the 6-call cap
+
+- Tags: `needs-decision`
+- Status: todo
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/100, at the owner's request in the Inbox (#94)
+- **Why.** In R02 (#98), on `dev`, the coverage default (fifth entry's runs) ended
+  `v2-u-other-pool-005` without an answer in 2 of 3 runs and `v2-u-other-pool-003` in 1 of 3,
+  each after 6 model calls (`iteration_cap`), spending them on SQL that lists the pools
+  (`evals/failures/2026-10-27_coverage-default_v2_dev.csv`, `..._dev_unstable.csv`). Under
+  the baseline both were refused in all 3 runs; under `zero-day`, 005 ended once without an
+  answer (`..._dev_refusals.csv` of each variant). On `test`, counts only: `other-pool` runs
+  not refused were 4 of 18 under the baseline, 0 under `zero-day` and 2 under the coverage
+  default (`*_test_family_counts.csv`).
+- **The owner decides.** Raise the cap of model calls for that variant (a change to the
+  agent, measured by its own pre-registration, which costs runs), or accept it as it is.
+  Also whether to wait for the sixth entry's runs (R03), which will show whether it happens
+  again.
