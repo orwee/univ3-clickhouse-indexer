@@ -39,10 +39,11 @@ def test_retries_catchup_and_one_run_at_a_time(dag):
         assert task.retry_delay == dt.timedelta(minutes=5)
 
 
-def test_it_is_a_daily_data_interval_that_starts_on_the_first_full_day(dag):
-    # "@daily" is "0 0 * * *"; as a data interval, ds is the day that has just ended.
+def test_it_is_a_daily_data_interval_at_half_past_midnight_from_the_first_full_day(dag):
+    # 00:30 UTC, after the day's last block is finalized (ROADMAP R05); as a data interval,
+    # ds is the day that has just ended.
     assert type(dag.timetable).__name__ == "CronDataIntervalTimetable"
-    assert dag.timetable.summary == "0 0 * * *"
+    assert dag.timetable.summary == "30 0 * * *"
     assert dag.start_date.date() == dt.date(2026, 8, 10)
 
 
@@ -59,3 +60,20 @@ def test_every_task_is_one_of_the_commands_the_makefile_runs(dag):
     for target in ("sanity", "fetch-external", "reconcile"):
         assert f"make {target}" in commands["reconcile"]
     assert all("set -euo pipefail" in command for command in commands.values())
+
+
+def test_every_task_alerts_through_pipeline_alert_after_its_last_try(dag):
+    for task in dag.tasks:
+        callbacks = task.on_failure_callback
+        callbacks = callbacks if isinstance(callbacks, list) else [callbacks]
+        assert [(c.__module__, c.__name__) for c in callbacks] == [
+            ("pipeline_alert", "on_failure")
+        ], task.task_id
+        assert task.on_retry_callback in (None, [])
+
+
+def test_the_alert_module_is_not_read_as_a_dag():
+    assert "pipeline_alert.py" in (DAGS / ".airflowignore").read_text().split()
+    bag = DagBag(dag_folder=str(DAGS))
+    assert list(bag.dags) == ["univ3_daily"]
+    assert not any(path.endswith("pipeline_alert.py") for path in bag.file_last_changed)
