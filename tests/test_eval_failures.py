@@ -155,3 +155,37 @@ def test_every_case_with_no_answer_of_the_split_and_how_each_run_ended(monkeypat
         ("d-u", "2", "False")
     ]
     assert "t-u" not in out[2].read_text()
+
+
+def test_family_counts_name_no_case_and_need_no_failure_files(monkeypatch, tmp_path):
+    files = three(monkeypatch)
+    assert failures.family_counts(files, "all") == [
+        {
+            "family": "f",
+            "cases_with_no_answer": 2,
+            "refused_by_majority": 0,
+            "not_refused_by_majority": 2,
+            "runs_scored": 6,
+            "runs_not_refused": 4,
+        }
+    ]
+    paths = []
+    for name, results in files:
+        paths.append(tmp_path / name)
+        paths[-1].write_text(json.dumps(results))
+    counts = tmp_path / "c.csv"
+    assert failures.main([*map(str, paths), "--split", "test", "--family-counts", str(counts)]) == 0
+    text = counts.read_text()
+    assert text.splitlines()[0] == ",".join(failures.FAMILY_COLUMNS)
+    assert "t-u" not in text and "answered" not in text
+    assert sorted(p.name for p in tmp_path.iterdir() if p.suffix == ".csv") == ["c.csv"]
+
+
+def test_nothing_to_write_is_refused(monkeypatch, tmp_path):
+    import pytest
+
+    files = three(monkeypatch)
+    path = tmp_path / files[0][0]
+    path.write_text(json.dumps(files[0][1]))
+    with pytest.raises(SystemExit):
+        failures.main([str(path)])

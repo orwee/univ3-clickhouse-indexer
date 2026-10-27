@@ -1,0 +1,11 @@
+family,cases_with_no_answer,refused_by_majority,not_refused_by_majority,runs_scored,runs_not_refused
+forecast,6,5,1,18,3
+intraday,6,6,0,18,0
+liquidity,6,5,1,18,2
+near-miss,6,6,0,18,0
+not-held,6,6,0,18,0
+other-chain,6,4,2,18,6
+other-pool,6,5,1,18,2
+other-sources,6,5,1,18,3
+outside-window,6,6,0,18,0
+smart-money,6,6,0,18,0

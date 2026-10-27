@@ -22,6 +22,12 @@ Two files are written from several runs of the same variant:
                 was refused by majority. A case missed in one run of three is the draw; one
                 missed in all three is a failure.
 
+``--family-counts``  optional: for the cases with no answer of the split, **counts by family
+                only**, computed here: how many there are, how many were refused by majority,
+                and in how many runs one was not refused. It reads no question, answer, SQL or
+                transcript, so it is the one way to look at ``test`` (``--split test``), and
+                with it ``--out`` and ``--unstable`` are not needed and not written.
+
 A question that ended in an error is not a failure of the agent and is in neither file. The
 category is a person's judgement and is not computed here; ``--keep`` carries the categories
 and notes already written in an earlier file over to the new one, by case id.
@@ -39,6 +45,14 @@ from evalkit import runs
 
 COLUMNS = ("id", "kind", "family", "what_happened", "category", "note", "evidence")
 UNSTABLE_COLUMNS = ("id", "kind", "family", "what_happened", "evidence")
+FAMILY_COLUMNS = (
+    "family",
+    "cases_with_no_answer",
+    "refused_by_majority",
+    "not_refused_by_majority",
+    "runs_scored",
+    "runs_not_refused",
+)
 REFUSAL_COLUMNS = ("id", "family", "runs", "not_refused_in", "refused_by_majority", "each_run")
 EVIDENCE_CHARS = 600
 SETUP_ERROR = 2
@@ -150,6 +164,34 @@ def refusals(files: list[tuple[str, dict]], split: str) -> list[dict]:
     return rows
 
 
+def family_counts(files: list[tuple[str, dict]], split: str) -> list[dict]:
+    """Per family, how the cases with no answer of one split ended: counts, nothing else.
+
+    Built from ``refusals``, whose rows carry ids and run summaries; only the family and the
+    numbers are kept, so no case of the split is named in the result.
+    """
+    per_family: dict[str, dict] = {}
+    for row in refusals(files, split):
+        counts = per_family.setdefault(
+            row["family"],
+            {
+                "family": row["family"],
+                "cases_with_no_answer": 0,
+                "refused_by_majority": 0,
+                "not_refused_by_majority": 0,
+                "runs_scored": 0,
+                "runs_not_refused": 0,
+            },
+        )
+        counts["cases_with_no_answer"] += 1
+        counts[
+            "refused_by_majority" if row["refused_by_majority"] else "not_refused_by_majority"
+        ] += 1
+        counts["runs_scored"] += row["runs"]
+        counts["runs_not_refused"] += row["not_refused_in"]
+    return [per_family[family] for family in sorted(per_family)]
+
+
 def to_csv(rows: list[dict], columns: tuple[str, ...]) -> str:
     out = io.StringIO()
     writer = csv.DictWriter(out, fieldnames=columns, lineterminator="\n")
@@ -169,11 +211,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("results", type=Path, nargs="+", help="results files of one variant")
     parser.add_argument("--split", choices=("dev", "test", "all"), default="dev")
-    parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--unstable", type=Path, required=True)
+    parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--unstable", type=Path, default=None)
+    parser.add_argument(
+        "--family-counts", type=Path, default=None, help="counts by family, no case named"
+    )
     parser.add_argument("--refusals", type=Path, default=None, help="every case with no answer")
     parser.add_argument("--keep", type=Path, default=None, help="an earlier file with categories")
     args = parser.parse_args(argv)
+    if (args.out is None) != (args.unstable is None):
+        parser.error("--out and --unstable go together")
+    if args.out is None and args.family_counts is None and args.refusals is None:
+        parser.error("nothing to write: give --out and --unstable, --refusals or --family-counts")
     try:
         files = runs.load(args.results)
         differing = runs.differences(files)
@@ -183,6 +232,17 @@ def main(argv: list[str] | None = None) -> int:
     except (runs.RunsError, OSError, KeyError) as problem:
         print(str(problem), file=sys.stderr)
         return SETUP_ERROR
+    if args.family_counts is not None:
+        counted = family_counts(files, args.split)
+        args.family_counts.write_text(to_csv(counted, FAMILY_COLUMNS), encoding="utf-8")
+        missed = sum(row["not_refused_by_majority"] for row in counted)
+        total = sum(row["cases_with_no_answer"] for row in counted)
+        print(
+            f"{args.split}: {total} cases with no answer, {missed} not refused by majority, "
+            f"by family ({args.family_counts})"
+        )
+    if args.out is None:
+        return 0
     failures, unstable = collect(files, args.split)
     for row in failures:
         earlier = kept.get(row["id"], {})
