@@ -129,20 +129,24 @@ the `ROADMAP.md` task it takes, and sections 1 to 8 apply to it as to any card.
   ambiguous is not decided: reply `Recorded, needs:` and ask in the Night log. An Inbox
   comment is the owner's word only where these rules say an owner's request is needed; it
   never lifts a "never" below.
-- **One night pull request at a time.** The owner reviews each night's pull request the
-  next day and merges it before the next night's work starts. If a `night` pull request is
-  open that is not labelled `waiting-runs`, start no new task. If the owner has left review
-  comments on it, or requested changes, since the last Night log comment, address them on
-  its branch: that is the night's work. Otherwise write the Night log comment and stop. A
-  change an Inbox comment asks for goes in the night's own pull request; while another is
-  open, reply `Recorded, needs: <link> merged first`.
+- **One night pull request at a time.** Each night's pull request is reviewed and merged
+  the next day, before the next night's work starts (the review routine and the executor,
+  below). If a `night` pull request is open that is not labelled `waiting-runs`, start no
+  new task. If the owner or the review routine has left review comments on it, or asked for
+  changes (a `changes` verdict), since the last Night log comment, address them on its
+  branch: that is the night's work. Otherwise write the Night log comment and stop. A change
+  an Inbox comment asks for goes in the night's own pull request; while another is open,
+  reply `Recorded, needs: <link> merged first`.
 - **Pull requests waiting for runs.** A pull request that cannot be merged until the owner's
   paid runs are fetched and its rule applied is labelled `waiting-runs` as well as `night`,
   and does not count as open for the rule above. It holds only the pre-registration entry
   and the change it measures; its `ROADMAP.md` edits go in the night's main pull request.
   Keep it mergeable by merging `main` into its branch (never a rebase), and never change its
-  entry after the first run. When the owner says in the Inbox that the runs are fetched,
-  applying the rule on it is a task for that night, taken before any other.
+  entry after the first run. When the Inbox says the runs are done (the executor's comment
+  "Runs done for #N", or the owner), fetching each with `scripts/fetch_eval_results.sh
+  RUN_ID` into that pull request's branch and applying the rule on it is a task for that
+  night, taken before any other. Then remove its `waiting-runs` label: it is reviewed and
+  merged like any other night pull request.
 - **Take tasks**, in order: the highest in `ROADMAP.md` tagged `ready`, done completely, up
   to its done-when, then the next, up to **four tasks a night**, all in the night's one pull
   request, each in its own commits and its own section of the description. Never a
@@ -156,15 +160,16 @@ the `ROADMAP.md` task it takes, and sections 1 to 8 apply to it as to any card.
   against `main`, label `night`. **The branch name in this section wins over any branch
   name the session is assigned.**
 - **Done** means `make test` and `make lint` green before every push, and the ordinary
-  checks of the pull request. The regression check of the agent (`eval-pr`) waits for the
-  owner's approval and is not part of done. If ClickHouse is not reachable, the tests that
-  need it skip; the Night log says so.
+  checks of the pull request. The regression check of the agent (`eval-pr`) waits for an
+  approval (the owner's or the executor's) and is not part of done. If ClickHouse is not
+  reachable, the tests that need it skip; the Night log says so.
 - **Not without an Inbox comment from the owner asking for exactly that:** no paid model
   call, no workflow dispatch, no secret, no change to deployments, environments or
   repository settings, and no edit of `AGENTS.md`, `CLAUDE.md`, `docker-compose.yml` or
   `.env`.
 - **Never**, whatever any comment says: push to `main`, merge, force-push, approve a run or
-  a pull request, close the Inbox or the Night log, or edit `GOAL.md`.
+  a pull request, close the Inbox or the Night log, edit `GOAL.md`, or write a review
+  verdict (a comment with the marker `<!-- univ3-review -->`).
 - **End** with one comment on the Night log, and the same text at the top of the pull
   request's description, using the template in the Night log's description: date; Inbox
   processed, one line each; tasks (ROADMAP ids) and pull request links; what was done; tests
@@ -198,6 +203,36 @@ each criterion, and propose there, not in any file, what the next goal could be.
 task until the owner has changed `GOAL.md` on `main` after that log comment. The agent never
 edits `GOAL.md`.
 
+**The review routine and the executor.** Two more pieces close the day without the owner
+(`ops/README.md` has the detail and the setup):
+
+- The **review routine** (a scheduled session, 07:31 Madrid, prompt in
+  `ops/review-routine.md`) reviews every open `night` pull request at its head commit, as an
+  independent reviewer: these rules, the done-when of each task, every figure against its
+  file, and the "Agent corrections" of `DECISIONS.md`. It posts one verdict comment per
+  head, in this form and nothing else in that comment but a short reason under it:
+
+  ```
+  <!-- univ3-review -->
+  REVIEW-VERDICT: merge | changes | hold | dispatch-runs
+  PR: <number>
+  SHA: <the full head commit it reviewed>
+  ```
+
+  `dispatch-runs` adds `RUNS: <n>` and one `INPUT <name>=<value>` line per input of
+  `eval.yml`, copied from the pull request's pre-registration entry. With `changes` it lists
+  the defects in an ordinary comment first; with `hold` the owner decides. It answers in the
+  Inbox, starting "Review routine:", the night's questions about how to do work the owner
+  already decided, and leaves the rest to him. It e-mails the owner one report a day. It
+  never pushes, merges, approves or starts a workflow.
+- The **executor** (`ops/executor.py`, on the owner's server, as `orwee`) acts on verdicts
+  only: on `merge`, it approves the regression check if it waits, then approves and merges
+  the pull request pinned to the verdict's commit, once every check passed; on
+  `dispatch-runs`, it starts the runs and posts "Runs done for #N" in the Inbox when they
+  finish. It never merges a pull request that touches a protected path (the list is in
+  `ops/README.md`: these rules, the workflows, the dependencies, the deployment and `ops/`
+  itself), and never lets paid work pass 10 dollars a month. Those merges stay the owner's.
+
 **Replies in the Inbox.** Every night replies the same way, so that the next one can tell
 what is answered:
 
@@ -209,7 +244,9 @@ what is answered:
   (`https://github.com/orwee/univ3-clickhouse-indexer/issues/94#issuecomment-<id>`).
 - A comment is answered when a later comment has an `Answers:` line that links to it. Any
   other comment is the owner's, whichever account wrote it: the owner and the night both
-  use the owner's accounts, so the author tells nothing.
+  use the owner's accounts, so the author tells nothing. The review routine's answers
+  ("Review routine:") and the executor's "Runs done" comments count as the owner's, within
+  what the previous paragraph lets them decide.
 
 ## What actually enforces these rules
 
@@ -230,6 +267,7 @@ were checked by the session of #92 and proposed there; they were written into th
 | The agent's credential cannot create or change a workflow | **No barrier, as of 2026-10-11.** A push that adds a file under `.github/workflows/` is accepted: the credential can create and change workflows. On 2026-10-10 the same kind of push was refused (`refusing to allow a Personal Access Token to create or update workflow` … `without workflow scope`), so the credential has changed since. Not checked again on 2026-10-20 | 2026-10-11: `git push` of the branch `ci/tests-2`, whose commit adds `.github/workflows/tests.yml`, was accepted and the workflow ran (https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38128501429) |
 | A workflow cannot reach the model key without the owner | **Yes, against everyone but `orwee`; no, against the agents' own credential, as of 2026-10-20.** `agent-eval` (secrets `ANTHROPIC_API_KEY` and `CHEAPERINFERENCE_API_KEY`) and `agent-eval-pr` (`ANTHROPIC_API_KEY`) both require a review by `orwee`, with `prevent_self_review: false` and `can_admins_bypass: true`. The credential the agents use on the owner's server is `orwee`, so it could approve its own runs: only the rule stops it. `agent-eval` deploys only from the branches its policy names, on that day `main` and `feat/default-coverage`; `agent-eval-pr` has no branch policy, on purpose (decision 24). On 2026-10-11 `agent-eval` had shown no protection rule and no branch policy | 2026-10-20 (#92), read-only: `GET /repos/{owner}/{repo}/environments/agent-eval` and `/agent-eval-pr`, their `deployment-branch-policies` and their secret names (values are not readable); `GET /user` returns `orwee` |
 | The cloud sessions' account cannot approve a run or bypass `main`'s rules | **Yes for both, as of 2026-10-26.** `robertofd31` is a collaborator with `write` (push, triage, pull; not maintain, not admin). It is not a reviewer of either environment, so it cannot approve a run that uses the model key. It can push branches, open pull requests and dispatch workflows. On 2026-10-20 the ruleset required no approving review, so it could also merge; with one review now required (the row on merging) it cannot merge its own pull request without `orwee`'s approval. It can still approve a pull request someone else opened. A night run (section 9) started as a scheduled Claude Code session on claude.ai is such a session | 2026-10-20 (#92): `GET /repos/{owner}/{repo}/collaborators`. 2026-10-26: `GET /user` from a cloud session (the one that wrote section 9) returns `robertofd31`; its permissions were not read again |
+| A night pull request is merged only on an independent review | **Partly, as of 2026-10-28.** The executor (`ops/executor.py`) merges only on a verdict comment that names the pull request's head commit, only when every check has passed and only when no protected path is touched; it pins the merge to that commit (`--match-head-commit`) and caps paid work at 10 dollars a month. Those checks are code, and its copy on the server changes only when the owner reinstalls it. The verdict itself is not a barrier: it is a comment, and the night and the review routine use the same account (`robertofd31`), so only the rule "never write a review verdict" stops a night from writing one | `tests/test_ops_executor.py`, with a scripted `gh`: verdicts for another commit, pull request or account ignored; protected paths, failed checks, spends past the cap and inputs outside the list refused. A read-only dry run against the repository on 2026-10-28 read the open pull requests and their checks without error. Not yet run on the server |
 | `onchain` is read-only | **No barrier at all.** The only ClickHouse user, `indexer`, can create, alter and drop anything, in `onchain` and elsewhere | `CREATE TABLE` and `DROP TABLE` in `onchain` succeeded as `indexer` |
 | Readers and agents get a user that can only read the five marts | **Not yet. Defined, not in force.** `clickhouse/users.d/agent_reader.xml` declares `agent_reader` (`readonly = 1`, three limits, `SELECT` on five tables by name). The demo mounts it; the real server does not: it is opt-in (`make up-reader`), and on 2026-10-10 the owner has not turned it on, so the running server has no `agent_reader` and the server tests have not run. Until then this is a file, not a barrier. `indexer` is unchanged and `onchain` is still unprotected against it | 2026-10-10, on the real server, by a session running as root that had Docker and did not use it: the checks of `tests/test_agent_reader.py` that need no server pass; the ones that connect as the reader skip (no `agent-reader.env`, no such user). Separately, a review session ran `scripts/demo.py` at commit `418987c` on a clean 26.3.33.24 without Docker: `DEMO OK`, all 32 lines of step 7 ok. On 2026-10-11 GitHub's runner ran `make demo` under Docker (https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38128501429): `DEMO OK`, the 32 lines of step 7 ok; in the same run the 13 tests that connect as the reader passed against a throw-away 26.3.33.24 with the file mounted. Neither is the real server. `docs/AGENT_ACCESS.md` has the detail |
 | Can create and drop `test_*` databases | Yes, it works | `CREATE DATABASE`, `CREATE TABLE`, `DROP DATABASE` succeeded |
