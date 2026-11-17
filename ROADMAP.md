@@ -169,8 +169,8 @@ bottom.
 
 ## R07. Serve the agent over HTTP, with traces
 
-- Tags: `ready`
-- Status: todo
+- Tags: `done`
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/110
 - **Why.** GOAL.md, criterion 3.
 - **The owner decides.** New dependencies (FastAPI and an ASGI server; OpenTelemetry's SDK
   and an exporter) need his approval (AGENTS.md, section 7), and where the traces go. Also

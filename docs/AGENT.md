@@ -37,6 +37,36 @@ The model is `claude-haiku-5-5` unless `--model` names another one that has a li
 `PRICES` ([`src/agent/llm.py`](../src/agent/llm.py)). A model without a recorded price is
 refused: its cost could be neither bounded nor computed.
 
+## Serving it over HTTP, with a trace per question
+
+[`src/agent/service.py`](../src/agent/service.py) puts the same loop behind one endpoint.
+The owner starts it by hand, on his machine:
+
+```sh
+PYTHONPATH=src uv run --group agent uvicorn agent.service:app_from_env --factory \
+    --host 127.0.0.1 --port 8000
+curl -s localhost:8000/ask -H 'content-type: application/json' \
+    -d '{"question": "How many rows does the largest table have?"}'
+```
+
+- `POST /ask` takes `question` and, optionally, `max_usd`, which may lower the warehouse
+  file's limit and never raise it. It answers 200 for every ending of the question, with
+  `status`, `answer`, `unit`, `sql`, `explanation`, `refusal_reason`, `usd`, `iterations`,
+  `model` and `trace_id`. A request that is not valid is a 422. When the read-only user does
+  not connect it is a 503 whose reason names no host, user or password.
+- It needs what the command needs, and checks both before it serves anything: the
+  read-only user and the model key. Without either it does not start. There is no fallback.
+- Every question is one trace: a span `agent.ask`, and under it one `llm.complete` per
+  model call and one `tool.describe_schema` or `tool.run_sql` per tool call, with the SQL,
+  the tokens and the status. The spans go to `<data dir>/agent/traces.jsonl`, one JSON line
+  each, through the exporter in [`src/agent/traces.py`](../src/agent/traces.py): no
+  collector and no backend. `grep` on a response's `trace_id` gives the whole question.
+- Spending goes to the same ledger as the command, one scope per question.
+
+The tests ([`tests/test_agent_service.py`](../tests/test_agent_service.py)) build the app
+with a scripted model and canned tools and call it through FastAPI's `TestClient`: no
+server is started, and they need no key and no network.
+
 ## Asking from GitHub, with no key on any machine
 
 The workflow [`agent`](../.github/workflows/agent.yml) asks one question on GitHub's runner.
