@@ -1,5 +1,5 @@
 # The only thing the agent is told about this warehouse: where it is, which tables it may
-# describe, its limits, and where the dates the data covers are read. Names and numbers only. What the tables mean is not written
+# describe, and its limits. Names and numbers only. What the tables mean is not written
 # here or anywhere in src/agent/: the agent reads column names and types from the database.
 #
 # The table list is what describe_schema shows. What can actually be read is decided by the
@@ -14,15 +14,6 @@ tables:
   - fct_pool_daily_round_trips
   - fct_pool_daily_smart_money
   - fct_round_trip_legs
-
-# The dates the data covers. describe_schema computes them each time it is called, as the
-# first and the last value of `column` in `table`, so that a day loaded since is in them
-# without anyone writing a date. `table` has one row per key of `keys_from` and day with
-# activity: within those dates, a key with no row on a day had no activity that day.
-coverage:
-  table: fct_pool_daily
-  column: block_date
-  keys_from: dim_pools
 
 limits:
   row_cap: 200          # rows of one result handed to the model; the rest is cut and flagged
