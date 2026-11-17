@@ -31,10 +31,10 @@ RESULTS = "evals/results/"
 # it verbatim, in the byline.
 OWNER_STATED = "data engineer and ML specialist in Madrid, statistician by training"
 
-# The pull requests whose descriptions begin with "Report of the night run": on 2026-10-26 a
-# GitHub search for that phrase in the bodies of this repository's pull requests returned
-# exactly these three. A test without network cannot search again, so it holds the links.
-NIGHT_RUNS = (84, 85, 86)
+# Three pull requests the agents wrote start to finish, linked as examples: their
+# descriptions report what was done and what was not. A test without network cannot read them
+# again, so it holds the links.
+AGENT_PULLS = (84, 85, 86)
 
 # Who merged the pull requests, checked on 2026-10-26 and kept here because a test without
 # network cannot check it again. GitHub's `merged_by`, read for every pull request: 91 merged
@@ -187,11 +187,11 @@ def test_the_byline_is_the_owners_own_words(page):
     assert page.count(OWNER_STATED) == 1 and OWNER_STATED in byline.group(1)
 
 
-def test_the_overnight_runs_link_to_their_reports(page):
-    sentence = re.search(r"<li>[^<]*unattended overnight runs \((.*?)\)</li>", page, re.S)
-    assert sentence, "the sentence on overnight runs is missing"
+def test_the_agents_work_links_to_its_examples(page):
+    sentence = re.search(r"<li>[^<]*agents working under them \((.*?)\)</li>", page, re.S)
+    assert sentence, "the sentence on the agents' work is missing"
     linked = [int(n) for n in re.findall(rf'href="{re.escape(REPO)}/pull/(\d+)"', sentence[1])]
-    assert tuple(linked) == NIGHT_RUNS
+    assert tuple(linked) == AGENT_PULLS
 
 
 def test_who_merged_the_pull_requests_is_stated_and_linked(page):
