@@ -376,6 +376,7 @@ uv downloads Python 3.12 by itself.
 | Reconcile, reports in `reports/` | `make reconcile` | no |
 | Smart-money trades, 1 credit per page, cached outside the repo (optional) | `PYTHONPATH=src uv run python -m univ3_indexer.nansen --fetch-tgm USDC --from … --to …` | **Nansen** |
 | Cross them with `raw_swaps`, store the aggregate (optional) | `PYTHONPATH=src uv run python -m univ3_indexer.nansen --daily USDC --from … --to …` | no |
+| The agent as an HTTP service, `POST /ask`, a trace per question under the data directory ([docs/AGENT.md](docs/AGENT.md#serving-it-over-http-with-a-trace-per-question)) | `PYTHONPATH=src uv run --group agent uvicorn agent.service:app_from_env --factory --host 127.0.0.1 --port 8000` | **Anthropic** |
 | Tests and lint | `make test`, `make lint` | no |
 | The checks run after every pull request (lint, tests, `make load-verify`, `make sanity`, `make reconcile`), each judged by its own exit code, then a summary | `/verify` in Claude Code ([.claude/commands/verify.md](.claude/commands/verify.md)) | no |
 | The evaluation as [docs/EVALS.md](docs/EVALS.md) runs it: `make eval-ci`, then it stops for the owner to start the paid runs; with their ids, fetch, `evalkit.runs` and `evalkit.compare` against the latest baseline, and a summary citing `evals/results/` | `/eval` in Claude Code ([.claude/commands/eval.md](.claude/commands/eval.md)) | no (the runs it waits for: **Anthropic**, on GitHub) |
