@@ -47,6 +47,19 @@ def test_the_prompt_names_no_table_and_no_limit_of_this_warehouse():
     assert re.findall(r"\{\{(\w+)\}\}", prompt) == ["descriptions", "row_cap", "max_iterations"]
 
 
+def test_the_prompt_says_what_a_missing_day_is_from_the_coverage_and_writes_no_date():
+    """The rule on days with no row reads the dates from describe_schema, not from the text:
+    the data grows by a day every day and a date written here would go stale."""
+    prompt = (AGENT_DIR / "prompts" / "system.md").read_text()
+    assert "## Days with no row" in prompt
+    for field in ("`coverage`", "`first`", "`last`", "`keys_from`", "`table`"):
+        assert field in prompt, field
+    assert "Answer 0; do not refuse." in prompt
+    assert "refuse, and say why" in prompt
+    assert not re.search(r"\b(19|20)\d\d-\d\d-\d\d\b", prompt)
+    assert not re.search(r"\b(19|20)\d\d\b", prompt)
+
+
 def test_src_agent_imports_nothing_of_the_indexer_but_its_config():
     for path in AGENT_DIR.rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -66,9 +79,8 @@ def test_the_warehouse_file_names_the_tables_the_reader_is_granted():
     assert w.tables == granted.tables == fixture.TABLES
     assert (w.row_cap, w.max_iterations, w.max_usd) == (200, 6, Decimal("0.25"))
     assert w.row_cap <= int(granted.settings["max_result_rows"])
-    # No coverage: the fifth pre-registration entry's runs were incomplete, so the default
-    # did not change (decision 28). describe_schema can report one; this warehouse asks none.
-    assert w.coverage is None
+    assert w.coverage == warehouse.Coverage("fct_pool_daily", "block_date", "dim_pools")
+    assert w.coverage.column in fixture.read_table(w.coverage.table).columns
 
 
 @pytest.mark.parametrize(
@@ -206,8 +218,9 @@ def test_describe_schema_returns_the_descriptions_it_was_given_next_to_names_and
 
 def covered(loaded, table="fct_pool_daily"):
     database, client = loaded
-    cover = warehouse.Coverage(table, "block_date", "dim_pools")
-    house = warehouse.Warehouse(database, fixture.TABLES, 5, 6, Decimal("1"), cover)
+    real = warehouse.load(WAREHOUSE_YML)
+    cover = warehouse.Coverage(table, real.coverage.column, real.coverage.keys_from)
+    house = warehouse.Warehouse(database, real.tables, 5, 6, Decimal("1"), cover)
     return tools.Tools(client, house)
 
 
