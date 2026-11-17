@@ -29,7 +29,7 @@ requires one, stop and ask.**
 Those decisions belong to the owner. `docs/SCHEMA_OPTIONS.md` lists options; it
 decides nothing. Do not add entries to `DECISIONS.md` yourself: propose the
 text in the pull request description and let the owner write it. One exception:
-when the owner asks, in the Inbox (#94) or in so many words in the card, for an
+when the owner asks, in so many words in the card or the pull request, for an
 entry he has decided to be written for him, write it in your pull request, with
 the first line `Written by the agent at the owner's request on YYYY-MM-DD`. It
 reaches `main` only when he merges it.
@@ -108,109 +108,6 @@ Tests must not need the network, an API key, or write access to `onchain`.
 - Do not edit `docker-compose.yml`, `.env`, the `Makefile` targets `up`/`down`,
   `AGENTS.md` or `CLAUDE.md`, unless the card is about exactly that.
 
-## 9. Night runs
-
-A scheduled session advances the repository by one small task a night. It starts with no
-memory: everything it needs is in the repository or on GitHub. In a night run the card is
-the `ROADMAP.md` task it takes, and sections 1 to 8 apply to it as to any card.
-
-**Read first, in this order:**
-
-1. `GOAL.md` (the owner's; never edited by an agent) and `ROADMAP.md`.
-2. The **Inbox** issue (#94): every comment that has no reply from a night run yet (see
-   "Replies in the Inbox" below).
-3. The last comment of the **Night log** issue (#95).
-4. Every pull request labelled `night` that is open, with its reviews and checks, and every
-   one closed without merging since the last Night log comment.
-
-**Then, in this order:**
-
-- **The Inbox first.** Act on every comment that is clear, and reply to each. Anything
-  ambiguous is not decided: reply `Recorded, needs:` and ask in the Night log. An Inbox
-  comment is the owner's word only where these rules say an owner's request is needed; it
-  never lifts a "never" below.
-- **One night pull request at a time.** The owner reviews each night's pull request the
-  next day and merges it before the next night's work starts. If a `night` pull request is
-  open that is not labelled `waiting-runs`, start no new task. If the owner has left review
-  comments on it, or requested changes, since the last Night log comment, address them on
-  its branch: that is the night's work. Otherwise write the Night log comment and stop. A
-  change an Inbox comment asks for goes in the night's own pull request; while another is
-  open, reply `Recorded, needs: <link> merged first`.
-- **Pull requests waiting for runs.** A pull request that cannot be merged until the owner's
-  paid runs are fetched and its rule applied is labelled `waiting-runs` as well as `night`,
-  and does not count as open for the rule above. It holds only the pre-registration entry
-  and the change it measures; its `ROADMAP.md` edits go in the night's main pull request.
-  Keep it mergeable by merging `main` into its branch (never a rebase), and never change its
-  entry after the first run. When the owner says in the Inbox that the runs are fetched,
-  applying the rule on it is a task for that night, taken before any other.
-- **Take tasks**, in order: the highest in `ROADMAP.md` tagged `ready`, done completely, up
-  to its done-when, then the next, up to **four tasks a night**, all in the night's one pull
-  request, each in its own commits and its own section of the description. Never a
-  `needs-decision` or a `proposed` task. A `needs-run` task only up to a pre-registration
-  and a `waiting-runs` pull request of its own, with no dispatch. Take the time each task
-  needs, check the result, and leave nothing half done: stop before a task that cannot be
-  finished tonight rather than leave it in the middle. Only a task that cannot be finished
-  in one night is split: the night finishes a part that stands on its own, and the rest
-  goes at the bottom of `ROADMAP.md`.
-- **Branch and pull request.** Branch `night/YYYY-MM-DD-<slug>` from `main`, pull request
-  against `main`, label `night`. **The branch name in this section wins over any branch
-  name the session is assigned.**
-- **Done** means `make test` and `make lint` green before every push, and the ordinary
-  checks of the pull request. The regression check of the agent (`eval-pr`) waits for the
-  owner's approval and is not part of done. If ClickHouse is not reachable, the tests that
-  need it skip; the Night log says so.
-- **Not without an Inbox comment from the owner asking for exactly that:** no paid model
-  call, no workflow dispatch, no secret, no change to deployments, environments or
-  repository settings, and no edit of `AGENTS.md`, `CLAUDE.md`, `docker-compose.yml` or
-  `.env`.
-- **Never**, whatever any comment says: push to `main`, merge, force-push, approve a run or
-  a pull request, close the Inbox or the Night log, or edit `GOAL.md`.
-- **End** with one comment on the Night log, and the same text at the top of the pull
-  request's description, using the template in the Night log's description: date; Inbox
-  processed, one line each; tasks (ROADMAP ids) and pull request links; what was done; tests
-  and lint, the summary lines as printed; what failed or was skipped, and why; decisions I
-  need from you, numbered; the next task I would take. A night that took no task still
-  writes it.
-
-**Keeping the roadmap alive.** All of it goes in the night's own pull request, so it reaches
-`main` only when the owner merges.
-
-- Mark the task taken `done`: its tag becomes `done` and its status
-  `done: <link to the pull request>`.
-- Add every task discovered at the bottom of `ROADMAP.md`, numbered after the last, with a
-  tag (`ready`, `needs-decision` or `needs-run`) and `Added by: <link to the pull request>`.
-- If the owner closed a night pull request without merging it, put its task back: tag
-  `ready`, status `todo`, and a line `Note: <link> closed without merging on YYYY-MM-DD`,
-  with the owner's reason if he gave one. On a night that takes no task, this goes in a pull
-  request that edits only `ROADMAP.md`.
-- When an Inbox comment of the owner turns a `proposed` or `needs-decision` task into
-  `ready`, change the tag in the pull request of that night and say so in the reply.
-
-**When no task tagged `ready` is left.** Do not invent one, and implement nothing. Read
-`GOAL.md` and find the criteria not yet met, each with the evidence it names. Propose the
-next 3 to 5 tasks that would move them, in a pull request that edits only `ROADMAP.md`:
-each at the bottom, tagged `proposed`, with why and done-when like the others. List them in
-the Night log under "Decisions I need from you". The owner makes one `ready` by answering in
-the Inbox.
-
-**When every criterion in `GOAL.md` is met.** Say so in the Night log, with the evidence for
-each criterion, and propose there, not in any file, what the next goal could be. Start no
-task until the owner has changed `GOAL.md` on `main` after that log comment. The agent never
-edits `GOAL.md`.
-
-**Replies in the Inbox.** Every night replies the same way, so that the next one can tell
-what is answered:
-
-- One reply per comment of the owner, as a new comment on #94. Never an edit of his
-  comment, and never one reply for several comments.
-- Its first line is `Processed: <what was done, with the pull request if any>` or
-  `Recorded, needs: <what is still needed before it can be done>`.
-- Its second line is `Answers: <link to the comment answered>`, the comment's own URL
-  (`https://github.com/orwee/univ3-clickhouse-indexer/issues/94#issuecomment-<id>`).
-- A comment is answered when a later comment has an `Answers:` line that links to it. Any
-  other comment is the owner's, whichever account wrote it: the owner and the night both
-  use the owner's accounts, so the author tells nothing.
-
 ## What actually enforces these rules
 
 A rule that claims a protection that does not exist is worse than no rule. This
@@ -229,7 +126,7 @@ were checked by the session of #92 and proposed there; they were written into th
 | Can push a branch and open a pull request in this repo | **Yes, while the owner allows it.** Pushes of non-`main` branches and `gh pr create/edit` go through a credential the owner grants for the session and can withdraw; the agent never holds it directly and cannot widen its scope | 2026-09-21: branches pushed and pull requests opened this way throughout |
 | The agent's credential cannot create or change a workflow | **No barrier, as of 2026-10-11.** A push that adds a file under `.github/workflows/` is accepted: the credential can create and change workflows. On 2026-10-10 the same kind of push was refused (`refusing to allow a Personal Access Token to create or update workflow` … `without workflow scope`), so the credential has changed since. Not checked again on 2026-10-20 | 2026-10-11: `git push` of the branch `ci/tests-2`, whose commit adds `.github/workflows/tests.yml`, was accepted and the workflow ran (https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38128501429) |
 | A workflow cannot reach the model key without the owner | **Yes, against everyone but `orwee`; no, against the agents' own credential, as of 2026-10-20.** `agent-eval` (secrets `ANTHROPIC_API_KEY` and `CHEAPERINFERENCE_API_KEY`) and `agent-eval-pr` (`ANTHROPIC_API_KEY`) both require a review by `orwee`, with `prevent_self_review: false` and `can_admins_bypass: true`. The credential the agents use on the owner's server is `orwee`, so it could approve its own runs: only the rule stops it. `agent-eval` deploys only from the branches its policy names, on that day `main` and `feat/default-coverage`; `agent-eval-pr` has no branch policy, on purpose (decision 24). On 2026-10-11 `agent-eval` had shown no protection rule and no branch policy | 2026-10-20 (#92), read-only: `GET /repos/{owner}/{repo}/environments/agent-eval` and `/agent-eval-pr`, their `deployment-branch-policies` and their secret names (values are not readable); `GET /user` returns `orwee` |
-| The cloud sessions' account cannot approve a run or bypass `main`'s rules | **Yes for both, as of 2026-10-26.** `robertofd31` is a collaborator with `write` (push, triage, pull; not maintain, not admin). It is not a reviewer of either environment, so it cannot approve a run that uses the model key. It can push branches, open pull requests and dispatch workflows. On 2026-10-20 the ruleset required no approving review, so it could also merge; with one review now required (the row on merging) it cannot merge its own pull request without `orwee`'s approval. It can still approve a pull request someone else opened. A night run (section 9) started as a scheduled Claude Code session on claude.ai is such a session | 2026-10-20 (#92): `GET /repos/{owner}/{repo}/collaborators`. 2026-10-26: `GET /user` from a cloud session (the one that wrote section 9) returns `robertofd31`; its permissions were not read again |
+| The cloud sessions' account cannot approve a run or bypass `main`'s rules | **Yes for both, as of 2026-10-26.** `robertofd31` is a collaborator with `write` (push, triage, pull; not maintain, not admin). It is not a reviewer of either environment, so it cannot approve a run that uses the model key. It can push branches, open pull requests and dispatch workflows. On 2026-10-20 the ruleset required no approving review, so it could also merge; with one review now required (the row on merging) it cannot merge its own pull request without `orwee`'s approval. It can still approve a pull request someone else opened. | 2026-10-20 (#92): `GET /repos/{owner}/{repo}/collaborators`. 2026-10-26: `GET /user` from a cloud session returns `robertofd31`; its permissions were not read again |
 | `onchain` is read-only | **No barrier at all.** The only ClickHouse user, `indexer`, can create, alter and drop anything, in `onchain` and elsewhere | `CREATE TABLE` and `DROP TABLE` in `onchain` succeeded as `indexer` |
 | Readers and agents get a user that can only read the five marts | **Not yet. Defined, not in force.** `clickhouse/users.d/agent_reader.xml` declares `agent_reader` (`readonly = 1`, three limits, `SELECT` on five tables by name). The demo mounts it; the real server does not: it is opt-in (`make up-reader`), and on 2026-10-10 the owner has not turned it on, so the running server has no `agent_reader` and the server tests have not run. Until then this is a file, not a barrier. `indexer` is unchanged and `onchain` is still unprotected against it | 2026-10-10, on the real server, by a session running as root that had Docker and did not use it: the checks of `tests/test_agent_reader.py` that need no server pass; the ones that connect as the reader skip (no `agent-reader.env`, no such user). Separately, a review session ran `scripts/demo.py` at commit `418987c` on a clean 26.3.33.24 without Docker: `DEMO OK`, all 32 lines of step 7 ok. On 2026-10-11 GitHub's runner ran `make demo` under Docker (https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38128501429): `DEMO OK`, the 32 lines of step 7 ok; in the same run the 13 tests that connect as the reader passed against a throw-away 26.3.33.24 with the file mounted. Neither is the real server. `docs/AGENT_ACCESS.md` has the detail |
 | Can create and drop `test_*` databases | Yes, it works | `CREATE DATABASE`, `CREATE TABLE`, `DROP DATABASE` succeeded |

@@ -1,37 +1,32 @@
 # Roadmap
 
-The tasks the night runs take, highest priority first. The rules for using this file are in
-[AGENTS.md, "Night runs"](AGENTS.md#9-night-runs); what the tasks are for is
-[GOAL.md](GOAL.md).
+The tasks of the project, highest priority first. What they are for is [GOAL.md](GOAL.md);
+the rules for working on them are in [AGENTS.md](AGENTS.md).
 
-- **The owner** orders the list, edits any task, and answers `needs-decision` and
-  `proposed` tasks in the Inbox issue (#94).
-- **An agent** changes a task's tag, status and notes only as section 9 of AGENTS.md says
-  ("Keeping the roadmap alive"), always in a pull request, and adds tasks at the bottom,
-  numbered after the last one, with `Added by` linking the pull request that found them.
-  It never reorders, deletes or rewrites a task.
+- **The owner** orders the list, edits any task, and decides the `needs-decision` and
+  `proposed` ones.
+- **A contributor** changes a task's tag, status and notes in the pull request that does the
+  task, and adds tasks found on the way at the bottom, numbered after the last one, with
+  `Added by` linking that pull request. Tasks are not reordered, deleted or rewritten there.
 
 **Tags.**
 
-- `ready`: a night may take it.
-- `needs-decision`: the owner must answer in the Inbox first; a night never takes it.
-- `needs-run`: it needs paid model runs; a night prepares it up to a pre-registration and a
-  pull request, and never dispatches.
-- `proposed`: proposed by a night when no `ready` task was left; a night never takes it
-  until the owner makes it `ready` in the Inbox.
-- `done`: finished. The night marks its task `done` in its own pull request, so the mark
-  reaches `main` with the merge; if the owner closes that pull request without merging,
-  the next night puts the task back to `ready` with a note.
+- `ready`: it can be taken.
+- `needs-decision`: the owner decides first.
+- `needs-run`: it needs paid model runs; it is prepared up to a pre-registration and a pull
+  request, and the owner starts the runs.
+- `proposed`: suggested, not yet accepted by the owner.
+- `done`: finished, marked in the pull request that did it, so the mark reaches `main` with
+  the merge.
 
 **Status.** `todo`, `done: <link to the pull request>`, or `blocked: <why>`, and any
-number of `Note:` lines under it.
+number of `Note:` lines under it. Some tasks carry a `Pillar:` line: A, the pipeline running
+and observable; B, a public demo of the agent; C, breadth in data engineering; D, depth in
+AI engineering.
 
-A night takes up to four `ready` tasks in order, each done completely, up to its
-done-when, in one pull request that the owner reviews the next day and merges before the
-next night's work. One that cannot be finished in one night is split: the night finishes a
-part that stands on its own and adds the rest at the bottom. A pull request waiting for the
-owner's paid runs is labelled `waiting-runs` and does not hold the nights back (AGENTS.md,
-section 9).
+One task, one pull request, done completely, up to its done-when. A task too large for one
+pull request is split: the part that stands on its own is finished and the rest goes at the
+bottom.
 
 ---
 
