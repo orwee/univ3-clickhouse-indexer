@@ -4,7 +4,9 @@ For someone reviewing this repository with little time. What to open, in what or
 question each piece answers. Times are for reading, not running.
 
 **Even shorter:** the [dashboard](https://orwee.github.io/univ3-clickhouse-indexer/) has the
-whole result on one page, with a link from each chart to the document or query behind it.
+whole result on one page, with a link from each chart to the document or query behind it,
+and the [project overview](overview.html) says what the project is without any code
+(section 10).
 
 ## 0. Run it while you read (1 minute of typing, no API key)
 
@@ -75,20 +77,56 @@ so is `make dbt-prove`: it breaks the data on purpose in throw-away databases an
 one of the 29 dbt tests failing, because a test that cannot fail checks nothing
 ([scripts/prove_dbt_tests_can_fail.py](../scripts/prove_dbt_tests_can_fail.py)).
 
-## 7. The agent, and how it is graded (2 minutes)
+## 7. The agent (2 minutes)
 
-[docs/AGENT.md](AGENT.md), the table under "How a question ends", then
-[docs/EVALS.md](EVALS.md), "How the answers are computed". *Questions answered: what stops an
-agent that writes SQL from doing harm or from making things up, and how do you know how often
-it is right?* The database refuses what must never happen: a write, a read outside five
-tables, a query that runs too long. The code checks that the answer is a cell of the last
-result. And the right answer to each of the 180 questions is computed by a reference query on
-a committed copy of the marts, never typed. Open one case of
-[evals/golden.jsonl](../evals/golden.jsonl), then one of the 30 that have no answer and must
-be refused. What has been measured, and what has not, is in the section "The agent and its
-evaluation" of the [README](../README.md#the-agent-and-its-evaluation).
+[docs/AGENT.md](AGENT.md), the table under "How a question ends", then "Guardrails: what the
+server enforces and what is code". *Question answered: what stops an agent that writes SQL
+from doing harm or from making things up?* The database refuses what must never happen: a
+write, a read outside five tables, a query that runs too long. The code checks that the
+answer is a cell of the last result, and an answer that is not is kept and marked
+ungrounded. The loop is [src/agent/loop.py](../src/agent/loop.py), what the model is told is
+[src/agent/prompts/system.md](../src/agent/prompts/system.md), and all it is told about this
+warehouse is [evals/warehouse.yml](../evals/warehouse.yml).
 
-## 8. If there is time left
+## 8. How the agent is graded (2 minutes)
+
+[docs/EVALS.md](EVALS.md), "How the answers are computed", then "Golden set v2: a harder test
+the agent can fail". *Questions answered: how do you know how often it is right, and whether
+a change made it better?* The right answer to each of the 180 questions of
+[evals/golden.jsonl](../evals/golden.jsonl) is computed by a reference query on a committed
+copy of the marts, never typed; 30 have no answer and must be refused. On that set the agent
+was right in 445 of 450 answerable cases
+([evals/results/2026-10-12_baseline-regrounded.md](../evals/results/2026-10-12_baseline-regrounded.md)),
+too close to the ceiling to measure a change, so
+[evals/golden_v2.jsonl](../evals/golden_v2.jsonl) has 240 harder ones, 80 of them with no
+answer. Every change to the agent is judged by a rule written down before it runs:
+[docs/EVAL_PREREGISTRATION.md](EVAL_PREREGISTRATION.md), one entry per change, with what
+happened to it. Open one case of each golden file, then one entry. What has been measured,
+and what has not, is in the section "The agent and its evaluation" of the
+[README](../README.md#the-agent-and-its-evaluation).
+
+## 9. The daily pipeline in Airflow (1 minute)
+
+[airflow/dags/univ3_daily.py](../airflow/dags/univ3_daily.py), then
+[airflow/README.md](../airflow/README.md), "Know before you run it". *Question answered: what
+runs the pipeline every day, in what order, and what happens when a step fails?* Five tasks
+in a line, `fetch_day`, `load_swaps`, `dbt_run`, `dbt_test` and `reconcile`, each a command
+that already exists; one run at a time, because every day appends to one landing zone; at
+00:30 UTC, after the day's last block is finalized; two retries, and after the last one a
+comment on an issue. Why Airflow, and why this version, is
+[DECISIONS.md](../DECISIONS.md) 25. The DAG has not run on a server yet
+([README.md, Limitations](../README.md#limitations)).
+
+## 10. The project overview (1 minute)
+
+[docs/overview.html](overview.html), served at
+<https://orwee.github.io/univ3-clickhouse-indexer/overview.html>. *Question answered: what is
+this project, for someone who does not read code?* How the data flows in six steps, what was
+built and how it scored, what did not work and what is not done yet, on one page. Every
+figure on it is checked against the file it comes from by
+[tests/test_overview.py](../tests/test_overview.py).
+
+## 11. If there is time left
 
 - The second week, in [CHANGELOG.md](../CHANGELOG.md): [docs/ROUND_TRIPS.md](ROUND_TRIPS.md)
   (how much of the volume is swaps undone in the same block, and how much that figure depends

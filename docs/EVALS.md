@@ -1165,6 +1165,11 @@ the judge and must never be described as one. A calibration needs a person's lab
 the owner labels the sheet, `sheet.labels.json` changes to `person`. Until then a verdict of
 the judge is not a measurement, and no evaluation report in this repository uses one.
 
+**How a person labels it**: [`evals/calibration/LABELLING.md`](../evals/calibration/LABELLING.md).
+`python -m evalkit.labelling kit` writes one sheet, outside the working copy, with these 30
+rows and twenty retrieval cases, none of them showing a model's label; `score` computes the
+judge's kappa and the retrieval agreement from the filled sheet once it is committed.
+
 **The judge ran once on this sheet**, on 2026-10-12: the `judge` workflow's run
 [38275101405](https://github.com/orwee/univ3-clickhouse-indexer/actions/runs/38275101405),
 `claude-opus-5-5`, 30 of 30 rows judged, 0.400788 USD. Its verdicts are

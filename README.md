@@ -602,8 +602,9 @@ located to one to three hours, listed at the end of the draft.
   window): it is never read.
 - **One external source, with no published methodology.** Finding 7 is a reading that fits the
   numbers, not a fact about GeckoTerminal.
-- **Batch backfill.** No continuous ingestion and no alerting. The daily Airflow DAG has not
-  been run on a server yet (see Orchestration); the `make` targets are what it calls.
+- **Batch backfill.** No continuous ingestion. The daily Airflow DAG has not been run on a
+  server yet (see Orchestration); the `make` targets are what it calls. Its only alert is a
+  comment on an issue when a task fails its last try, and that has not been sent yet either.
 - **"`onchain` is read-only for agents" is a rule without a barrier on the real server**: its
   one ClickHouse user can drop anything. A read-only user limited to the five marts is
   defined, and it is what the agent connects as on GitHub's runner. The real server has not
@@ -659,8 +660,9 @@ described above, and items 10 to 12 are what those are missing.
 7. **Orchestration.** Done in part: a daily Airflow DAG, `univ3_daily`, runs fetch, load,
    dbt and reconciliation in order, with retries and a backfill by date
    ([airflow/README.md](airflow/README.md), [decision 25](DECISIONS.md)). What is missing is
-   an orchestrator that knows the data (asset checks, freshness: Dagster or Airflow assets) and
-   alerting on failure. CI runs lint, the tests, `make demo` and the read-only user's tests on
+   an orchestrator that knows the data (asset checks, freshness: Dagster or Airflow assets).
+   A task that fails its last try posts a comment on the issue "Pipeline alerts"
+   ([airflow/README.md](airflow/README.md#know-before-you-run-it)). CI runs lint, the tests, `make demo` and the read-only user's tests on
    every pull request ([tests.yml](.github/workflows/tests.yml)).
 8. **Access.** Turn the read-only user on in the real server. It is defined, tested in CI
    and used by the agent there ([docs/AGENT_ACCESS.md](docs/AGENT_ACCESS.md)); the real

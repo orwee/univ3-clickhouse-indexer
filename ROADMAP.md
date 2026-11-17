@@ -107,8 +107,8 @@ section 9).
 
 ## R04. A link from the dashboard's header to the project overview
 
-- Tags: `ready`
-- Status: todo
+- Tags: `done`
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/103
 - **Why.** `docs/overview.html` is the page for readers who do not read code, and the
   dashboard (`docs/index.html`, built by `scripts/build_dashboard.py`) does not link to it.
 - **Done when.** `scripts/build_dashboard.py` writes a link to `overview.html` in the
@@ -118,8 +118,8 @@ section 9).
 
 ## R05. Airflow: the schedule after midnight finality, and an alert on failure
 
-- Tags: `ready`
-- Status: todo
+- Tags: `done`
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/103
 - **Why.** Decision 25: at 00:00 UTC the day's last block is not finalized yet (finality
   trails the tip by about 13 to 19 minutes), `cli` refuses it, and two retries 5 minutes
   apart may not be enough. Nothing tells anyone that a run failed.
@@ -138,8 +138,8 @@ section 9).
 
 ## R06. A labelling kit for the owner
 
-- Tags: `ready`
-- Status: todo
+- Tags: `done`
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/103
 - **Why.** GOAL.md, criterion 2. No person has labelled anything. The judge's sheet
   (`evals/calibration/sheet.csv`) has a `label` column that a model filled, and the
   retrieval cases (`evals/rag_cases.jsonl`) were labelled by a model.
@@ -203,8 +203,8 @@ section 9).
 
 ## R09. The walkthrough covers the agent, the evaluation, Airflow and the overview
 
-- Tags: `ready`
-- Status: todo
+- Tags: `done`
+- Status: done: https://github.com/orwee/univ3-clickhouse-indexer/pull/103
 - **Why.** `docs/WALKTHROUGH.md` was written for the pipeline. A reviewer with ten minutes
   does not find the agent, the evaluation, the Airflow DAG or `docs/overview.html` from it.
 - **Done when.** Sections for those four, each with the file to open and the question it

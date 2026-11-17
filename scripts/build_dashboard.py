@@ -1324,26 +1324,21 @@ def span_css() -> str:
     return f"@media (min-width:1100px){{{ids}{{grid-column:1/-1}}}}\n"
 
 
-def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now) -> str:
-    t = data["totals"]
-    stamp = now.strftime("%Y-%m-%d %H:%M UTC")
+def header(figs: list[tuple[str, str]], docs: dict, stamp: str) -> str:
+    """The page's header: the name, one sentence, the figures and the ways out as buttons.
+
+    Its own function so that a test can render it without ClickHouse. The overview is linked
+    relatively: both pages are served from `docs/`, by GitHub Pages and from a checkout alike.
+    """
     parts: list[str] = []
     a = parts.append
-
-    # ---- hero: the shape robertofajardoduro.com opens with — a status pill, the name, one
-    # sentence, the figures large, and the ways out as buttons. Not a numbered section.
-    figs = [
-        (fint(t["swaps"]), "swaps indexed"),
-        (f"{t['pools']}", "Uniswap v3 pools"),
-        (f"{t['days']}", "days of blocks"),
-        (fint(docs["compared"]), "pool-days compared"),
-    ]
     tiles = "".join(
         f'<div class="hero-fig"><div class="v">{esc(v)}</div><div class="k">{esc(k)}</div></div>'
         for v, k in figs
     )
     buttons = [
         ("btn-p", "https://github.com/orwee/univ3-clickhouse-indexer", "Repository"),
+        ("btn-s", "overview.html", "Project overview"),
         ("btn-s", f"{GH}docs/WALKTHROUGH.md", "Ten-minute walkthrough"),
         ("btn-s", f"{GH}DECISIONS.md", "DECISIONS.md"),
         ("btn-s", AUTHOR_SITE, "Roberto Fajardo Duro"),
@@ -1369,6 +1364,24 @@ def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now)
         "the repository.</p>"
     )
     a("</header>")
+    return "".join(parts)
+
+
+def build(data: dict, docs: dict, csv_rows: list[dict], hourly: list[dict], now) -> str:
+    t = data["totals"]
+    stamp = now.strftime("%Y-%m-%d %H:%M UTC")
+    parts: list[str] = []
+    a = parts.append
+
+    # ---- hero: the shape robertofajardoduro.com opens with — a status pill, the name, one
+    # sentence, the figures large, and the ways out as buttons. Not a numbered section.
+    figs = [
+        (fint(t["swaps"]), "swaps indexed"),
+        (f"{t['pools']}", "Uniswap v3 pools"),
+        (f"{t['days']}", "days of blocks"),
+        (fint(docs["compared"]), "pool-days compared"),
+    ]
+    a(header(figs, docs, stamp))
 
     a('<div class="front">')
 
