@@ -307,6 +307,7 @@ bottom.
 - Tags: `ready`
 - Status: todo
 - Pillar: A
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/109
 - **Why.** `docs/overview.html` says "28 recorded decisions" and `DECISIONS.md` has 29. The
   test passes all the same: `tests/test_overview.py` only checks that a heading `## 28.`
   exists, which stays true whatever is added after it. The count of merged pull requests
@@ -324,6 +325,7 @@ bottom.
 - Tags: `ready`
 - Status: todo
 - Pillar: D
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/109
 - **Why.** R03's status still says it waits for runs on #100, and R14 waits for R03's result
   on #100. #100 was merged on 2026-11-17 before its runs and reverted the same day in #106,
   so `main` holds neither the sixth pre-registration entry nor the prompt change.
