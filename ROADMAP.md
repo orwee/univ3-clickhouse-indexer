@@ -301,3 +301,37 @@ bottom.
   agent, measured by its own pre-registration, which costs runs), or accept it as it is.
   Also whether to wait for the sixth entry's runs (R03), which will show whether it happens
   again.
+
+## R16. The overview's counts are counted, not looked up
+
+- Tags: `ready`
+- Status: todo
+- Pillar: A
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/109
+- **Why.** `docs/overview.html` says "28 recorded decisions" and `DECISIONS.md` has 29. The
+  test passes all the same: `tests/test_overview.py` only checks that a heading `## 28.`
+  exists, which stays true whatever is added after it. The count of merged pull requests
+  (91, 90 of them by orwee) is a constant from 2026-10-26 and more have been merged since.
+- **Done when.**
+  - The test counts the numbered headings of `DECISIONS.md` and fails when the page states
+    another number; a test shows it would have failed on 28 against 29.
+  - The page states the count the file has.
+  - The sentence on merged pull requests says the date its figures were read on, in the page
+    and in the test, since a test without network cannot read them again; the figures
+    themselves are not changed by guesswork.
+
+## R17. R03 and R14 say what happened to #100
+
+- Tags: `ready`
+- Status: todo
+- Pillar: D
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/109
+- **Why.** R03's status still says it waits for runs on #100, and R14 waits for R03's result
+  on #100. #100 was merged on 2026-11-17 before its runs and reverted the same day in #106,
+  so `main` holds neither the sixth pre-registration entry nor the prompt change.
+- **Done when.**
+  - R03 keeps the tag `needs-run`, its status becomes `todo`, and a `Note:` line says that
+    #100 was merged before its runs and reverted in #106, and that the entry and the prompt
+    change come back in a pull request of their own.
+  - R14's status names R03 and no longer #100.
+  - Nothing else in either task is rewritten, and no file but `ROADMAP.md` changes.
