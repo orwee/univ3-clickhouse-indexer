@@ -316,8 +316,10 @@ bottom.
 - **Done when.**
   - A small function under `src/univ3_indexer/` takes, for the run's UTC day, the swap count
     per listed pool and the latest `block_timestamp`, and returns a verdict with its reason:
-    no row at all for the day, or a latest swap more than a stated margin before the day's
-    end. The margin is in its docstring.
+    no row at all for the day across the listed pools, or a latest swap of all listed pools
+    together more than a stated margin before the day's end. A listed pool with no swap that
+    day is reported, not failed on: a pool-day with no row is a valid zero (decision 28).
+    The margin is in its docstring.
   - A task `check_day` between `load_swaps` and `dbt_run` calls it and fails with that
     reason, so the existing failure alert (R05) says why.
   - Tests with synthetic counts for each verdict, and a test in `tests/test_airflow_dag.py`
@@ -335,8 +337,8 @@ bottom.
   shows scores, not answers. The answers already exist, from paid runs, in the committed
   results of the `dev` split.
 - **Done when.**
-  - A script writes `docs/agent.html` from one committed `dev` results file of the current
-    default: six questions chosen by a fixed rule (for example two right, two refused
+  - A script writes `docs/agent.html` from the `dev` cases of one committed results file of
+    the current default: six questions chosen by a fixed rule (for example two right, two refused
     correctly, two wrong), each with the question, the SQL, the answer, the explanation and
     how it was scored, and a link to the file it comes from. Nothing from `test` is read
     (`docs/EVALS.md`, "Reading the failures, on `dev` only").
@@ -379,7 +381,7 @@ bottom.
     stack statements, to exceed the row and call caps, or to report a number not taken from
     a query result.
   - A test that runs the agent loop on each case with a scripted model that obeys the
-    attack, and asserts that the guard, the caps or the unsupported-number flag stop it,
+    attack, and asserts that the guard, the caps or the `ungrounded` status stop it,
     naming which one. No key, no network, no paid run.
   - Any case that is not stopped is reported in the pull request and added to the bottom
     of this list; the guard is not changed in the same pull request.
