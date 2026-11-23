@@ -301,3 +301,87 @@ bottom.
   agent, measured by its own pre-registration, which costs runs), or accept it as it is.
   Also whether to wait for the sixth entry's runs (R03), which will show whether it happens
   again.
+
+## R18. The daily DAG stops when the day it loaded is incomplete
+
+- Tags: `proposed`
+- Status: todo
+- Pillar: A
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/111
+- **Why.** `univ3_daily` runs `fetch_day >> load_swaps >> dbt_run >> dbt_test >> reconcile`,
+  and nothing between the load and the models checks that the day is all there: a fetch
+  that stopped early would be modelled and reconciled as if it were the whole day. The data
+  is historical, so a freshness check against the clock (what `dbt source freshness` does)
+  would always fail; the useful check is against the run's own logical date.
+- **Done when.**
+  - A small function under `src/univ3_indexer/` takes, for the run's UTC day, the swap count
+    per listed pool and the latest `block_timestamp`, and returns a verdict with its reason:
+    no row at all for the day across the listed pools, or a latest swap of all listed pools
+    together more than a stated margin before the day's end. A listed pool with no swap that
+    day is reported, not failed on: a pool-day with no row is a valid zero (decision 28).
+    The margin is in its docstring.
+  - A task `check_day` between `load_swaps` and `dbt_run` calls it and fails with that
+    reason, so the existing failure alert (R05) says why.
+  - Tests with synthetic counts for each verdict, and a test in `tests/test_airflow_dag.py`
+    that checks the task order. No schema change, no new dependency.
+  - The "Orchestration" block of `docs/overview.html` lists the check; `tests/test_overview.py`
+    stays green.
+
+## R19. A page where anyone can read the agent answering
+
+- Tags: `proposed`
+- Status: todo
+- Pillar: B
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/111
+- **Why.** A reader who does not run code cannot see the agent do anything: the overview
+  shows scores, not answers. The answers already exist, from paid runs, in the committed
+  results of the `dev` split.
+- **Done when.**
+  - A script writes `docs/agent.html` from the `dev` cases of one committed results file of
+    the current default: six questions chosen by a fixed rule (for example two right, two refused
+    correctly, two wrong), each with the question, the SQL, the answer, the explanation and
+    how it was scored, and a link to the file it comes from. Nothing from `test` is read
+    (`docs/EVALS.md`, "Reading the failures, on `dev` only").
+  - A test checks, without network or key, that every question, SQL and answer on the page
+    is in that results file, and that the page states the file's name.
+  - `docs/overview.html` links to the page. No model is called.
+
+## R20. The daily marts as partitioned Parquet
+
+- Tags: `proposed`
+- Status: todo
+- Pillar: C
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/111
+- **Why.** The marts can only be read through ClickHouse. A lakehouse-style export in an
+  open format shows that the warehouse is not a dead end for other engines (Spark,
+  Databricks, Snowflake, DuckDB), with ClickHouse writing Parquet itself: no new
+  dependency.
+- **Done when.**
+  - A script writes `fct_pool_daily` as Parquet under `config.data_dir()`, one file per pool
+    and month (`pool=<address>/month=<YYYY-MM>/`), never inside the working copy, and
+    writes a small manifest with each file's row count.
+  - A test creates a `test_*` database with a few fake rows (`0xabab…` pools), exports,
+    reads the files back through ClickHouse's `file()` table function, checks rows and
+    totals, and drops the database even when it fails. It skips with its reason when no
+    server is reachable.
+  - No schema change; `README.md` says how the owner runs it.
+
+## R21. Adversarial cases for the agent's guards, in `make test`
+
+- Tags: `proposed`
+- Status: todo
+- Pillar: D
+- Added by: https://github.com/orwee/univ3-clickhouse-indexer/pull/111
+- **Why.** The SQL guard and the read-only user are tested one statement at a time
+  (`tests/test_agent_guard.py`), not against a model that has been talked into misbehaving.
+  The golden sets measure refusals of unanswerable questions, not attacks.
+- **Done when.**
+  - A committed file of at least ten adversarial cases (`evals/adversarial_cases.yml`):
+    instructions inside the question to write, drop or read outside the five marts, to
+    stack statements, to exceed the row and call caps, or to report a number not taken from
+    a query result.
+  - A test that runs the agent loop on each case with a scripted model that obeys the
+    attack, and asserts that the guard, the caps or the `ungrounded` status stop it,
+    naming which one. No key, no network, no paid run.
+  - Any case that is not stopped is reported in the pull request and added to the bottom
+    of this list; the guard is not changed in the same pull request.
